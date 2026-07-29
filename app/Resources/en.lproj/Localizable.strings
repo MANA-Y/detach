@@ -127,6 +127,7 @@
 "Move Detach to Applications" = "Move Detach to Applications";
 "Move Detach.app to Applications and open the installed copy" = "Move Detach.app to Applications and open the installed copy";
 "Name" = "Name";
+"Use 1–48 Latin letters, digits, underscores, or hyphens; start with a letter or digit." = "Use 1–48 Latin letters, digits, underscores, or hyphens; start with a letter or digit.";
 "Neither Codex CLI nor Claude CLI was found" = "Neither Codex CLI nor Claude CLI was found";
 "New session" = "New session";
 "No installed terminal capable of opening .command files was found." = "No installed terminal capable of opening .command files was found.";

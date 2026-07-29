@@ -19,6 +19,19 @@ struct NewSessionSheet: View {
     @State private var launchFailure: TerminalLaunchFailure?
     @State private var isLaunching = false
 
+    init(detachPath: String, initialName: String = "") {
+        self.detachPath = detachPath
+        _name = State(initialValue: initialName)
+    }
+
+    private var normalizedName: String? {
+        SessionNameValidator.normalizedCustomName(name)
+    }
+
+    private var isNameValid: Bool {
+        SessionNameValidator.isValidInput(name, provider: provider)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.string("New session")).appFont(.title3, weight: .bold)
@@ -46,7 +59,17 @@ struct NewSessionSheet: View {
                 }
                 GridRow {
                     Text(L10n.string("Name"))
-                    TextField(L10n.string("optional, for example migration"), text: $name)
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField(L10n.string("optional, for example migration"), text: $name)
+                            .accessibilityIdentifier("new-session-name")
+                        if !isNameValid {
+                            Text(L10n.string(
+                                "Use 1–48 Latin letters, digits, underscores, or hyphens; start with a letter or digit."))
+                                .appFont(.caption)
+                                .foregroundStyle(.red)
+                                .accessibilityIdentifier("new-session-name-validation")
+                        }
+                    }
                 }
             }
 
@@ -79,7 +102,7 @@ struct NewSessionSheet: View {
                 }
                     .buttonStyle(.borderedProminent)
                     .tint(Brand.indigo)
-                    .disabled(projectDir == nil || isLaunching)
+                    .disabled(projectDir == nil || !isNameValid || isLaunching)
                     .accessibilityIdentifier("new-session-launch")
             }
         }
@@ -94,14 +117,14 @@ struct NewSessionSheet: View {
 
     @MainActor
     private func launch() async {
-        guard !isLaunching, let projectDir else { return }
+        guard !isLaunching, isNameValid, let projectDir else { return }
         isLaunching = true
         defer { isLaunching = false }
         let command = TerminalCommand.start(
             detachPath: detachPath,
             provider: provider,
             projectDir: projectDir.path,
-            name: name.trimmingCharacters(in: .whitespaces).isEmpty ? nil : name,
+            name: normalizedName,
             prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : prompt)
         launchFailure = nil
         let failure = await TerminalLauncher.open(

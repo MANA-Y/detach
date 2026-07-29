@@ -141,8 +141,12 @@ Automation entitlement.
 
 Distribution bootstrap is allowed only from `/Applications`, not a DMG or App
 Translocation path. Terminal actions use a private self-deleting `.command`
-file and `NSWorkspace`; they do not use Apple Events. Notifications are opt-in
-and driven by one app-level poller with baseline and transition deduplication.
+file and `NSWorkspace`; they do not use Apple Events. Before opening Terminal,
+the new-session sheet validates an optional custom name against the CLI grammar
+(1–48 ASCII letters or digits, with underscores and hyphens allowed after the
+first character), blocks invalid launches, and explains the constraint inline.
+Notifications are opt-in and driven by one app-level poller with baseline and
+transition deduplication.
 
 Sparkle 2 is pinned in `Package.resolved`, embedded with its symlink layout
 intact, and signed inside-out before the outer app. Ad-hoc development builds

@@ -14,6 +14,46 @@ final class TerminalCommandTests: XCTestCase {
         XCTAssertEqual(shellQuoted("it's; rm -rf *"), "'it'\\''s; rm -rf *'")
     }
 
+    func testCustomSessionNameNormalization() {
+        XCTAssertNil(SessionNameValidator.normalizedCustomName(""))
+        XCTAssertNil(SessionNameValidator.normalizedCustomName(" \n\t"))
+        XCTAssertEqual(
+            SessionNameValidator.normalizedCustomName("  Rev-ai \n"),
+            "Rev-ai")
+    }
+
+    func testCustomSessionNameGrammarMatchesCLI() {
+        for name in [
+            "a",
+            "Rev-ai",
+            "rev_ai-2",
+            "a" + String(repeating: "b", count: 47),
+            "detach-claude-Rev-ai",
+        ] {
+            XCTAssertTrue(
+                SessionNameValidator.isValidCustomName(name, provider: .claude),
+                name)
+        }
+
+        for name in [
+            "",
+            "Rev (ai)",
+            "-revision",
+            "_revision",
+            "ревизия",
+            "a" + String(repeating: "b", count: 48),
+            "detach-claude-",
+        ] {
+            XCTAssertFalse(
+                SessionNameValidator.isValidCustomName(name, provider: .claude),
+                name)
+        }
+
+        XCTAssertTrue(SessionNameValidator.isValidInput(" \t", provider: .claude))
+        XCTAssertTrue(SessionNameValidator.isValidInput("  Rev-ai  ", provider: .claude))
+        XCTAssertFalse(SessionNameValidator.isValidInput("  Rev (ai)  ", provider: .claude))
+    }
+
     func testAttach() {
         XCTAssertEqual(
             TerminalCommand.attach(detachPath: detach, session: session()),
