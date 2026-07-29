@@ -166,6 +166,7 @@ usage() {
     "  $PROGRAM delete [--force] [NAME]" \
     '' \
     'With no NAME, the session is derived from the current Git repository (or cwd).' \
+    'NAME may be up to 100 UTF-8 bytes of printable text.' \
     "A default start creates a new $PROVIDER_LABEL session; use attach or resume explicitly."
 
   if [ "$PROVIDER" = "codex" ]; then
@@ -363,10 +364,18 @@ canonical_project_dir() {
   canonical_project_dir_for "$PWD"
 }
 
-validate_short_name() {
+short_name_is_valid() {
   local name="$1"
-  [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$ ]] || \
-    die "invalid name '$name' (use 1-48 letters, digits, underscores, or hyphens)"
+  [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$ ]]
+}
+
+validate_display_name() {
+  local name="$1"
+  local LC_ALL=C
+
+  [ -n "$name" ] && [ "${#name}" -le 100 ] && \
+    [[ "$name" != *[[:cntrl:]]* ]] && [[ "$name" == *[![:space:]]* ]] || \
+      die "invalid display name (use 1-100 bytes of printable text)"
 }
 
 default_session_name() {
@@ -391,6 +400,9 @@ project_lock_path() {
 
 normalize_session_name() {
   local name="$1"
+  local short_name
+  local slug
+  local digest
 
   if [ -z "$name" ]; then
     default_session_name "$(canonical_project_dir)"
@@ -399,15 +411,53 @@ normalize_session_name() {
 
   case "$name" in
     detach-"$PROVIDER"-*)
-      name="${name#"detach-$PROVIDER-"}"
-      validate_short_name "$name"
-      printf 'detach-%s-%s\n' "$PROVIDER" "$name"
-      ;;
-    *)
-      validate_short_name "$name"
-      printf 'detach-%s-%s\n' "$PROVIDER" "$name"
+      short_name="${name#"detach-$PROVIDER-"}"
+      if short_name_is_valid "$short_name"; then
+        printf 'detach-%s-%s\n' "$PROVIDER" "$short_name"
+        return
+      fi
       ;;
   esac
+
+  if short_name_is_valid "$name"; then
+    printf 'detach-%s-%s\n' "$PROVIDER" "$name"
+    return
+  fi
+
+  validate_display_name "$name"
+  slug="$(printf '%s' "$name" | LC_ALL=C tr -cs 'A-Za-z0-9_-' '-' | \
+    sed 's/^-*//; s/-*$//')"
+  [ -n "$slug" ] || slug="named"
+  slug="${slug:0:24}"
+  digest="$(printf '%s' "$name" | shasum -a 256 | awk '{print substr($1, 1, 12)}')"
+  short_name="$slug-$digest"
+  short_name_is_valid "$short_name" || die "could not derive a safe session identifier"
+  printf 'detach-%s-%s\n' "$PROVIDER" "$short_name"
+}
+
+display_name_for_request() {
+  local requested="$1"
+  local session="$2"
+  local existing
+  local short_name
+
+  existing="$(read_meta_field "$session" display_name 2>/dev/null || true)"
+  if [ -n "$existing" ]; then
+    printf '%s\n' "$existing"
+    return
+  fi
+  [ -n "$requested" ] || return 0
+  validate_display_name "$requested"
+  case "$requested" in
+    detach-"$PROVIDER"-*)
+      short_name="${requested#"detach-$PROVIDER-"}"
+      if short_name_is_valid "$short_name"; then
+        printf '%s\n' "$short_name"
+        return
+      fi
+      ;;
+  esac
+  printf '%s\n' "$requested"
 }
 
 session_dir() {
@@ -1056,12 +1106,13 @@ state_update_meta_for_run() {
 write_initial_meta() {
   local session="$1"
   local cwd="$2"
-  local start_ms="$3"
-  local agent_bin="$4"
-  local recovery_id="${5:-}"
-  local recovery_transcript="${6:-}"
-  local run_token="$7"
-  local preserve_checkpoint="${8:-0}"
+  local display_name="$3"
+  local start_ms="$4"
+  local agent_bin="$5"
+  local recovery_id="${6:-}"
+  local recovery_transcript="${7:-}"
+  local run_token="$8"
+  local preserve_checkpoint="${9:-0}"
   local dir
   local meta
   local tmp
@@ -1115,6 +1166,11 @@ write_initial_meta() {
     --null worker_heartbeat_epoch
     --null exit_status
   )
+  if [ -n "$display_name" ]; then
+    create_args+=( --string display_name "$display_name" )
+  else
+    create_args+=( --null display_name )
+  fi
   if [ -n "$recovery_id" ]; then
     create_args+=( --string agent_session_id "$recovery_id" )
   else
@@ -2766,11 +2822,12 @@ tmux_environment_args() {
 start_tmux_session() {
   local session="$1"
   local cwd="$2"
-  local detach="$3"
-  local recovery_id="$4"
-  local recovery_rollout="$5"
-  local preserve_checkpoint="$6"
-  shift 6
+  local display_name="$3"
+  local detach="$4"
+  local recovery_id="$5"
+  local recovery_rollout="$6"
+  local preserve_checkpoint="$7"
+  shift 7
   local start_ms
   local agent_bin="$AGENT_BIN_DEFAULT"
   local run_token
@@ -2824,7 +2881,7 @@ start_tmux_session() {
   [ -n "$pane_id" ] || die "tmux did not return a pane id"
   created=1
   "$LOCKF_BIN" -k -t 30 "$(checkpoint_lock_path "$session")" \
-    "$SELF" __write_initial_meta "$session" "$cwd" "$start_ms" "$agent_bin" \
+    "$SELF" __write_initial_meta "$session" "$cwd" "$display_name" "$start_ms" "$agent_bin" \
       "$recovery_id" "$recovery_rollout" "$run_token" "$preserve_checkpoint" || \
     die "could not initialize session metadata"
   snapshot_known_threads "$session" "$cwd" || die "could not snapshot existing $PROVIDER_LABEL sessions"
@@ -2921,10 +2978,11 @@ running_session_for_project() {
 start_tmux_session_locked() {
   local session="$1"
   local cwd="$2"
-  local recovery_id="$3"
-  local recovery_rollout="$4"
-  local preserve_checkpoint="$5"
-  shift 5
+  local display_name="$3"
+  local recovery_id="$4"
+  local recovery_rollout="$5"
+  local preserve_checkpoint="$6"
+  shift 6
   local existing
 
   refuse_runtime_without_managed_tmux "$session"
@@ -2936,21 +2994,24 @@ start_tmux_session_locked() {
   fi
   existing="$(running_session_for_project "$cwd" "$session" || true)"
   [ -z "$existing" ] || die "project already has a running detached session: $existing"
-  start_tmux_session "$session" "$cwd" 1 "$recovery_id" "$recovery_rollout" "$preserve_checkpoint" "$@"
+  start_tmux_session "$session" "$cwd" "$display_name" 1 \
+    "$recovery_id" "$recovery_rollout" "$preserve_checkpoint" "$@"
 }
 
 start_under_install_lock() {
   local session="$1"
   local cwd="$2"
-  local recovery_id="$3"
-  local recovery_rollout="$4"
-  local preserve_checkpoint="$5"
-  shift 5
+  local display_name="$3"
+  local recovery_id="$4"
+  local recovery_rollout="$5"
+  local preserve_checkpoint="$6"
+  shift 6
   local lock
 
   lock="$(project_lock_path "$cwd")"
   "$LOCKF_BIN" -k -t 30 "$lock" "$SELF" __start_tmux_session_locked \
-    "$session" "$cwd" "$recovery_id" "$recovery_rollout" "$preserve_checkpoint" "$@"
+    "$session" "$cwd" "$display_name" "$recovery_id" \
+      "$recovery_rollout" "$preserve_checkpoint" "$@"
 }
 
 start_under_project_lock() {
@@ -3077,7 +3138,8 @@ resume_agent_session() {
   local cwd="$2"
   local detach="$3"
   local id="$4"
-  shift 4
+  local display_name="$5"
+  shift 5
   local db
   local id_sql
   local rows
@@ -3111,7 +3173,8 @@ resume_agent_session() {
     restore_matching_claude_checkpoint "$session" "$id" "$rollout" || \
       die "could not restore the matching Claude checkpoint"
     valid_claude_transcript "$rollout" "$id" || die "Claude transcript for '$id' is missing or invalid"
-    start_under_project_lock "$session" "$cwd" "$id" "$rollout" 0 resume "$id" "$@" || \
+    start_under_project_lock "$session" "$cwd" "$display_name" \
+      "$id" "$rollout" 0 resume "$id" "$@" || \
       die "could not start Claude resume session"
     [ "$detach" -eq 1 ] || attach_session "$session"
     return
@@ -3129,7 +3192,8 @@ resume_agent_session() {
     die "could not restore the matching rollout checkpoint"
   valid_jsonl "$rollout" "$id" || die "Codex rollout for '$id' is missing or invalid"
 
-  start_under_project_lock "$session" "$cwd" "$id" "$rollout" 0 resume "$id" "$@" || \
+  start_under_project_lock "$session" "$cwd" "$display_name" \
+    "$id" "$rollout" 0 resume "$id" "$@" || \
     die "could not start Codex resume session"
   [ "$detach" -eq 1 ] || attach_session "$session"
 }
@@ -3403,11 +3467,13 @@ emit_list_json() {
   local worker_pid="${18:-}"
   local provider_pid="${19:-}"
   local worker_heartbeat_at="${20:-}"
+  local display_name="${21:-}"
   local emit_args
 
   [[ "$session_color" =~ ^#[0-9A-Fa-f]{6}$ ]] || session_color=''
   emit_args=(
     emit session "$PROVIDER" "$session" "$effective"
+    --display-name "$display_name"
     --meta-status "$meta_status"
     --agent-session-id "$id"
     --project-dir "$cwd"
@@ -3444,6 +3510,7 @@ list_sessions() {
   local live
   local id
   local meta
+  local display_name
   local created
   local finished
   local exit_json
@@ -3471,8 +3538,8 @@ list_sessions() {
   fi
   if [ "$json_mode" != "1" ]; then
     if [ "${DETACH_LIST_HEADER:-1}" != "0" ]; then
-      printf '%-9s %-48s %-12s %-36s %-20s %s\n' \
-        'PROVIDER' 'SESSION' 'STATUS' 'AGENT_ID' 'CHECKPOINT' 'PROJECT'
+      printf '%-9s %-48s %-32s %-12s %-36s %-20s %s\n' \
+        'PROVIDER' 'SESSION' 'NAME' 'STATUS' 'AGENT_ID' 'CHECKPOINT' 'PROJECT'
     fi
   fi
   for dir in "$SESSIONS_ROOT"/*; do
@@ -3481,6 +3548,7 @@ list_sessions() {
     meta="$(usable_meta_path "$session" 2>/dev/null || true)"
     if [ -z "$meta" ]; then
       cwd="?"
+      display_name=""
       session_color=""
       if tmux_has_session "$session"; then
         if tmux_is_managed "$session"; then
@@ -3496,12 +3564,13 @@ list_sessions() {
         emit_list_json "$session" "$live" "" "-" "-" "${cwd:-?}" "" "null" "" \
           "" "null" "null" "" "" "$session_color" "$power_state" "$health_json"
       else
-        printf '%-9s %-48s %-12s %-36s %-20s %s\n' \
-          "$PROVIDER" "$session" "$live" '-' '-' "${cwd:-?}"
+        printf '%-9s %-48s %-32s %-12s %-36s %-20s %s\n' \
+          "$PROVIDER" "$session" '-' "$live" '-' '-' "${cwd:-?}"
       fi
       continue
     fi
     status="$(read_meta_field "$session" status 2>/dev/null || true)"
+    display_name="$(read_meta_field "$session" display_name 2>/dev/null || true)"
     cwd="$(read_meta_field "$session" project_dir 2>/dev/null || true)"
     checkpoint="$(read_meta_field "$session" last_checkpoint_at 2>/dev/null || true)"
     id="$(read_meta_field "$session" agent_session_id codex_session_id 2>/dev/null || true)"
@@ -3533,10 +3602,10 @@ list_sessions() {
       emit_list_json "$session" "$live" "$status" "$id" "$checkpoint" "$cwd" "$created" "$exit_json" "$finished" \
         "$TRANSCRIPT_MODEL" "$TRANSCRIPT_CTX_USED" "$TRANSCRIPT_CTX_WINDOW" \
         "$TRANSCRIPT_AGENT_TURN_STATE" "$TRANSCRIPT_AGENT_TURN_ID" "$session_color" "$power_state" \
-        "$health_json" "$worker_pid" "$provider_pid" "$worker_heartbeat_at"
+        "$health_json" "$worker_pid" "$provider_pid" "$worker_heartbeat_at" "$display_name"
     else
-      printf '%-9s %-48s %-12s %-36s %-20s %s\n' \
-        "$PROVIDER" "$session" "$live" "$id" "$checkpoint" "$cwd"
+      printf '%-9s %-48s %-32s %-12s %-36s %-20s %s\n' \
+        "$PROVIDER" "$session" "${display_name:--}" "$live" "$id" "$checkpoint" "$cwd"
     fi
   done
 }
@@ -3548,6 +3617,7 @@ show_status() {
   local power_state
   local provider
   local saved_session
+  local display_name
   local project
   local agent_session
   local status
@@ -3566,6 +3636,7 @@ show_status() {
 
   provider="$("$STATE_BIN" meta get "$meta" provider 2>/dev/null || true)"
   saved_session="$("$STATE_BIN" meta get "$meta" session_name 2>/dev/null || true)"
+  display_name="$("$STATE_BIN" meta get "$meta" display_name 2>/dev/null || true)"
   project="$("$STATE_BIN" meta get "$meta" project_dir 2>/dev/null || true)"
   agent_session="$("$STATE_BIN" meta get "$meta" agent_session_id codex_session_id 2>/dev/null || true)"
   status="$("$STATE_BIN" meta get "$meta" status 2>/dev/null || true)"
@@ -3577,6 +3648,7 @@ show_status() {
   [ -n "$exit_status" ] || exit_status="-"
   printf 'Provider:       %s\n' "$provider"
   printf 'Session:        %s\n' "$saved_session"
+  [ -z "$display_name" ] || printf 'Name:           %s\n' "$display_name"
   printf 'Project:        %s\n' "$project"
   printf 'Agent session:  %s\n' "$agent_session"
   printf 'Status:         %s\n' "$status"
@@ -3785,6 +3857,7 @@ recover_session() {
   local detach="$2"
   local meta
   local cwd
+  local display_name
   local id
   local rollout
   local backup
@@ -3814,6 +3887,7 @@ recover_session() {
   fi
 
   cwd="$("$STATE_BIN" meta get "$meta" project_dir)"
+  display_name="$("$STATE_BIN" meta get "$meta" display_name 2>/dev/null || true)"
   id="$("$STATE_BIN" meta get "$meta" agent_session_id codex_session_id)"
   rollout="$("$STATE_BIN" meta get "$meta" transcript_path rollout_path)"
 
@@ -3855,10 +3929,12 @@ recover_session() {
     done <"$(session_dir "$session")/resume-args.bin"
   fi
   if [ "${#resume_args[@]}" -gt 0 ]; then
-    start_under_project_lock "$session" "$cwd" "$id" "$rollout" 1 resume "$id" "${resume_args[@]}" || \
+    start_under_project_lock "$session" "$cwd" "$display_name" \
+      "$id" "$rollout" 1 resume "$id" "${resume_args[@]}" || \
       die "could not start checkpoint recovery"
   else
-    start_under_project_lock "$session" "$cwd" "$id" "$rollout" 1 resume "$id" || \
+    start_under_project_lock "$session" "$cwd" "$display_name" \
+      "$id" "$rollout" 1 resume "$id" || \
       die "could not start checkpoint recovery"
   fi
   [ "$detach" -eq 1 ] || attach_session "$session"
@@ -3871,6 +3947,7 @@ main() {
   local detach=0
   local positional_name=""
   local session
+  local display_name
   local cwd
   local resume_id=""
   local list_json=0
@@ -3987,18 +4064,20 @@ main() {
   fi
 
   session="$(normalize_session_name "$custom_name")" || exit 1
+  display_name="$(display_name_for_request "$custom_name" "$session")" || exit 1
   cwd="$(canonical_project_dir)" || die "could not resolve the current project directory"
 
   case "$action" in
     start)
       require_start_dependencies
-      session_operation start "$session" "$cwd" "" "" 0 "$@" || \
+      session_operation start "$session" "$cwd" "$display_name" "" "" 0 "$@" || \
         die "could not start a new detached $PROVIDER_LABEL session"
       [ "$detach" -eq 1 ] || attach_session "$session"
       ;;
     resume)
       require_start_dependencies
-      session_operation resume "$session" "$cwd" "$detach" "$resume_id" "$@"
+      session_operation resume "$session" "$cwd" "$detach" \
+        "$resume_id" "$display_name" "$@"
       ;;
     attach)
       attach_session "$session"

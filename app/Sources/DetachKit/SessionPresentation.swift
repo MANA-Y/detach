@@ -83,6 +83,9 @@ public extension Session {
     }
 
     var displayTitle: String {
+        if let displayName, !displayName.isEmpty {
+            return displayName
+        }
         if let projectDir, let base = projectDir.split(separator: "/").last {
             return String(base)
         }

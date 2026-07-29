@@ -127,7 +127,7 @@
 "Move Detach to Applications" = "Переместите Detach в Applications";
 "Move Detach.app to Applications and open the installed copy" = "Переместите Detach.app в Applications и откройте установленную копию";
 "Name" = "Имя";
-"Use 1–48 Latin letters, digits, underscores, or hyphens; start with a letter or digit." = "Используйте 1–48 латинских букв, цифр, знаков подчёркивания или дефисов; начните с буквы или цифры.";
+"Use printable text up to 100 UTF-8 bytes." = "Используйте печатный текст размером до 100 байт UTF-8.";
 "Neither Codex CLI nor Claude CLI was found" = "Не найден ни Codex CLI, ни Claude CLI";
 "New session" = "Новая сессия";
 "No installed terminal capable of opening .command files was found." = "Не найдено ни одного установленного терминала, способного запускать .command-файлы.";
@@ -225,7 +225,7 @@
 "macOS has not registered the background check yet" = "macOS пока не зарегистрировала фоновую проверку";
 "macOS is waiting for permission to run in the background" = "macOS ожидает разрешение на фоновую работу";
 "not selected" = "не выбран";
-"optional, for example migration" = "опционально, например migration";
+"optional, for example Rev (ai)" = "необязательно, например Rev (ai)";
 "sqlite3" = "sqlite3";
 "tar" = "tar";
 "the app isn't running from /Applications" = "приложение запущено не из /Applications";

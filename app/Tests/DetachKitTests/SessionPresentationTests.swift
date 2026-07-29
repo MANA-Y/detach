@@ -6,13 +6,15 @@ final class SessionPresentationTests: XCTestCase {
         _ status: EffectiveStatus,
         uuid: String? = "u",
         project: String? = "/tmp/proj",
+        displayName: String? = nil,
         turnState: AgentTurnState? = nil,
         powerState: PowerProtectionState? = nil
     ) -> Session {
         let turnStateJSON = turnState.map { "\"\($0.rawValue)\"" } ?? "null"
         let powerStateJSON = powerState.map { "\"\($0.rawValue)\"" } ?? "null"
+        let displayNameJSON = displayName.map { "\"\($0)\"" } ?? "null"
         let json = """
-        {"schema":1,"provider":"claude","session_name":"detach-claude-proj-abcd1234","name":"proj-abcd1234","effective_status":"\(status.rawValue)","meta_status":null,"agent_session_id":\(uuid.map { "\"\($0)\"" } ?? "null"),"project_dir":\(project.map { "\"\($0)\"" } ?? "null"),"created_at":null,"last_checkpoint_at":null,"exit_status":null,"finished_at":null,"agent_turn_state":\(turnStateJSON),"agent_turn_id":"turn","power_protection_state":\(powerStateJSON)}
+        {"schema":1,"provider":"claude","session_name":"detach-claude-proj-abcd1234","name":"proj-abcd1234","display_name":\(displayNameJSON),"effective_status":"\(status.rawValue)","meta_status":null,"agent_session_id":\(uuid.map { "\"\($0)\"" } ?? "null"),"project_dir":\(project.map { "\"\($0)\"" } ?? "null"),"created_at":null,"last_checkpoint_at":null,"exit_status":null,"finished_at":null,"agent_turn_state":\(turnStateJSON),"agent_turn_id":"turn","power_protection_state":\(powerStateJSON)}
         """
         return SessionListParser.parse(json).sessions[0]
     }
@@ -137,6 +139,9 @@ final class SessionPresentationTests: XCTestCase {
     }
 
     func testDisplayTitle() {
+        XCTAssertEqual(
+            make(.running, project: "/Users/me/dev/harness", displayName: "Rev (ai)").displayTitle,
+            "Rev (ai)")
         XCTAssertEqual(make(.running, project: "/Users/me/dev/harness").displayTitle, "harness")
         XCTAssertEqual(make(.corrupt, project: nil).displayTitle, "proj-abcd1234")
     }

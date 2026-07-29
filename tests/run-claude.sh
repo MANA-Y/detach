@@ -221,10 +221,17 @@ done
 [ "$("$SCRIPT" claude __allocate_session_color "$color_cwd")" = "$preferred_color" ]
 rm -rf "$codex_color_sessions" "$claude_color_sessions"
 
+human_label='Rev (ai)'
+human_digest="$(printf '%s' "$human_label" | shasum -a 256 | \
+  awk '{print substr($1, 1, 12)}')"
+human_session="detach-claude-Rev-ai-$human_digest"
+
 marker="$TMP_ROOT/must-not-exist"
 literal_prompt="spaces ; \$(touch $marker) * \"quotes\""
 mkdir -p "$TMP_ROOT/extra-a" "$TMP_ROOT/extra-b"
-"$SCRIPT" claude --name integration --detach -- \
+# The display label stays out of tmux and filesystem identifiers, remains
+# usable for every lifecycle command, and survives resume/recovery.
+"$SCRIPT" claude --name "$human_label" --detach -- \
   --name display-name "$literal_prompt" --add-dir "$TMP_ROOT/extra-a" "$TMP_ROOT/extra-b"
 
 sleep 2
@@ -247,7 +254,10 @@ meta_files=("$DETACH_CLAUDE_STATE_ROOT"/sessions/*/meta.json)
 [ -f "${meta_files[0]}" ]
 meta="${meta_files[0]}"
 session="$("$STATE_HELPER" meta get "$meta" session_name)"
-[ "$session" = "detach-claude-integration" ]
+[ "$session" = "$human_session" ]
+[ "$("$STATE_HELPER" meta get "$meta" display_name)" = "$human_label" ]
+"$SCRIPT" claude status "$human_label" | \
+  grep -F "Name:           $human_label" >/dev/null
 session_dir="$(dirname "$meta")"
 checkpoint="$session_dir/checkpoint"
 
@@ -373,6 +383,8 @@ printf '{"type":"assistant","isSidechain":false,"sessionId":"%s","message":{"rol
 printf '{"type":"assistant","isSidechain":false,"sessionId":"%s","message":{"role":"assistant","stop_reason":"end_turn","id":"message-1"},"uuid":"assistant-chunk-2","timestamp":"2099-01-01T00:03:01.000Z"}\n' \
   "$session_id" >>"$transcript"
 json_line="$("$SCRIPT" list --json | grep -F "\"session_name\":\"$session\"")"
+[ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin display_name)" = \
+  "$human_label" ]
 [ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_state)" = "working" ]
 [ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_id)" = "$session_id" ]
 printf '{"type":"system","subtype":"turn_duration","isSidechain":false,"sessionId":"%s","uuid":"turn-duration-1","timestamp":"2099-01-01T00:03:02.000Z"}\n' \
@@ -445,10 +457,10 @@ while :; do
   sleep 0.1
 done
 printf '%s' "$failed_status_left" | grep -F 'bg=#B91C1C' >/dev/null
-"$SCRIPT" claude logs integration | grep -F 'fake Claude finished' >/dev/null
+"$SCRIPT" claude logs "$human_label" | grep -F 'fake Claude finished' >/dev/null
 
 stopped_run_token="$("$STATE_HELPER" meta get "$meta" run_token)"
-"$SCRIPT" claude stop integration
+"$SCRIPT" claude stop "$human_label"
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
 [ "$("$STATE_HELPER" meta get "$meta" status)" = "stopped" ]
 [ -n "$("$STATE_HELPER" meta get "$meta" stopped_at)" ]
@@ -480,7 +492,7 @@ mkdir -p "$unsafe_claude_outside"
 printf 'outside sentinel\n' >"$unsafe_claude_outside/sentinel"
 rmdir "$CLAUDE_CONFIG_DIR/file-history"
 ln -s "$unsafe_claude_outside" "$CLAUDE_CONFIG_DIR/file-history"
-if "$SCRIPT" claude recover --detach integration; then
+if "$SCRIPT" claude recover --detach "$human_label"; then
   printf 'Claude recover accepted a symlink below its canonical config root\n' >&2
   exit 1
 fi
@@ -501,7 +513,7 @@ mkdir -p "$malicious_claude_stage"
 tar -xf "$good_claude_archive" -C "$malicious_claude_stage"
 mkfifo "$malicious_claude_stage/restore-pipe"
 tar -cf "$checkpoint/claude-session.tar" -C "$malicious_claude_stage" .
-if "$SCRIPT" claude recover --detach integration; then
+if "$SCRIPT" claude recover --detach "$human_label"; then
   printf 'Claude recover accepted a special entry in its checkpoint archive\n' >&2
   exit 1
 fi
@@ -521,8 +533,9 @@ mkdir -p \
 printf 'previous live tree\n' >"$stale_restore_destination.detach.old/sentinel"
 printf 'incomplete new tree\n' >"$stale_restore_destination.detach.tmp/sentinel"
 
-"$SCRIPT" claude recover --detach integration
+"$SCRIPT" claude recover --detach "$human_label"
 sleep 1
+[ "$("$STATE_HELPER" meta get "$meta" display_name)" = "$human_label" ]
 grep -Fx -- '--resume' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 grep -Fx -- "$session_id" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 grep -Fx -- 'display-name' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
@@ -540,15 +553,15 @@ grep -Fx -- "$TMP_ROOT/extra-b" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 [ -s "$CLAUDE_CONFIG_DIR/tasks/session-${session_id:0:8}/task.json" ]
 [ -s "$CLAUDE_CONFIG_DIR/teams/session-${session_id:0:8}/config.json" ]
 
-"$SCRIPT" claude stop integration
+"$SCRIPT" claude stop "$human_label"
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
 
 # Recovery must also recreate the encoded project directory if it disappeared
 # together with the live transcript.
 rm -rf "$CLAUDE_CONFIG_DIR/projects/fake"
-"$SCRIPT" claude recover --detach integration
+"$SCRIPT" claude recover --detach "$human_label"
 sleep 1
-"$SCRIPT" claude stop integration
+"$SCRIPT" claude stop "$human_label"
 
 # Cross-provider resume must route a known Claude UUID back to Claude.
 rm -f \
@@ -565,8 +578,8 @@ sleep 1
 grep -Fx -- '--resume' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 grep -Fx -- "$session_id" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 "$STATE_HELPER" meta matches "$meta" claude "$session_id"
-"$SCRIPT" claude logs integration | grep -F "fake Claude started in $ROOT" >/dev/null
-"$SCRIPT" claude stop integration
+"$SCRIPT" claude logs "$human_label" | grep -F "fake Claude started in $ROOT" >/dev/null
+"$SCRIPT" claude stop "$human_label"
 
 # A stale checkpoint for session A must not block session B when the same
 # harness name is reused for an explicit resume.
@@ -574,17 +587,17 @@ second_id="11111111-2222-4333-8444-555555555555"
 printf '{"type":"user","sessionId":"%s","cwd":"%s","message":{"role":"user","content":"session B"}}\n' \
   "$second_id" "$ROOT" >"$CLAUDE_CONFIG_DIR/projects/fake/$second_id.jsonl"
 export FAKE_CLAUDE_EXPECT_RESTORED=0
-"$SCRIPT" claude resume --name integration --detach "$second_id"
+"$SCRIPT" claude resume --name "$human_label" --detach "$second_id"
 sleep 1
 grep -Fx -- '--resume' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 grep -Fx -- "$second_id" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
-"$SCRIPT" claude stop integration
+"$SCRIPT" claude stop "$human_label"
 
 printf '{truncated task\n' >"$CLAUDE_CONFIG_DIR/tasks/$second_id/task.json"
 export FAKE_CLAUDE_EXPECT_RESTORED=1
-"$SCRIPT" claude recover --detach integration
+"$SCRIPT" claude recover --detach "$human_label"
 sleep 1
-"$SCRIPT" claude stop integration
+"$SCRIPT" claude stop "$human_label"
 export FAKE_CLAUDE_EXPECT_RESTORED=0
 
 mkdir -p "$CLAUDE_CONFIG_DIR/projects/copy"
@@ -598,7 +611,7 @@ fi
 outside="$TMP_ROOT/must-not-overwrite.jsonl"
 printf 'outside sentinel\n' >"$outside"
 "$STATE_HELPER" meta patch "$meta" --string transcript_path "$outside"
-if "$SCRIPT" claude recover --detach integration; then
+if "$SCRIPT" claude recover --detach "$human_label"; then
   printf 'Claude recover accepted an unsafe transcript path\n' >&2
   exit 1
 fi
@@ -607,12 +620,12 @@ grep -Fx 'outside sentinel' "$outside" >/dev/null
 # delete kills a retained pane and removes the session state.
 export FAKE_CLAUDE_SLEEP=1
 export FAKE_CLAUDE_EXIT=0
-"$SCRIPT" claude --name integration --detach -- 'delete coverage'
+"$SCRIPT" claude --name "$human_label" --detach -- 'delete coverage'
 sleep 3
 tmux -L "$SOCKET" has-session -t "=$session"
 pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_pane_id)"
 [ "$(tmux -L "$SOCKET" display-message -p -t "$pane_id" '#{pane_dead}')" = "1" ]
-"$SCRIPT" claude delete --force integration
+"$SCRIPT" claude delete --force "$human_label"
 [ ! -d "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" ]
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
 [ ! -e "$FAKE_GIT_MARKER" ]

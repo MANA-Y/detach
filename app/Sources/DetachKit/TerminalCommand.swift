@@ -10,31 +10,19 @@ public enum SessionNameValidator {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    public static func isValidInput(_ input: String, provider: Provider) -> Bool {
+    public static func isValidInput(_ input: String, provider _: Provider) -> Bool {
         guard let name = normalizedCustomName(input) else { return true }
-        return isValidCustomName(name, provider: provider)
+        return isValidCustomName(name)
     }
 
-    public static func isValidCustomName(_ name: String, provider: Provider) -> Bool {
-        let prefix = "detach-\(provider.rawValue)-"
-        let shortName = name.hasPrefix(prefix)
-            ? String(name.dropFirst(prefix.count))
-            : name
-        let bytes = Array(shortName.utf8)
-        guard (1...48).contains(bytes.count),
-              let first = bytes.first,
-              isASCIILetterOrDigit(first) else {
+    public static func isValidCustomName(_ name: String, provider _: Provider? = nil) -> Bool {
+        guard (1...100).contains(name.utf8.count),
+              name.rangeOfCharacter(from: .whitespacesAndNewlines.inverted) != nil else {
             return false
         }
-        return bytes.dropFirst().allSatisfy {
-            isASCIILetterOrDigit($0) || $0 == 0x5F || $0 == 0x2D
+        return name.unicodeScalars.allSatisfy {
+            !CharacterSet.controlCharacters.contains($0)
         }
-    }
-
-    private static func isASCIILetterOrDigit(_ byte: UInt8) -> Bool {
-        (0x30...0x39).contains(byte)
-            || (0x41...0x5A).contains(byte)
-            || (0x61...0x7A).contains(byte)
     }
 }
 

@@ -252,7 +252,7 @@ struct SessionDetailView: View {
         if let sessionColor = session.sessionColor {
             let emphasis = SessionIdentity.emphasis(for: session.effectiveStatus)
             HStack(spacing: 0) {
-                Text(verbatim: "● \(session.name)")
+                Text(verbatim: "● \(session.displayTitle)")
                     .font(.system(size: 10, design: .monospaced))
                     .lineLimit(1)
                 Spacer(minLength: 0)

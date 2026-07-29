@@ -7,9 +7,15 @@ final class NewSessionSheetTests: XCTestCase {
         _ = NewSessionSheet(detachPath: "/tmp/detach").body
     }
 
-    func testBuildsInlineValidationForRejectedCLIName() {
+    func testBuildsFormWithHumanReadableName() {
         _ = NewSessionSheet(
             detachPath: "/tmp/detach",
             initialName: "Rev (ai)").body
+    }
+
+    func testBuildsInlineValidationForOversizedName() {
+        _ = NewSessionSheet(
+            detachPath: "/tmp/detach",
+            initialName: String(repeating: "a", count: 101)).body
     }
 }

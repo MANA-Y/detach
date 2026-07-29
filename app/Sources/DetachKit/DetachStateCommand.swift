@@ -274,6 +274,7 @@ public enum DetachStateCommand {
             "provider": provider.rawValue,
             "session_name": sessionName,
             "name": name,
+            "display_name": NSNull(),
             "session_color": NSNull(),
             "effective_status": arguments[2],
             "meta_status": NSNull(),
@@ -312,6 +313,8 @@ public enum DetachStateCommand {
             let value = arguments[index + 1]
 
             switch option {
+            case "--display-name":
+                object["display_name"] = value.isEmpty ? NSNull() : value
             case "--meta-status":
                 object["meta_status"] = optionalString(value)
             case "--agent-session-id":

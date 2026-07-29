@@ -374,14 +374,22 @@ tmux -L "$CWD_SOCKET" kill-server >/dev/null 2>&1 || true
 # clean Mac) either while resolving the project root or while checkpointing.
 marker_repository="$TMP_ROOT/marker-repository"
 marker_repository_nested="$marker_repository/sources/nested"
+human_label='Rev (ai)'
+human_digest="$(printf '%s' "$human_label" | shasum -a 256 | \
+  awk '{print substr($1, 1, 12)}')"
 mkdir -p "$marker_repository/.git" "$marker_repository_nested"
 (cd "$marker_repository_nested" && \
   FAKE_CODEX_INIT_DELAY=0 FAKE_CODEX_SLEEP=20 FAKE_CODEX_EXIT=0 \
-  "$SCRIPT" codex --name marker-repository --detach -- 'marker repository coverage')
-marker_session="detach-codex-marker-repository"
+  "$SCRIPT" codex --name "$human_label" --detach -- 'marker repository coverage')
+marker_session="detach-codex-Rev-ai-$human_digest"
 marker_meta="$DETACH_CODEX_STATE_ROOT/sessions/$marker_session/meta.json"
 marker_repository_real="$(cd -P "$marker_repository" && pwd)"
 [ "$("$STATE_HELPER" meta get "$marker_meta" project_dir)" = "$marker_repository_real" ]
+[ "$("$STATE_HELPER" meta get "$marker_meta" display_name)" = "$human_label" ]
+marker_json="$(run_codex list --json | grep -F "\"session_name\":\"$marker_session\"")"
+[ "$(printf '%s' "$marker_json" | "$STATE_HELPER" meta get /dev/stdin display_name)" = \
+  "$human_label" ]
+run_codex status "$human_label" | grep -F "Name:           $human_label" >/dev/null
 marker_checkpoint="$DETACH_CODEX_STATE_ROOT/sessions/$marker_session/checkpoint/worktree-status.txt"
 attempts=0
 while [ ! -f "$marker_checkpoint" ] && [ "$attempts" -lt 30 ]; do
@@ -391,8 +399,8 @@ done
 [ -f "$marker_checkpoint" ]
 grep -Fx "repository-root: $marker_repository_real" "$marker_checkpoint" >/dev/null
 [ ! -e "$FAKE_GIT_MARKER" ]
-run_codex stop marker-repository
-run_codex delete --force marker-repository
+run_codex stop "$human_label"
+run_codex delete --force "$human_label"
 
 mkdir -p "$DETACH_CONFIG_ROOT"
 printf '%s\n' '# Detach settings' 'CUSTOM_SETTING=kept' 'LEGACY_SETTING=kept' \

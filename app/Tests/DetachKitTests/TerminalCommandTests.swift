@@ -26,8 +26,11 @@ final class TerminalCommandTests: XCTestCase {
         for name in [
             "a",
             "Rev-ai",
-            "rev_ai-2",
-            "a" + String(repeating: "b", count: 47),
+            "Rev (ai)",
+            "release/QA",
+            "ревизия",
+            "🚀 review",
+            String(repeating: "a", count: 100),
             "detach-claude-Rev-ai",
         ] {
             XCTAssertTrue(
@@ -37,12 +40,10 @@ final class TerminalCommandTests: XCTestCase {
 
         for name in [
             "",
-            "Rev (ai)",
-            "-revision",
-            "_revision",
-            "ревизия",
-            "a" + String(repeating: "b", count: 48),
-            "detach-claude-",
+            " \t",
+            "line\nbreak",
+            String(repeating: "a", count: 101),
+            String(repeating: "🚀", count: 26),
         ] {
             XCTAssertFalse(
                 SessionNameValidator.isValidCustomName(name, provider: .claude),
@@ -51,7 +52,8 @@ final class TerminalCommandTests: XCTestCase {
 
         XCTAssertTrue(SessionNameValidator.isValidInput(" \t", provider: .claude))
         XCTAssertTrue(SessionNameValidator.isValidInput("  Rev-ai  ", provider: .claude))
-        XCTAssertFalse(SessionNameValidator.isValidInput("  Rev (ai)  ", provider: .claude))
+        XCTAssertTrue(SessionNameValidator.isValidInput("  Rev (ai)  ", provider: .claude))
+        XCTAssertFalse(SessionNameValidator.isValidInput("line\nbreak", provider: .claude))
     }
 
     func testAttach() {
@@ -76,9 +78,9 @@ final class TerminalCommandTests: XCTestCase {
     func testStartComposesAllParts() {
         XCTAssertEqual(
             TerminalCommand.start(detachPath: detach, provider: .claude,
-                                  projectDir: "/Users/me/dev/it's", name: "migration",
+                                  projectDir: "/Users/me/dev/it's", name: "Rev (ai)",
                                   prompt: "fix \"all\" tests"),
-            "cd '/Users/me/dev/it'\\''s' && exec '/Users/me/.local/bin/detach' claude --name 'migration' -- 'fix \"all\" tests'")
+            "cd '/Users/me/dev/it'\\''s' && exec '/Users/me/.local/bin/detach' claude --name 'Rev (ai)' -- 'fix \"all\" tests'")
     }
 
     func testStartOmitsEmptyParts() {

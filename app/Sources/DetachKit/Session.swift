@@ -79,6 +79,7 @@ public struct Session: Identifiable, Equatable, Sendable, Codable {
     public var provider: Provider
     public var sessionName: String
     public var name: String
+    public var displayName: String? = nil
     public var effectiveStatus: EffectiveStatus
     public var metaStatus: String?
     public var agentSessionId: String?
@@ -110,6 +111,7 @@ public struct Session: Identifiable, Equatable, Sendable, Codable {
     enum CodingKeys: String, CodingKey {
         case schema, provider, name, model
         case sessionName = "session_name"
+        case displayName = "display_name"
         case effectiveStatus = "effective_status"
         case metaStatus = "meta_status"
         case agentSessionId = "agent_session_id"

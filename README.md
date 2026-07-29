@@ -348,7 +348,7 @@ real-power smoke test and a supervised physical lid test on Apple Silicon.
 # Start
 detach codex
 detach codex --detach -- "run the migration"
-detach claude --name review -- "review the repository"
+detach claude --name "Rev (ai)" -- "review the repository"
 
 # Monitor and return
 detach list
@@ -384,8 +384,15 @@ detach reconcile --dry-run --json
 | `detach repair` | Reinstall the pristine immutable CLI payload from Detach.app. |
 | `detach uninstall [--keep-state\|--purge-state]` | Remove Detach components and choose whether checkpoints stay. |
 
-Name a session when the project-derived default is not memorable. Press
-`Ctrl-b d` to detach a terminal client without closing its window.
+Name a session when the project-derived default is not memorable. In the app,
+press **+** and fill the optional **Name** field. In the CLI, pass
+`--name "Rev (ai)"`; spaces, parentheses, Cyrillic, emoji, and other printable
+text are accepted up to 100 UTF-8 bytes. Detach stores that label separately
+and derives a safe internal tmux/state identifier. The `SESSION` column and
+`session_name` JSON field expose that identifier; `NAME` and `display_name`
+carry the human label. Existing safe names such as `review` keep their previous
+`detach-<provider>-review` identifiers. Press `Ctrl-b d` to detach a terminal
+client without closing its window.
 
 The project-derived name is currently one default slot per provider and
 project. Starting again while that slot is live refuses to replace it; use

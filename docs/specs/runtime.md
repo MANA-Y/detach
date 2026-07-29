@@ -63,8 +63,10 @@ logical bytes separately for sparse files, never follows symlinks, excludes
 provider storage, and treats an incomplete scan as ineligible for cleanup. Do
 not reintroduce ad-hoc JSON text editing or a jq runtime requirement.
 
-Per-session `meta.json` uses schema 1 and a `run_token`. A stale worker or
-checkpoint loop must not overwrite metadata belonging to a replacement run.
+Per-session `meta.json` uses schema 1, an internal `session_name`, an optional
+human-facing `display_name`, and a `run_token`. Older schema-1 documents without
+`display_name` remain valid. A stale worker or checkpoint loop must not
+overwrite metadata belonging to a replacement run.
 New runs also publish `health_schema=1`, the exact worker/provider PIDs, worker
 heartbeat time, and checkpoint epoch. Health is a typed state machine over
 managed tmux/pane state, the matching run token, PID ownership and ancestry,
@@ -91,10 +93,22 @@ must leave every failed session in place and continue reporting it explicitly.
 
 ### Session lifecycle and tmux
 
-`start` takes one project lock shared by both providers, creates a session named
-`detach-<provider>-<slug>-<project-hash>`, enables `remain-on-exit`, and launches
-`__worker`. The shared tmux daemon is anchored in persistent install state, not
-the first project directory. It is addressed only through the private absolute
+`start` takes one project lock shared by both providers, creates a safe internal
+session identifier, enables `remain-on-exit`, and launches `__worker`. Without
+`--name`, the identifier is
+`detach-<provider>-<project-slug>-<project-hash>`. An explicit human-readable
+name is 1–100 UTF-8 bytes of printable text. Legacy-safe names retain the exact
+`detach-<provider>-<name>` identifier; all other names derive a deterministic
+ASCII slug plus a 12-hex content hash. A valid full
+`detach-<provider>-<safe-name>` is reserved as an explicit internal identifier
+for backward compatibility. User input never becomes a tmux name or state path
+unless it already satisfies that legacy-safe grammar.
+
+The optional display name is persisted separately, emitted through typed state,
+preserved across resume/recovery, and accepted by later lifecycle commands,
+which deterministically resolve it back to the same internal identifier. The
+shared tmux daemon is anchored in persistent install state, not the first
+project directory. It is addressed only through the private absolute
 `$DETACH_INSTALL_STATE_ROOT/tmux/tmux.sock`, never ambient `TMUX_TMPDIR`.
 Install migration checks both the older default socket and the historical
 `-L dev.tsarev.detach` socket before switching payloads. Each worker starts
@@ -166,7 +180,7 @@ live only on the private Detach tmux server. `detach config tmux-mouse
 [on|off]` (env override `DETACH_TMUX_MOUSE`) toggles the session `mouse`
 option independently of the visual theme toggle.
 
-`list --json` emits JSONL schema 1 and includes the optional
+`list --json` emits JSONL schema 1 and includes the optional `display_name`,
 `power_protection_state`, `agent_turn_state`, opaque `agent_turn_id`, runtime
 PIDs, health reason/actions, reconcile action, freshness, ownership proof, and
 cleanup eligibility. Keep the emitter and Swift `Session` decoder synchronized.

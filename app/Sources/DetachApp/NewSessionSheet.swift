@@ -60,11 +60,11 @@ struct NewSessionSheet: View {
                 GridRow {
                     Text(L10n.string("Name"))
                     VStack(alignment: .leading, spacing: 4) {
-                        TextField(L10n.string("optional, for example migration"), text: $name)
+                        TextField(L10n.string("optional, for example Rev (ai)"), text: $name)
                             .accessibilityIdentifier("new-session-name")
                         if !isNameValid {
                             Text(L10n.string(
-                                "Use 1–48 Latin letters, digits, underscores, or hyphens; start with a letter or digit."))
+                                "Use printable text up to 100 UTF-8 bytes."))
                                 .appFont(.caption)
                                 .foregroundStyle(.red)
                                 .accessibilityIdentifier("new-session-name-validation")

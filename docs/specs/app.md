@@ -142,9 +142,11 @@ Automation entitlement.
 Distribution bootstrap is allowed only from `/Applications`, not a DMG or App
 Translocation path. Terminal actions use a private self-deleting `.command`
 file and `NSWorkspace`; they do not use Apple Events. Before opening Terminal,
-the new-session sheet validates an optional custom name against the CLI grammar
-(1–48 ASCII letters or digits, with underscores and hyphens allowed after the
-first character), blocks invalid launches, and explains the constraint inline.
+the new-session sheet accepts an optional human-readable display name of up to
+100 UTF-8 bytes, rejects control characters, blocks invalid launches, and
+explains the constraint inline. It passes the label as one shell-quoted
+`--name` argument. The app renders typed `display_name` as the primary session
+title while retaining the project/internal-name fallback for older records.
 Notifications are opt-in and driven by one app-level poller with baseline and
 transition deduplication.
 

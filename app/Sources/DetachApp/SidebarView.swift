@@ -101,8 +101,11 @@ struct SessionRow: View {
     }
 
     private var isCustomName: Bool {
+        guard session.displayName == nil else { return false }
         // Default names end with the 8-hex project-dir digest; custom ones don't.
-        session.name.range(of: "-[0-9a-f]{8}$", options: .regularExpression) == nil
+        return session.name.range(
+            of: "-[0-9a-f]{8}$",
+            options: .regularExpression) == nil
     }
 
     private var subtitle: String {

@@ -33,6 +33,7 @@ final class DetachStateCommandTests: XCTestCase {
     func testEmitSessionProducesTheCompletePublicSchemaAndDerivesName() throws {
         let output = try DetachStateCommand.run(arguments: [
             "emit", "session", "claude", "detach-claude-my-project-abcd", "running",
+            "--display-name", "Rev (ai)",
             "--meta-status", "running",
             "--agent-session-id", "session-id",
             "--project-dir", "/tmp/project",
@@ -52,7 +53,7 @@ final class DetachStateCommandTests: XCTestCase {
             JSONSerialization.jsonObject(with: output) as? [String: Any])
 
         XCTAssertEqual(Set(object.keys), Set([
-            "schema", "provider", "session_name", "name", "session_color",
+            "schema", "provider", "session_name", "name", "display_name", "session_color",
             "effective_status", "meta_status", "agent_session_id", "project_dir",
             "created_at", "last_checkpoint_at", "exit_status", "finished_at", "model",
             "context_used_tokens", "context_window", "agent_turn_state", "agent_turn_id",
@@ -65,6 +66,7 @@ final class DetachStateCommandTests: XCTestCase {
         XCTAssertEqual(object["provider"] as? String, "claude")
         XCTAssertEqual(object["session_name"] as? String, "detach-claude-my-project-abcd")
         XCTAssertEqual(object["name"] as? String, "my-project-abcd")
+        XCTAssertEqual(object["display_name"] as? String, "Rev (ai)")
         XCTAssertEqual(object["effective_status"] as? String, "running")
         XCTAssertEqual(object["exit_status"] as? Int, 7)
         XCTAssertTrue(object["context_used_tokens"] is NSNull)
@@ -83,7 +85,7 @@ final class DetachStateCommandTests: XCTestCase {
 
         XCTAssertEqual(object["name"] as? String, "legacy-name")
         for key in [
-            "session_color", "meta_status", "agent_session_id", "project_dir",
+            "display_name", "session_color", "meta_status", "agent_session_id", "project_dir",
             "created_at", "last_checkpoint_at", "exit_status", "finished_at", "model",
             "context_used_tokens", "context_window", "agent_turn_state", "agent_turn_id",
             "power_protection_state", "health_reason", "health_actions",
@@ -92,6 +94,19 @@ final class DetachStateCommandTests: XCTestCase {
             "heartbeat_fresh", "checkpoint_fresh",
         ] {
             XCTAssertTrue(object[key] is NSNull, "expected \(key) to be null")
+        }
+    }
+
+    func testEmitSessionPreservesDisplayNamePlaceholderCharacters() throws {
+        for displayName in ["-", "?"] {
+            let output = try DetachStateCommand.run(arguments: [
+                "emit", "session", "codex", "detach-codex-human", "running",
+                "--display-name", displayName,
+            ])
+            let object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: output) as? [String: Any])
+
+            XCTAssertEqual(object["display_name"] as? String, displayName)
         }
     }
 

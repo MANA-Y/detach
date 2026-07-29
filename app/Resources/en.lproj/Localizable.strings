@@ -127,7 +127,7 @@
 "Move Detach to Applications" = "Move Detach to Applications";
 "Move Detach.app to Applications and open the installed copy" = "Move Detach.app to Applications and open the installed copy";
 "Name" = "Name";
-"Use 1–48 Latin letters, digits, underscores, or hyphens; start with a letter or digit." = "Use 1–48 Latin letters, digits, underscores, or hyphens; start with a letter or digit.";
+"Use printable text up to 100 UTF-8 bytes." = "Use printable text up to 100 UTF-8 bytes.";
 "Neither Codex CLI nor Claude CLI was found" = "Neither Codex CLI nor Claude CLI was found";
 "New session" = "New session";
 "No installed terminal capable of opening .command files was found." = "No installed terminal capable of opening .command files was found.";
@@ -225,7 +225,7 @@
 "macOS has not registered the background check yet" = "macOS has not registered the background check yet";
 "macOS is waiting for permission to run in the background" = "macOS is waiting for permission to run in the background";
 "not selected" = "not selected";
-"optional, for example migration" = "optional, for example migration";
+"optional, for example Rev (ai)" = "optional, for example Rev (ai)";
 "sqlite3" = "sqlite3";
 "tar" = "tar";
 "the app isn't running from /Applications" = "the app isn't running from /Applications";
