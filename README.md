@@ -395,14 +395,15 @@ carry the human label. Existing safe names such as `review` keep their previous
 `detach-<provider>-review` identifiers. Press `Ctrl-b d` to detach a terminal
 client without closing its window.
 
-The project-derived name is currently one default slot per provider and
-project. Starting again while that slot is live refuses to replace it; use
-**Attach** or stop it first. Starting again after it finishes creates a fresh
-provider conversation in the same slot and replaces that slot's Detach-owned
-checkpoint and retained-output history. Provider conversation storage remains
-untouched. Use a distinct `--name` when the older Detach session and its
-recovery checkpoint must remain separately visible. This single-slot
-limitation is tracked for removal.
+Project-derived sessions keep a separate history for every fresh run. The first
+uses the familiar project-derived identifier; later runs receive a short,
+monotonically allocated suffix. Starting again while a run is live refuses a
+second writer: attach to it, or stop it before starting another conversation.
+After a run finishes, stops, or becomes safely orphaned, a default start creates
+a new history without replacing the older metadata, logs, or checkpoints.
+Commands without a name target the live or newest history. Use the internal
+`session_name` shown by `detach list` to Resume, Recover, inspect, or Delete an
+older one. Ordinary typed storage cleanup may also remove eligible histories.
 
 ## Terminal details that make parallel work readable
 

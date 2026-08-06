@@ -670,6 +670,53 @@ done
 "$SCRIPT" claude delete --force "$human_label"
 [ ! -d "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" ]
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
+
+# Claude uses the same default history-series contract as Codex: a completed
+# run remains intact while the next fresh conversation receives a new slot.
+default_slug="$(basename "$ROOT" | LC_ALL=C tr -cs 'A-Za-z0-9_-' '-' | \
+  sed 's/^-*//; s/-*$//')"
+[ -n "$default_slug" ] || default_slug=project
+default_slug="${default_slug:0:24}"
+default_digest="$(printf '%s' "$ROOT" | shasum -a 256 | awk '{print substr($1, 1, 8)}')"
+default_session="detach-claude-$default_slug-$default_digest"
+default_meta="$DETACH_CLAUDE_STATE_ROOT/sessions/$default_session/meta.json"
+export FAKE_CLAUDE_SLEEP=1
+export FAKE_CLAUDE_EXIT=0
+reset_fake_claude_ready
+first_default_output="$("$SCRIPT" claude --detach -- 'first default history')"
+wait_for_fake_claude_ready
+printf '%s\n' "$first_default_output" | grep -F "Started $default_session " >/dev/null
+default_pane="$(tmux -L "$SOCKET" show-options -qv -t "=$default_session:" @detach_pane_id)"
+attempts=0
+while [ "$(tmux -L "$SOCKET" display-message -p -t "$default_pane" '#{pane_dead}')" != 1 ]; do
+  attempts=$((attempts + 1))
+  [ "$attempts" -lt 100 ] || {
+    printf 'first default Claude history did not finish\n' >&2
+    exit 1
+  }
+  sleep 0.05
+done
+[ -s "$DETACH_CLAUDE_STATE_ROOT/sessions/$default_session/checkpoint/claude-session.tar" ]
+first_default_token="$("$STATE_HELPER" meta get "$default_meta" run_token)"
+first_default_checkpoint_hash="$(shasum -a 256 \
+  "$DETACH_CLAUDE_STATE_ROOT/sessions/$default_session/checkpoint/claude-session.tar" | awk '{print $1}')"
+
+export FAKE_CLAUDE_SLEEP=20
+reset_fake_claude_ready
+second_default_output="$("$SCRIPT" claude --detach -- 'second default history')"
+wait_for_fake_claude_ready
+second_default_session="$(printf '%s\n' "$second_default_output" | \
+  awk '/^Started / { print $2; exit }')"
+[ "$second_default_session" = "$default_session-r000000000001" ]
+[ "$(tmux -L "$SOCKET" show-options -qv -t "=$second_default_session:" \
+  @detach_default_session_base)" = "$default_session" ]
+[ "$("$STATE_HELPER" meta get "$default_meta" run_token)" = "$first_default_token" ]
+[ "$(shasum -a 256 \
+  "$DETACH_CLAUDE_STATE_ROOT/sessions/$default_session/checkpoint/claude-session.tar" | awk '{print $1}')" = \
+  "$first_default_checkpoint_hash" ]
+"$SCRIPT" claude stop
+"$SCRIPT" claude delete --force "$default_session"
+"$SCRIPT" claude delete --force "$second_default_session"
 [ ! -e "$FAKE_GIT_MARKER" ]
 
 printf 'Claude detach integration tests passed\n'

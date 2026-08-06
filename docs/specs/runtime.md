@@ -96,7 +96,9 @@ must leave every failed session in place and continue reporting it explicitly.
 `start` takes one project lock shared by both providers, creates a safe internal
 session identifier, enables `remain-on-exit`, and launches `__worker`. Without
 `--name`, the identifier is
-`detach-<provider>-<project-slug>-<project-hash>`. An explicit human-readable
+`detach-<provider>-<project-slug>-<project-hash>` for the first history;
+successors use a monotonic `-r<12-hex>` suffix and persist the unsuffixed
+`default_session_base`. An explicit human-readable
 name is 1–100 UTF-8 bytes of printable text. Legacy-safe names retain the exact
 `detach-<provider>-<name>` identifier; all other names derive a deterministic
 ASCII slug plus a 12-hex content hash. A valid full
@@ -115,15 +117,12 @@ Install migration checks both the older default socket and the historical
 from stable install state and then enters the canonical project beneath its
 cleanup trap.
 
-The derived name is currently one default slot for a provider/project pair.
-Start refuses to replace a live slot. Once its retained pane is no longer live,
-a normal start reuses the same session directory for a fresh provider
-conversation and clears the previous run's Detach checkpoint artifacts and
-checkpoint log; it does not delete provider-owned conversation storage. An
-explicit `--name` creates another slot, but the cross-provider project lock
-still permits only one live managed writer in a canonical worktree. This is a
-known retention limitation, not authorization to erase other named sessions or
-to weaken storage-cleanup eligibility checks.
+Default starts form a provider/project history series. A fresh start refuses a
+live member or second writer; otherwise it allocates a successor without
+reusing saved state. No-`NAME` commands select the live member, then the highest
+suffix. Older `session_name` values stay addressable, and their metadata, logs,
+and checkpoints remain until Delete or typed storage cleanup. Explicit names
+stay deterministic and obey the same project lock and cleanup policy.
 
 The worker starts checkpoint and power-status loops, then runs the provider only
 through:
