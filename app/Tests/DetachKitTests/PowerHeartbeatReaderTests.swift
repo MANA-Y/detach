@@ -16,6 +16,8 @@ final class PowerHeartbeatReaderTests: XCTestCase {
         XCTAssertTrue(snapshot.isFresh)
         XCTAssertTrue(snapshot.healthy)
         XCTAssertEqual(snapshot.effectivePowerState, .protected)
+        XCTAssertEqual(snapshot.effectiveThermalState, .nominal)
+        XCTAssertFalse(snapshot.isThermallyLimited)
         XCTAssertEqual(snapshot.age(relativeTo: referenceDate), 30)
     }
 
@@ -114,6 +116,34 @@ final class PowerHeartbeatReaderTests: XCTestCase {
         XCTAssertEqual(snapshot.effectivePowerState, .unknown)
     }
 
+    func testFreshHeartbeatExposesThermalSafetyEvenWhenPowerIsUnavailable() throws {
+        let url = try write(document(
+            powerState: "unavailable",
+            checkedAt: "2026-07-15T11:59:59Z",
+            thermalState: "critical",
+            thermalSafetyActive: true))
+        defer { remove(url) }
+
+        let snapshot = PowerHeartbeatReader(statusURL: url)
+            .read(now: referenceDate)
+
+        XCTAssertEqual(snapshot.effectivePowerState, .unavailable)
+        XCTAssertEqual(snapshot.effectiveThermalState, .critical)
+        XCTAssertTrue(snapshot.isThermallyLimited)
+    }
+
+    func testLegacyHeartbeatDefaultsThermalFieldsSafely() throws {
+        let url = try write(
+            #"{"state":"ok","power_state":"allowed","checked_at":"2026-07-15T11:59:59Z"}"#)
+        defer { remove(url) }
+
+        let snapshot = PowerHeartbeatReader(statusURL: url)
+            .read(now: referenceDate)
+
+        XCTAssertEqual(snapshot.effectiveThermalState, .unknown)
+        XCTAssertFalse(snapshot.isThermallyLimited)
+    }
+
     func testDefaultStatusURLPrecedence() {
         let power = PowerHeartbeatReader.defaultStatusURL(
             environment: [
@@ -148,11 +178,14 @@ final class PowerHeartbeatReaderTests: XCTestCase {
     private func document(
         state: String = "ok",
         powerState: String = "protected",
-        checkedAt: String
+        checkedAt: String,
+        thermalState: String = "nominal",
+        thermalSafetyActive: Bool = false
     ) -> String {
         """
         {"schema":1,"state":"\(state)","power_state":"\(powerState)",\
-        "checked_at":"\(checkedAt)","exit_status":0}
+        "checked_at":"\(checkedAt)","thermal_state":"\(thermalState)",\
+        "thermal_safety_active":\(thermalSafetyActive),"exit_status":0}
         """
     }
 

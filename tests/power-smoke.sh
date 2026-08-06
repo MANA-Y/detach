@@ -33,17 +33,22 @@ parse_sleep_disabled() {
 classify_baseline() {
   local state="$1" lease_count="$2" assertion_active="$3"
   local closed_lid_protection_active="$4" helper_reachable="$5"
-  local transition_in_progress="$6" low_battery="$7" sleep_setting="$8"
+  local transition_in_progress="$6" low_battery="$7" thermal_state="$8"
+  local thermal_safety_active="$9" sleep_setting="${10}"
 
   case "$lease_count" in
     ''|*[!0-9]*) return 1 ;;
   esac
-  case "$assertion_active:$closed_lid_protection_active:$helper_reachable:$transition_in_progress:$low_battery" in
-    true:true:true:false:false|false:false:true:false:false) ;;
+  case "$assertion_active:$closed_lid_protection_active:$helper_reachable:$transition_in_progress:$low_battery:$thermal_safety_active" in
+    true:true:true:false:false:false|false:false:true:false:false:false) ;;
     *) return 1 ;;
   esac
   case "$sleep_setting" in
     0|1) ;;
+    *) return 1 ;;
+  esac
+  case "$thermal_state" in
+    nominal|fair) ;;
     *) return 1 ;;
   esac
 
@@ -81,7 +86,7 @@ fi
 # and exit before checking the signed app, querying pmset, connecting to XPC,
 # or changing power state.
 if [ "${DETACH_TEST_BASELINE_CLASSIFY_ONLY:-0}" = "1" ]; then
-  [ "$#" = 8 ] || exit 2
+  [ "$#" = 10 ] || exit 2
   classify_baseline "$@"
   exit
 fi
@@ -112,6 +117,8 @@ capture_power_report() {
   REPORT_HELPER_REACHABLE="$(report_value "$report" helper_reachable)" || return 1
   REPORT_TRANSITION_IN_PROGRESS="$(report_value "$report" transition_in_progress)" || return 1
   REPORT_LOW_BATTERY="$(report_value "$report" low_battery)" || return 1
+  REPORT_THERMAL_STATE="$(report_value "$report" thermal_state)" || return 1
+  REPORT_THERMAL_SAFETY_ACTIVE="$(report_value "$report" thermal_safety_active)" || return 1
 }
 
 report_matches() {
@@ -124,6 +131,8 @@ report_matches() {
     [ "$REPORT_HELPER_REACHABLE" = true ] && \
     [ "$REPORT_TRANSITION_IN_PROGRESS" = false ] && \
     [ "$REPORT_LOW_BATTERY" = false ] && \
+    { [ "$REPORT_THERMAL_STATE" = nominal ] || [ "$REPORT_THERMAL_STATE" = fair ]; } && \
+    [ "$REPORT_THERMAL_SAFETY_ACTIVE" = false ] && \
     [ "$(sleep_disabled)" = "$expected_sleep" ]
 }
 
@@ -167,6 +176,7 @@ BASELINE_KIND="$(classify_baseline \
   "$REPORT_STATE" "$REPORT_LEASE_COUNT" "$REPORT_ASSERTION_ACTIVE" \
   "$REPORT_CLOSED_LID_PROTECTION_ACTIVE" "$REPORT_HELPER_REACHABLE" \
   "$REPORT_TRANSITION_IN_PROGRESS" "$REPORT_LOW_BATTERY" \
+  "$REPORT_THERMAL_STATE" "$REPORT_THERMAL_SAFETY_ACTIVE" \
   "$INITIAL_SLEEP_DISABLED")" || {
   printf 'Refusing real-power smoke: the existing power state is not a safe Detach-owned baseline.\n' >&2
   exit 1

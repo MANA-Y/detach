@@ -63,6 +63,18 @@ acquisition fails closed at low battery. A borrowed external setting cannot be
 turned off, so status must never falsely report the low-battery safe state while
 that setting remains active.
 
+Thermal safety uses only public `ProcessInfo.thermalState`. `serious` and
+`critical` latch safety immediately: the helper restores Detach-owned
+closed-lid sleep, the wrapper releases its IOKit assertion without waiting for
+a checkpoint, and initial acquisition is refused. `nominal` and `fair` must
+remain stable for 30 seconds before protection can return; the helper persists
+this cooldown across restart, and an unknown reading cannot clear it. The raw
+`nominal|fair|serious|critical|unknown` value and latch cross helper status, CLI
+JSON, watchdog, tmux, and app. Low battery wins the combined reason when both
+guards are active, while the thermal fields remain visible. Borrowed external
+`disablesleep` is never disabled, so neither safety state may falsely claim the
+Mac can sleep while it remains active.
+
 While the wrapper holds a confirmed protected run, it observes the documented
 IOPMrootDomain clamshell notification. Each physical open-to-closed transition
 requests `/usr/bin/pmset displaysleepnow` as the unprivileged console user so

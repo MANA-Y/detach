@@ -89,6 +89,8 @@ struct WatchdogHeartbeat: Codable {
     let checkedAt: String
     let state: String
     let powerState: String?
+    let thermalState: String?
+    let thermalSafetyActive: Bool?
     let exitStatus: Int32
 
     enum CodingKeys: String, CodingKey {
@@ -96,6 +98,8 @@ struct WatchdogHeartbeat: Codable {
         case checkedAt = "checked_at"
         case state
         case powerState = "power_state"
+        case thermalState = "thermal_state"
+        case thermalSafetyActive = "thermal_safety_active"
         case exitStatus = "exit_status"
     }
 }
@@ -103,6 +107,8 @@ struct WatchdogHeartbeat: Codable {
 func recordHeartbeat(
     state: String,
     powerState: String? = nil,
+    thermalState: String? = nil,
+    thermalSafetyActive: Bool? = nil,
     exitStatus: Int32
 ) {
     let heartbeat = WatchdogHeartbeat(
@@ -110,6 +116,8 @@ func recordHeartbeat(
         checkedAt: ISO8601DateFormatter().string(from: Date()),
         state: state,
         powerState: powerState,
+        thermalState: thermalState,
+        thermalSafetyActive: thermalSafetyActive,
         exitStatus: exitStatus)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
@@ -165,21 +173,39 @@ do {
         exit(process.terminationStatus)
     }
 
-    struct PowerStatus: Decodable { let state: String }
+    struct PowerStatus: Decodable {
+        let state: String
+        let thermalState: String
+        let thermalSafetyActive: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case state
+            case thermalState = "thermal_state"
+            case thermalSafetyActive = "thermal_safety_active"
+        }
+    }
     let knownStates: Set<String> = [
-        "allowed", "transitioning", "protected", "low_battery",
+        "allowed", "transitioning", "protected", "low_battery", "temperature",
         "unavailable", "unknown",
+    ]
+    let knownThermalStates: Set<String> = [
+        "nominal", "fair", "serious", "critical", "unknown",
     ]
     guard let powerStatus = try? JSONDecoder().decode(
             PowerStatus.self, from: statusData),
-          knownStates.contains(powerStatus.state) else {
+          knownStates.contains(powerStatus.state),
+          knownThermalStates.contains(powerStatus.thermalState) else {
         let message = "DetachWatchdog: detach returned invalid power status JSON\n"
         try log.write(contentsOf: Data(message.utf8))
         recordHeartbeat(state: "invalid_status", exitStatus: 1)
         exit(1)
     }
     recordHeartbeat(
-        state: "ok", powerState: powerStatus.state, exitStatus: 0)
+        state: "ok",
+        powerState: powerStatus.state,
+        thermalState: powerStatus.thermalState,
+        thermalSafetyActive: powerStatus.thermalSafetyActive,
+        exitStatus: 0)
     exit(0)
 } catch {
     recordHeartbeat(state: "helper_failed", exitStatus: 1)

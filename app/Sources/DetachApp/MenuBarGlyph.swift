@@ -50,7 +50,7 @@ enum MenuBarGlyph {
             // Shape stays "dimmed = can sleep"; the colored dot only reports
             // running sessions, not protection.
             if let sessionColor { drawDot(fill: sessionColor) }
-        case .lowBattery, .attention:
+        case .lowBattery, .temperature, .attention:
             // The badge owns the corner; the presentation suppresses the
             // session dot for these states so the warning stays unambiguous.
             drawPrompt(ink: ink, alpha: 1, outline: false)

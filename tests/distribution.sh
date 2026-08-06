@@ -121,19 +121,19 @@ case "${1:-} ${2:-}" in
   'status --json')
     case "${FAKE_POWER_STATUS:-healthy}" in
       healthy)
-        printf '%s\n' '{"schema":1,"state":"allowed","lease_count":0,"assertion_active":false,"closed_lid_protection_active":false,"helper_reachable":true,"transition_in_progress":false,"low_battery":false}'
+        printf '%s\n' '{"schema":1,"state":"allowed","lease_count":0,"assertion_active":false,"closed_lid_protection_active":false,"helper_reachable":true,"transition_in_progress":false,"low_battery":false,"thermal_state":"nominal","thermal_safety_active":false}'
         ;;
       unreachable)
-        printf '%s\n' '{"schema":1,"state":"allowed","lease_count":0,"assertion_active":false,"closed_lid_protection_active":false,"helper_reachable":false,"transition_in_progress":false,"low_battery":false}'
+        printf '%s\n' '{"schema":1,"state":"allowed","lease_count":0,"assertion_active":false,"closed_lid_protection_active":false,"helper_reachable":false,"transition_in_progress":false,"low_battery":false,"thermal_state":"nominal","thermal_safety_active":false}'
         ;;
       unavailable)
-        printf '%s\n' '{"schema":1,"state":"unavailable","lease_count":0,"assertion_active":false,"closed_lid_protection_active":false,"helper_reachable":true,"transition_in_progress":false,"low_battery":false}'
+        printf '%s\n' '{"schema":1,"state":"unavailable","lease_count":0,"assertion_active":false,"closed_lid_protection_active":false,"helper_reachable":true,"transition_in_progress":false,"low_battery":false,"thermal_state":"nominal","thermal_safety_active":false}'
         ;;
       transitioning)
-        printf '%s\n' '{"schema":1,"state":"transitioning","lease_count":0,"assertion_active":false,"closed_lid_protection_active":false,"helper_reachable":true,"transition_in_progress":true,"low_battery":false}'
+        printf '%s\n' '{"schema":1,"state":"transitioning","lease_count":0,"assertion_active":false,"closed_lid_protection_active":false,"helper_reachable":true,"transition_in_progress":true,"low_battery":false,"thermal_state":"nominal","thermal_safety_active":false}'
         ;;
       unknown)
-        printf '%s\n' '{"schema":1,"state":"unknown","lease_count":0,"assertion_active":false,"closed_lid_protection_active":false,"helper_reachable":true,"transition_in_progress":false,"low_battery":false}'
+        printf '%s\n' '{"schema":1,"state":"unknown","lease_count":0,"assertion_active":false,"closed_lid_protection_active":false,"helper_reachable":true,"transition_in_progress":false,"low_battery":false,"thermal_state":"nominal","thermal_safety_active":false}'
         ;;
       malformed)
         printf '%s\n' '{"schema":1'
@@ -597,6 +597,8 @@ power_json="$(env -u DETACH_POWER_BIN "$DETACH_INSTALL_BIN_DIR/detach" power sta
 plutil -extract schema raw -o - - <<<"$power_json" | grep -qx 1
 plutil -extract state raw -o - - <<<"$power_json" | grep -qx allowed
 plutil -extract helper_reachable raw -o - - <<<"$power_json" | grep -qx true
+plutil -extract thermal_state raw -o - - <<<"$power_json" | grep -qx nominal
+plutil -extract thermal_safety_active raw -o - - <<<"$power_json" | grep -qx false
 
 # Direct CLI uninstall must not strand the app-owned SMAppService without its
 # executable. Detach.app unregisters the helper before invoking the installer.

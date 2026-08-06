@@ -133,6 +133,14 @@ final class PowerHelperLeaseServiceTests: XCTestCase {
         }
     }
 
+    private final class MutableThermalReader:
+        PowerThermalStateReading, @unchecked Sendable
+    {
+        var state: PowerThermalState
+        init(_ state: PowerThermalState = .nominal) { self.state = state }
+        func thermalState() -> PowerThermalState { state }
+    }
+
     private final class ProbeBootSessionReader:
         PowerBootSessionReading, @unchecked Sendable
     {
@@ -550,6 +558,7 @@ final class PowerHelperLeaseServiceTests: XCTestCase {
             PowerHelperPersistentState.self, from: data)
 
         XCTAssertFalse(state.unregistrationPending)
+        XCTAssertFalse(state.thermalSafety.isActive)
     }
 
     func testFailedReleaseNeverClaimsThatSleepWasRestored() throws {
@@ -675,6 +684,140 @@ final class PowerHelperLeaseServiceTests: XCTestCase {
         XCTAssertEqual(releasedStatus.state, .lowBattery)
         XCTAssertEqual(backend.writes, [false])
         XCTAssertFalse(status.closedLidProtectionActive)
+    }
+
+    func testHotInitialAcquireIsNotIssuedOrAllowedToLaunch() throws {
+        let store = FakeStore()
+        let backend = FakeBackend(enabled: false)
+        let thermal = MutableThermalReader(.serious)
+        let service = try PowerHelperLeaseService(
+            store: store,
+            backend: backend,
+            batteryReader: FakeBatteryReader(lowBattery: false),
+            thermalReader: thermal,
+            bootSessionReader: FakeBootSessionReader(identifier: "test-boot"),
+            now: { self.now })
+
+        let status = try service.acquireLease(
+            identity, assertionActive: true)
+
+        XCTAssertEqual(status.state, .temperature)
+        XCTAssertEqual(status.thermalState, .serious)
+        XCTAssertTrue(status.thermalSafetyActive)
+        XCTAssertEqual(store.state?.leases, [])
+        XCTAssertTrue(backend.writes.isEmpty)
+    }
+
+    func testThermalPressureImmediatelyDropsOwnedProtectionForAllLeases() throws {
+        let store = FakeStore()
+        let backend = FakeBackend(enabled: false)
+        let thermal = MutableThermalReader()
+        let service = try PowerHelperLeaseService(
+            store: store,
+            backend: backend,
+            batteryReader: FakeBatteryReader(lowBattery: false),
+            thermalReader: thermal,
+            bootSessionReader: FakeBootSessionReader(identifier: "test-boot"),
+            now: { self.now })
+        let second = PowerLeaseIdentity(sessionName: "second", runToken: "run-2")
+        _ = try service.acquireLease(identity, assertionActive: true)
+        _ = try service.acquireLease(second, assertionActive: true)
+
+        thermal.state = .critical
+        let releasing = try service.reconcile()
+        _ = try service.renewLease(identity, assertionActive: false)
+        let released = try service.renewLease(second, assertionActive: false)
+
+        XCTAssertEqual(releasing.state, .unavailable)
+        XCTAssertEqual(released.state, .temperature)
+        XCTAssertEqual(released.leaseCount, 2)
+        XCTAssertEqual(backend.writes, [true, false])
+        XCTAssertFalse(store.state?.ownsClosedLidProtection ?? true)
+    }
+
+    func testThermalPressureReleasesOwnedProtectionBeforePersistence() throws {
+        let lease = PowerLease(
+            id: "lease", sessionName: identity.sessionName,
+            runToken: identity.runToken, renewedAt: now,
+            assertionActive: true)
+        let store = FakeStore(state: PowerHelperPersistentState(
+            ownsClosedLidProtection: true,
+            leases: [lease],
+            bootSessionIdentifier: "test-boot"))
+        store.failNextSave = true
+        let backend = FakeBackend(enabled: true)
+        let service = try PowerHelperLeaseService(
+            store: store,
+            backend: backend,
+            batteryReader: FakeBatteryReader(lowBattery: false),
+            thermalReader: MutableThermalReader(.serious),
+            bootSessionReader: FakeBootSessionReader(identifier: "test-boot"),
+            now: { self.now })
+
+        XCTAssertThrowsError(try service.reconcile())
+
+        XCTAssertFalse(backend.enabled)
+        XCTAssertEqual(backend.writes, [false])
+        XCTAssertTrue(store.state?.ownsClosedLidProtection ?? false)
+    }
+
+    func testBorrowedProtectionIsNeverDisabledForTemperature() throws {
+        let lease = PowerLease(
+            id: "borrowed", sessionName: identity.sessionName,
+            runToken: identity.runToken, renewedAt: now,
+            assertionActive: false)
+        let store = FakeStore(state: PowerHelperPersistentState(leases: [lease]))
+        let backend = FakeBackend(enabled: true)
+        let service = try PowerHelperLeaseService(
+            store: store,
+            backend: backend,
+            batteryReader: FakeBatteryReader(lowBattery: false),
+            thermalReader: MutableThermalReader(.serious),
+            bootSessionReader: FakeBootSessionReader(identifier: "test-boot"),
+            now: { self.now })
+
+        let status = try service.reconcile()
+
+        XCTAssertEqual(status.state, .unavailable)
+        XCTAssertTrue(status.thermalSafetyActive)
+        XCTAssertTrue(backend.enabled)
+        XCTAssertTrue(backend.writes.isEmpty)
+        XCTAssertFalse(store.state?.ownsClosedLidProtection ?? true)
+    }
+
+    func testThermalCooldownSurvivesHelperRestart() throws {
+        let clock = TestClock(now)
+        let store = FakeStore()
+        let backend = FakeBackend(enabled: false)
+        let thermal = MutableThermalReader()
+        func service() throws -> PowerHelperLeaseService {
+            try PowerHelperLeaseService(
+                store: store,
+                backend: backend,
+                batteryReader: FakeBatteryReader(lowBattery: false),
+                thermalReader: thermal,
+                bootSessionReader: FakeBootSessionReader(identifier: "test-boot"),
+                now: { clock.date },
+                thermalCooldown: 30)
+        }
+        var current = try service()
+        _ = try current.acquireLease(identity, assertionActive: true)
+        thermal.state = .serious
+        _ = try current.reconcile()
+        clock.date = now.addingTimeInterval(1)
+        thermal.state = .fair
+        _ = try current.reconcile()
+
+        current = try service()
+        clock.date = now.addingTimeInterval(30)
+        XCTAssertTrue(try current.reconcile().thermalSafetyActive)
+        clock.date = now.addingTimeInterval(31)
+        let cooled = try current.reconcile()
+
+        XCTAssertFalse(cooled.thermalSafetyActive)
+        XCTAssertEqual(cooled.thermalState, .fair)
+        XCTAssertEqual(cooled.state, .protected)
+        XCTAssertEqual(backend.writes, [true, false, true])
     }
 
     func testPersistenceFailurePreventsPowerMutation() throws {

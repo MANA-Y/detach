@@ -93,12 +93,22 @@ final class MenuBarPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.power.reason, .lowBattery)
     }
 
+    func testTemperatureIconAndReason() {
+        let presentation = makePresentation(powerState: "temperature")
+
+        XCTAssertEqual(presentation.icon, .temperature)
+        XCTAssertEqual(presentation.power.reason, .temperature)
+        XCTAssertTrue(presentation.headerText.contains(
+            L10n.string("Mac can sleep: temperature")))
+    }
+
     func testEveryHealthyPowerStateUsesItsTruthfulShape() {
         let cases: [(String, MenuBarPresentation.Icon)] = [
             ("protected", .active(sessionCount: 0)),
             ("transitioning", .active(sessionCount: 0)),
             ("allowed", .canSleep),
             ("low_battery", .lowBattery),
+            ("temperature", .temperature),
             ("unavailable", .attention),
             ("unknown", .unknown),
         ]

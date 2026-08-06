@@ -424,6 +424,8 @@ public struct DetachPowerStatusReport: Equatable, Codable, Sendable {
     public let helperReachable: Bool
     public let transitionInProgress: Bool
     public let lowBattery: Bool
+    public let thermalState: PowerThermalState
+    public let thermalSafetyActive: Bool
 
     public init(status: PowerProtectionStatus) {
         schema = 1
@@ -434,6 +436,8 @@ public struct DetachPowerStatusReport: Equatable, Codable, Sendable {
         helperReachable = status.helperReachable
         transitionInProgress = status.transitionInProgress
         lowBattery = status.lowBattery
+        thermalState = status.thermalState
+        thermalSafetyActive = status.thermalSafetyActive
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -445,6 +449,8 @@ public struct DetachPowerStatusReport: Equatable, Codable, Sendable {
         case helperReachable = "helper_reachable"
         case transitionInProgress = "transition_in_progress"
         case lowBattery = "low_battery"
+        case thermalState = "thermal_state"
+        case thermalSafetyActive = "thermal_safety_active"
     }
 }
 
@@ -469,6 +475,7 @@ public enum DetachPowerCommandError: Error, Equatable, Sendable {
     case usage(String)
     case assertionUnavailable
     case helperLeaseUnavailable
+    case temperatureSafetyActive
 }
 
 extension DetachPowerCommandError: LocalizedError {
@@ -480,7 +487,87 @@ extension DetachPowerCommandError: LocalizedError {
             return "idle-sleep protection could not be acquired"
         case .helperLeaseUnavailable:
             return "closed-lid protection lease could not be confirmed"
+        case .temperatureSafetyActive:
+            return "sleep protection is paused until the Mac cools"
         }
+    }
+}
+
+private final class PowerRunThermalSafetyController: @unchecked Sendable {
+    private let helperClient: any PowerHelperClient
+    private let assertionController: any IdleSleepAssertionControlling
+    private let now: @Sendable () -> Date
+    private let cooldown: TimeInterval
+    private let lock = NSLock()
+    private var latch = PowerThermalSafetyLatch()
+    private var lastState: PowerThermalState = .unknown
+    private var leaseIdentity: PowerLeaseIdentity?
+
+    init(
+        helperClient: any PowerHelperClient,
+        assertionController: any IdleSleepAssertionControlling,
+        now: @escaping @Sendable () -> Date,
+        cooldown: TimeInterval
+    ) {
+        self.helperClient = helperClient
+        self.assertionController = assertionController
+        self.now = now
+        self.cooldown = cooldown
+    }
+
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return latch.isActive
+    }
+
+    func observe(_ state: PowerThermalState) {
+        lock.lock()
+        defer { lock.unlock() }
+        lastState = state
+        _ = latch.observe(state, now: now(), cooldown: cooldown)
+        if latch.isActive { try? enforceReleaseLocked() }
+    }
+
+    func attachLease(_ identity: PowerLeaseIdentity) {
+        lock.lock()
+        defer { lock.unlock() }
+        leaseIdentity = identity
+        if latch.isActive { try? enforceReleaseLocked() }
+    }
+
+    func detachLease() {
+        lock.lock()
+        leaseIdentity = nil
+        lock.unlock()
+    }
+
+    func refresh() throws -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        _ = latch.observe(lastState, now: now(), cooldown: cooldown)
+        if latch.isActive { try enforceReleaseLocked() }
+        return latch.isActive
+    }
+
+    private func enforceReleaseLocked() throws {
+        var firstError: Error?
+        if assertionController.isActive {
+            do {
+                _ = try assertionController.release()
+            } catch {
+                firstError = error
+            }
+        }
+        if let leaseIdentity {
+            do {
+                _ = try helperClient.renewLease(
+                    leaseIdentity, assertionActive: false)
+            } catch {
+                if firstError == nil { firstError = error }
+            }
+        }
+        if let firstError { throw firstError }
     }
 }
 
@@ -492,6 +579,9 @@ public struct DetachPowerCommand: Sendable {
     private let assertionController: any IdleSleepAssertionControlling
     private let childRunner: any ChildCommandRunning
     private let heartbeatRunner: any PowerHeartbeatRunning
+    private let thermalWatcher: any PowerThermalStateWatching
+    private let thermalNow: @Sendable () -> Date
+    private let thermalCooldown: TimeInterval
     private let clamshellLockRunner: ClamshellLockRunner
     private let readinessMarker: any PowerRunReadinessMarking
 
@@ -500,6 +590,10 @@ public struct DetachPowerCommand: Sendable {
         assertionController: any IdleSleepAssertionControlling = PowerAssertionController(),
         childRunner: any ChildCommandRunning = ProcessChildCommandRunner(),
         heartbeatRunner: any PowerHeartbeatRunning = DispatchPowerHeartbeatRunner(),
+        thermalWatcher: any PowerThermalStateWatching =
+            ProcessInfoPowerThermalStateWatcher(),
+        thermalNow: @escaping @Sendable () -> Date = { Date() },
+        thermalCooldown: TimeInterval = PowerThermalSafetyLatch.defaultCooldown,
         clamshellLockRunner: ClamshellLockRunner = ClamshellLockRunner(),
         readinessMarker: any PowerRunReadinessMarking = FilePowerRunReadinessMarker()
     ) {
@@ -507,6 +601,9 @@ public struct DetachPowerCommand: Sendable {
         self.assertionController = assertionController
         self.childRunner = childRunner
         self.heartbeatRunner = heartbeatRunner
+        self.thermalWatcher = thermalWatcher
+        self.thermalNow = thermalNow
+        self.thermalCooldown = max(0, thermalCooldown)
         self.clamshellLockRunner = clamshellLockRunner
         self.readinessMarker = readinessMarker
     }
@@ -568,6 +665,34 @@ public struct DetachPowerCommand: Sendable {
         command: ChildCommand,
         readyFile: String?
     ) throws -> DetachPowerCommandResult {
+        let thermalController = PowerRunThermalSafetyController(
+            helperClient: helperClient,
+            assertionController: assertionController,
+            now: thermalNow,
+            cooldown: thermalCooldown)
+        let childResult = try thermalWatcher.run(
+            onStateChange: { state in
+                thermalController.observe(state)
+            },
+            operation: {
+                try executeProtectedRun(
+                    identity: identity,
+                    command: command,
+                    readyFile: readyFile,
+                    thermalController: thermalController)
+            })
+        return .child(childResult)
+    }
+
+    private func executeProtectedRun(
+        identity: PowerLeaseIdentity,
+        command: ChildCommand,
+        readyFile: String?,
+        thermalController: PowerRunThermalSafetyController
+    ) throws -> ChildCommandResult {
+        guard !thermalController.isActive else {
+            throw DetachPowerCommandError.temperatureSafetyActive
+        }
         // Both release methods are idempotent. Register cleanup before each
         // acquire so even a partially successful backend operation is paired
         // with a best-effort release.
@@ -576,10 +701,22 @@ public struct DetachPowerCommand: Sendable {
         guard assertionController.isActive else {
             throw DetachPowerCommandError.assertionUnavailable
         }
+        guard !thermalController.isActive else {
+            throw DetachPowerCommandError.temperatureSafetyActive
+        }
 
         defer { try? helperClient.releaseLease(identity) }
         guard try helperClient.acquireLease(identity, assertionActive: true) else {
+            let status = try helperClient.status()
+            if status.thermalSafetyActive {
+                throw DetachPowerCommandError.temperatureSafetyActive
+            }
             throw DetachPowerCommandError.helperLeaseUnavailable
+        }
+        thermalController.attachLease(identity)
+        defer { thermalController.detachLease() }
+        guard !thermalController.isActive else {
+            throw DetachPowerCommandError.temperatureSafetyActive
         }
         guard assertionController.isActive else {
             throw DetachPowerCommandError.assertionUnavailable
@@ -591,19 +728,25 @@ public struct DetachPowerCommand: Sendable {
             }
             return try heartbeatRunner.run(
                 heartbeat: {
-                    try renewProtection(identity: identity)
+                    try renewProtection(
+                        identity: identity,
+                        thermalController: thermalController)
                 },
                 operation: {
                     try childRunner.run(command)
                 })
         }
-        return .child(result)
+        return result
     }
 
-    private func renewProtection(identity: PowerLeaseIdentity) throws {
+    private func renewProtection(
+        identity: PowerLeaseIdentity,
+        thermalController: PowerRunThermalSafetyController
+    ) throws {
+        if try thermalController.refresh() { return }
         if !assertionController.isActive {
             let status = try helperClient.status()
-            if status.lowBattery {
+            if status.lowBattery || status.thermalSafetyActive {
                 _ = try helperClient.renewLease(
                     identity, assertionActive: false)
                 return
@@ -616,7 +759,7 @@ public struct DetachPowerCommand: Sendable {
         guard try helperClient.renewLease(
             identity, assertionActive: true) else {
             let status = try helperClient.status()
-            guard status.lowBattery else {
+            guard status.lowBattery || status.thermalSafetyActive else {
                 throw DetachPowerCommandError.helperLeaseUnavailable
             }
             _ = try assertionController.release()

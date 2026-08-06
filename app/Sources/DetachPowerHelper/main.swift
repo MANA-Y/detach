@@ -113,6 +113,7 @@ do {
         store: SecureFilePowerHelperStateStore(),
         backend: PMSetClosedLidProtectionController(),
         batteryReader: PMSetBatterySafetyReader(),
+        thermalReader: ProcessInfoPowerThermalStateReader(),
         bootSessionReader: SysctlBootSessionReader())
     let bridge = PowerHelperXPCService(service: leaseService)
     let delegate = PowerHelperListenerDelegate(exportedObject: bridge)
@@ -135,6 +136,19 @@ do {
             _ = try leaseService.reconcile()
         } catch {
             log("periodic reconciliation failed: \(error.localizedDescription)")
+        }
+    }
+    let thermalObserver = NotificationCenter.default.addObserver(
+        forName: ProcessInfo.thermalStateDidChangeNotification,
+        object: nil,
+        queue: nil
+    ) { _ in
+        reconciliationQueue.async {
+            do {
+                _ = try leaseService.reconcile()
+            } catch {
+                log("thermal reconciliation failed: \(error.localizedDescription)")
+            }
         }
     }
     // Install orderly shutdown handling before startup reconciliation can
@@ -184,6 +198,7 @@ do {
     // release builds.
     withExtendedLifetime((lifetimeBarrierLease, delegate,
                           reconciliationQueue, reconciliationTimer,
+                          thermalObserver,
                           terminationSource, interruptSource)) {
         RunLoop.main.run()
     }

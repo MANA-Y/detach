@@ -45,6 +45,24 @@ final class LocalizationTests: XCTestCase {
                 locale: Locale(identifier: "ru"),
                 7),
             "Код выхода: 7")
+        XCTAssertEqual(
+            L10n.string(
+                "Mac can sleep: temperature",
+                bundle: resources,
+                locale: Locale(identifier: "en")),
+            "Mac can sleep: temperature")
+        XCTAssertEqual(
+            L10n.string(
+                "Mac can sleep: temperature",
+                bundle: resources,
+                locale: Locale(identifier: "ru")),
+            "Mac может уснуть: высокая температура")
+        XCTAssertEqual(
+            L10n.string(
+                "Temperature safety active",
+                bundle: resources,
+                locale: Locale(identifier: "ru")),
+            "Включена температурная защита")
     }
 
     func testLocalizationTablesHaveMatchingKeysAndEnglishFallbacks() throws {

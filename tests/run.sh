@@ -325,6 +325,12 @@ if FAKE_POWER_STATE=low_battery run_codex --name power-preflight --detach -- \
   exit 1
 fi
 ! tmux -L "$SOCKET" has-session -t '=detach-codex-power-preflight' 2>/dev/null
+if FAKE_POWER_STATE=temperature run_codex --name power-preflight --detach -- \
+  'must not start during thermal safety' >/dev/null 2>&1; then
+  printf 'start unexpectedly passed the temperature power preflight\n' >&2
+  exit 1
+fi
+! tmux -L "$SOCKET" has-session -t '=detach-codex-power-preflight' 2>/dev/null
 
 # A tmux server keeps the cwd from which it was first daemonized. Simulate an
 # unmounted project behind an already-running server, then prove Detach repairs

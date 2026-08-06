@@ -21,6 +21,7 @@ struct MacPowerSettingsPresentation: Equatable {
         case noActiveSessions
         case sessionsNotHolding(Int)
         case lowBattery
+        case temperature
         case confirming
         case helperUnreachable
         case noFreshReport
@@ -68,6 +69,8 @@ struct MacPowerSettingsPresentation: Equatable {
             }
         case .lowBattery:
             reason = .lowBattery
+        case .temperature:
+            reason = .temperature
         case .transitioning:
             reason = .confirming
         case .unavailable:
@@ -83,6 +86,7 @@ struct MacPowerSettingsPresentation: Equatable {
         case .allowed: "Mac can sleep"
         case .transitioning: "Enabling sleep protection"
         case .lowBattery: "Mac can sleep: low battery"
+        case .temperature: "Mac can sleep: temperature"
         case .unavailable: "Sleep protection unavailable"
         case .unknown: "Sleep status unknown"
         }
@@ -714,7 +718,7 @@ struct SettingsView: View {
                     Text(error).settingsMessage(color: .red)
                 }
                 Text(L10n.string(
-                    "At 10% battery or below, Detach releases its sleep protection so the Mac can sleep."))
+                    "At 10% battery or below, or during serious thermal pressure, Detach releases its sleep protection so the Mac can sleep."))
                     .settingsMessage()
             }
             Section(L10n.string("Bundled Runtime")) {
@@ -939,6 +943,7 @@ struct SettingsView: View {
         case .allowed: "moon.zzz.fill"
         case .transitioning: "arrow.triangle.2.circlepath"
         case .lowBattery: "battery.25"
+        case .temperature: "thermometer.high"
         case .unavailable: "exclamationmark.shield.fill"
         case .unknown: "questionmark.circle.fill"
         }
@@ -967,7 +972,7 @@ struct SettingsView: View {
         switch macPowerPresentation.state {
         case .protected: Brand.teal
         case .allowed: .secondary
-        case .transitioning, .lowBattery: .orange
+        case .transitioning, .lowBattery, .temperature: .orange
         case .unavailable: .red
         case .unknown: .secondary.opacity(0.6)
         }

@@ -163,6 +163,7 @@ public extension Session {
         case .allowed: L10n.string("Mac can sleep")
         case .transitioning: L10n.string("Enabling sleep protection")
         case .lowBattery: L10n.string("Mac can sleep: low battery")
+        case .temperature: L10n.string("Mac can sleep: temperature")
         case .unavailable: L10n.string("Sleep protection unavailable")
         case .unknown: L10n.string("Sleep status unknown")
         }
@@ -175,6 +176,7 @@ public extension Session {
         case .allowed: "moon.zzz"
         case .transitioning: "arrow.triangle.2.circlepath"
         case .lowBattery: "battery.25"
+        case .temperature: "thermometer.high"
         case .unavailable: "exclamationmark.triangle"
         case .unknown: "questionmark.circle"
         }

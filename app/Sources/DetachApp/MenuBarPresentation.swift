@@ -11,6 +11,7 @@ struct MenuBarPresentation: Equatable {
         case active(sessionCount: Int?)
         case canSleep
         case lowBattery
+        case temperature
         case attention
         case unknown
     }
@@ -88,6 +89,8 @@ struct MenuBarPresentation: Equatable {
                 icon = .canSleep
             case .lowBattery:
                 icon = .lowBattery
+            case .temperature:
+                icon = .temperature
             case .unavailable:
                 icon = .attention
             case .unknown:
@@ -96,7 +99,7 @@ struct MenuBarPresentation: Equatable {
         }
 
         switch icon {
-        case .attention, .lowBattery:
+        case .attention, .lowBattery, .temperature:
             sessionDot = .none
         case .active, .canSleep, .unknown:
             if running.contains(where: { $0.isWaitingForUser }) {
@@ -153,6 +156,8 @@ extension MacPowerSettingsPresentation.Reason {
             L10n.format("Active sessions without sleep protection: %d", count)
         case .lowBattery:
             L10n.string("Protection released until power is connected")
+        case .temperature:
+            L10n.string("Protection released until the Mac cools")
         case .confirming:
             L10n.string("Confirming sleep protection…")
         case .helperUnreachable:

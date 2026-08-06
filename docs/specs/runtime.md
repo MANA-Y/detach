@@ -167,10 +167,9 @@ from the single `blend_session_color` formula rather than per-color pairs. The
 style snapshot saves and restores `status-right` and its
 length alongside the left side; a snapshot from an older Detach that never
 captured the right side must not clear the user's `status-right`. The text
-status is the primary power signal: `MAC AWAKE`, `MAC CAN SLEEP`,
-`LOW BATTERY`, `POWER UNAVAILABLE`, or a transition label. The app uses
-equivalent readable text such as **Mac stays awake** and **Mac can sleep**.
-Temporary icons are secondary.
+Plain text is the primary power signal: `MAC AWAKE`, `MAC CAN SLEEP`, `LOW
+BATTERY`, `MAC CAN SLEEP: TEMPERATURE`, `POWER UNAVAILABLE`, or a transition;
+app wording is equivalent and icons are secondary.
 
 Managed input changes only the private server. `tmux-mouse` defaults on: wheel
 steps are one line; selection copies without clearing, exiting, or snapping;

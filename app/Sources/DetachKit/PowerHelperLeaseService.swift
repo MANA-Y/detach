@@ -8,19 +8,22 @@ public struct PowerHelperPersistentState: Codable, Equatable, Sendable {
     public var leases: [PowerLease]
     public var bootSessionIdentifier: String?
     public var unregistrationPending: Bool
+    public var thermalSafety: PowerThermalSafetyLatch
 
     public init(
         schema: Int = 1,
         ownsClosedLidProtection: Bool = false,
         leases: [PowerLease] = [],
         bootSessionIdentifier: String? = nil,
-        unregistrationPending: Bool = false
+        unregistrationPending: Bool = false,
+        thermalSafety: PowerThermalSafetyLatch = PowerThermalSafetyLatch()
     ) {
         self.schema = schema
         self.ownsClosedLidProtection = ownsClosedLidProtection
         self.leases = leases
         self.bootSessionIdentifier = bootSessionIdentifier
         self.unregistrationPending = unregistrationPending
+        self.thermalSafety = thermalSafety
     }
 
     public init(from decoder: Decoder) throws {
@@ -37,6 +40,9 @@ public struct PowerHelperPersistentState: Codable, Equatable, Sendable {
             String.self, forKey: .bootSessionIdentifier)
         unregistrationPending = try container.decodeIfPresent(
             Bool.self, forKey: .unregistrationPending) ?? false
+        thermalSafety = try container.decodeIfPresent(
+            PowerThermalSafetyLatch.self, forKey: .thermalSafety)
+            ?? PowerThermalSafetyLatch()
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -45,6 +51,7 @@ public struct PowerHelperPersistentState: Codable, Equatable, Sendable {
         case leases
         case bootSessionIdentifier = "boot_session_identifier"
         case unregistrationPending = "unregistration_pending"
+        case thermalSafety = "thermal_safety"
     }
 }
 
@@ -108,9 +115,11 @@ public final class PowerHelperLeaseService: @unchecked Sendable {
     private let store: any PowerHelperStateStoring
     private let backend: any ClosedLidProtectionControlling
     private let batteryReader: any PowerBatterySafetyReading
+    private let thermalReader: any PowerThermalStateReading
     private let bootSessionReader: any PowerBootSessionReading
     private let now: @Sendable () -> Date
     private let leaseTimeout: TimeInterval
+    private let thermalCooldown: TimeInterval
     private let lock = NSLock()
     private let statusLock = NSLock()
     private var state: PowerHelperPersistentState
@@ -131,16 +140,21 @@ public final class PowerHelperLeaseService: @unchecked Sendable {
         store: any PowerHelperStateStoring,
         backend: any ClosedLidProtectionControlling,
         batteryReader: any PowerBatterySafetyReading,
+        thermalReader: any PowerThermalStateReading =
+            NominalPowerThermalStateReader(),
         bootSessionReader: any PowerBootSessionReading,
         now: @escaping @Sendable () -> Date = { Date() },
-        leaseTimeout: TimeInterval = PowerHelperLeaseService.defaultLeaseTimeout
+        leaseTimeout: TimeInterval = PowerHelperLeaseService.defaultLeaseTimeout,
+        thermalCooldown: TimeInterval = PowerThermalSafetyLatch.defaultCooldown
     ) throws {
         self.store = store
         self.backend = backend
         self.batteryReader = batteryReader
+        self.thermalReader = thermalReader
         self.bootSessionReader = bootSessionReader
         self.now = now
         self.leaseTimeout = max(1, leaseTimeout)
+        self.thermalCooldown = max(0, thermalCooldown)
         state = try store.load() ?? PowerHelperPersistentState()
     }
 
@@ -283,7 +297,10 @@ public final class PowerHelperLeaseService: @unchecked Sendable {
                         helperReachable: rollbackStatus.helperReachable,
                         transitionInProgress:
                             rollbackStatus.transitionInProgress,
-                        lowBattery: rollbackStatus.lowBattery)
+                        lowBattery: rollbackStatus.lowBattery,
+                        thermalState: rollbackStatus.thermalState,
+                        thermalSafetyActive:
+                            rollbackStatus.thermalSafetyActive)
                 }
                 return status
             }
@@ -339,6 +356,23 @@ public final class PowerHelperLeaseService: @unchecked Sendable {
     ) throws -> PowerProtectionStatus {
         let instant = now()
         try reconcileBootSessionLocked()
+        let thermalState = thermalReader.thermalState()
+        var thermalSafety = state.thermalSafety
+        let thermalSafetyChanged = thermalSafety.observe(
+            thermalState, now: instant, cooldown: thermalCooldown)
+        // Thermal notifications enter this path specifically to permit sleep.
+        // Restore the owned global layer before persistence and the slower
+        // battery subprocess so neither can delay the safety action. If the
+        // following state write fails, a conservative stale ownership marker
+        // remains recoverable while the machine setting is already safe.
+        if thermalSafety.isActive {
+            try restoreOwnedProtectionLocked()
+        }
+        if thermalSafetyChanged {
+            var candidate = state
+            candidate.thermalSafety = thermalSafety
+            try replaceState(candidate)
+        }
         let lowBattery = try batteryReader.isLowBattery()
         let liveLeases = PowerLeaseRegistry.liveLeases(
             state.leases, now: instant, timeout: leaseTimeout)
@@ -352,7 +386,7 @@ public final class PowerHelperLeaseService: @unchecked Sendable {
         // Persist ownership before enabling the setting. If the process dies
         // between this write and pmset, startup reconciliation safely either
         // completes the transition or clears the harmless ownership marker.
-        if !liveLeases.isEmpty && !lowBattery
+        if !liveLeases.isEmpty && !lowBattery && !thermalSafety.isActive
             && !state.ownsClosedLidProtection
         {
             let protectionWasAlreadyEnabled = try backend.protectionIsEnabled()
@@ -373,6 +407,8 @@ public final class PowerHelperLeaseService: @unchecked Sendable {
             now: instant,
             timeout: leaseTimeout,
             lowBattery: lowBattery,
+            thermalState: thermalState,
+            thermalSafetyActive: thermalSafety.isActive,
             backend: backend,
             allowEnablingProtection: { [now] in
                 requestDeadline.map { now() < $0 } ?? true
@@ -393,7 +429,9 @@ public final class PowerHelperLeaseService: @unchecked Sendable {
             closedLidProtectionActive: status.closedLidProtectionActive,
             helperReachable: status.helperReachable,
             transitionInProgress: true,
-            lowBattery: status.lowBattery)
+            lowBattery: status.lowBattery,
+            thermalState: status.thermalState,
+            thermalSafetyActive: status.thermalSafetyActive)
     }
 
     private func reconcileBootSessionLocked() throws {
@@ -516,7 +554,9 @@ public final class PowerHelperLeaseService: @unchecked Sendable {
             closedLidProtectionActive: false,
             helperReachable: false,
             transitionInProgress: false,
-            lowBattery: false)
+            lowBattery: false,
+            thermalState: .unknown,
+            thermalSafetyActive: false)
     }
 
     private func replaceState(_ candidate: PowerHelperPersistentState) throws {

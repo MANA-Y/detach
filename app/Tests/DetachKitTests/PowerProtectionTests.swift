@@ -2,6 +2,20 @@ import XCTest
 @testable import DetachKit
 
 final class PowerProtectionTests: XCTestCase {
+    private final class ThermalStates: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [PowerThermalState] = []
+        func append(_ state: PowerThermalState) {
+            lock.lock()
+            storage.append(state)
+            lock.unlock()
+        }
+        var values: [PowerThermalState] {
+            lock.lock()
+            defer { lock.unlock() }
+            return storage
+        }
+    }
     private final class FakeClosedLidBackend: ClosedLidProtectionControlling {
         var enabled: Bool
         var writes: [Bool] = []
@@ -206,6 +220,141 @@ final class PowerProtectionTests: XCTestCase {
         XCTAssertEqual(future, .unknown)
     }
 
+    func testThermalStatesDecodeAndUnknownValuesFailForward() throws {
+        let decoder = JSONDecoder()
+        for state in [PowerThermalState.nominal, .fair, .serious, .critical] {
+            XCTAssertEqual(
+                try decoder.decode(
+                    PowerThermalState.self,
+                    from: Data("\"\(state.rawValue)\"".utf8)),
+                state)
+        }
+        XCTAssertEqual(
+            try decoder.decode(
+                PowerThermalState.self, from: Data(#""future""#.utf8)),
+            .unknown)
+    }
+
+    func testEveryPublicProcessInfoThermalStateMapsExactly() {
+        let expected: [(ProcessInfo.ThermalState, PowerThermalState)] = [
+            (.nominal, .nominal),
+            (.fair, .fair),
+            (.serious, .serious),
+            (.critical, .critical),
+        ]
+        for (input, output) in expected {
+            XCTAssertEqual(PowerThermalState(input), output)
+        }
+    }
+
+    func testProcessInfoWatcherReportsInitialStateAndNotification() throws {
+        let center = NotificationCenter()
+        let watcher = ProcessInfoPowerThermalStateWatcher(
+            processInfo: .processInfo, notificationCenter: center)
+        let states = ThermalStates()
+
+        let result = try watcher.run(
+            onStateChange: { states.append($0) },
+            operation: {
+                center.post(
+                    name: ProcessInfo.thermalStateDidChangeNotification,
+                    object: nil)
+                return ChildCommandResult(exitCode: 17)
+            })
+
+        XCTAssertEqual(result.exitCode, 17)
+        XCTAssertEqual(states.values.count, 2)
+        XCTAssertEqual(states.values.first, states.values.last)
+        XCTAssertEqual(
+            ProcessInfoPowerThermalStateReader().thermalState(),
+            states.values.first)
+    }
+
+    func testThermalLatchReleasesImmediatelyAndRequiresStableCooldown() {
+        var latch = PowerThermalSafetyLatch()
+        let start = Date(timeIntervalSince1970: 1_000)
+
+        latch.observe(.serious, now: start, cooldown: 30)
+        XCTAssertTrue(latch.isActive)
+        XCTAssertNil(latch.coolingSince)
+
+        latch.observe(.fair, now: start.addingTimeInterval(1), cooldown: 30)
+        XCTAssertTrue(latch.isActive)
+        XCTAssertEqual(latch.coolingSince, start.addingTimeInterval(1))
+
+        latch.observe(.nominal, now: start.addingTimeInterval(30), cooldown: 30)
+        XCTAssertTrue(latch.isActive)
+        latch.observe(.nominal, now: start.addingTimeInterval(31), cooldown: 30)
+        XCTAssertFalse(latch.isActive)
+        XCTAssertNil(latch.coolingSince)
+    }
+
+    func testUnknownOrRenewedHeatResetsThermalCooldown() {
+        var latch = PowerThermalSafetyLatch(isActive: true)
+        let start = Date(timeIntervalSince1970: 1_000)
+
+        latch.observe(.nominal, now: start, cooldown: 30)
+        latch.observe(.unknown, now: start.addingTimeInterval(20), cooldown: 30)
+        XCTAssertTrue(latch.isActive)
+        XCTAssertNil(latch.coolingSince)
+
+        latch.observe(.fair, now: start.addingTimeInterval(21), cooldown: 30)
+        latch.observe(.critical, now: start.addingTimeInterval(40), cooldown: 30)
+        XCTAssertTrue(latch.isActive)
+        XCTAssertNil(latch.coolingSince)
+    }
+
+    func testTemperatureStateRequiresBothDetachLayersToBeReleased() {
+        let safe = PowerProtectionStatus.derive(
+            leaseCount: 2,
+            assertionActive: false,
+            closedLidProtectionActive: false,
+            helperReachable: true,
+            transitionInProgress: false,
+            lowBattery: false,
+            thermalState: .serious,
+            thermalSafetyActive: true)
+        let borrowed = PowerProtectionStatus.derive(
+            leaseCount: 2,
+            assertionActive: false,
+            closedLidProtectionActive: true,
+            helperReachable: true,
+            transitionInProgress: false,
+            lowBattery: false,
+            thermalState: .critical,
+            thermalSafetyActive: true)
+
+        XCTAssertEqual(safe.state, .temperature)
+        XCTAssertEqual(safe.thermalState, .serious)
+        XCTAssertEqual(borrowed.state, .unavailable)
+        XCTAssertTrue(borrowed.thermalSafetyActive)
+    }
+
+    func testLowBatteryPrecedesTemperatureWhileThermalDetailRemainsTyped() {
+        let status = PowerProtectionStatus.derive(
+            leaseCount: 1,
+            assertionActive: false,
+            closedLidProtectionActive: false,
+            helperReachable: true,
+            transitionInProgress: false,
+            lowBattery: true,
+            thermalState: .critical,
+            thermalSafetyActive: true)
+
+        XCTAssertEqual(status.state, .lowBattery)
+        XCTAssertEqual(status.thermalState, .critical)
+        XCTAssertTrue(status.thermalSafetyActive)
+    }
+
+    func testLegacyPowerStatusDecodesUnknownThermalDetail() throws {
+        let json = #"{"state":"allowed","lease_count":0,"assertion_active":false,"closed_lid_protection_active":false,"helper_reachable":true,"transition_in_progress":false,"low_battery":false}"#
+        let status = try JSONDecoder().decode(
+            PowerProtectionStatus.self, from: Data(json.utf8))
+
+        XCTAssertEqual(status.thermalState, .unknown)
+        XCTAssertFalse(status.thermalSafetyActive)
+    }
+
     func testCoordinatorOwnsAndRestoresClosedLidProtection() {
         let backend = FakeClosedLidBackend(enabled: false)
         var coordinator = PowerProtectionCoordinator()
@@ -272,6 +421,38 @@ final class PowerProtectionTests: XCTestCase {
         XCTAssertTrue(releasingAssertion.lowBattery)
         XCTAssertEqual(lowBattery.state, .lowBattery)
         XCTAssertEqual(backend.writes, [true, false])
+    }
+
+    func testCoordinatorDropsOwnedProtectionForTemperatureAcrossLeases() {
+        let backend = FakeClosedLidBackend(enabled: false)
+        var coordinator = PowerProtectionCoordinator()
+        let now = Date(timeIntervalSince1970: 1_000)
+        let leases = ["one", "two"].map {
+            PowerLease(
+                id: $0, sessionName: $0, runToken: $0,
+                renewedAt: now, assertionActive: false)
+        }
+        let activeLeases = leases.map {
+            PowerLease(
+                id: $0.id, sessionName: $0.sessionName,
+                runToken: $0.runToken, renewedAt: now,
+                assertionActive: true)
+        }
+
+        _ = coordinator.reconcile(
+            leases: activeLeases, now: now, timeout: 60,
+            lowBattery: false, backend: backend)
+        let status = coordinator.reconcile(
+            leases: leases, now: now, timeout: 60,
+            lowBattery: false,
+            thermalState: .serious,
+            thermalSafetyActive: true,
+            backend: backend)
+
+        XCTAssertEqual(status.state, .temperature)
+        XCTAssertEqual(status.leaseCount, 2)
+        XCTAssertEqual(backend.writes, [true, false])
+        XCTAssertFalse(coordinator.ownsClosedLidProtection)
     }
 
     func testCoordinatorReportsBackendFailureInsteadOfClaimingProtection() {

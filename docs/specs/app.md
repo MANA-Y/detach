@@ -83,7 +83,8 @@ closes — polling never stops while the app runs). Closing the last window keep
 the app and icon alive; ⌘Q and Quit genuinely terminate the app while sessions,
 checkpoints, and protection continue. Settings → General owns the two menu bar
 toggles; the Mac Power block in Settings → System remains the single place for
-power status and approval controls.
+power status and approval controls. Temperature safety uses its own warning
+shape and the text **Mac can sleep: temperature**.
 
 Helper replacement is a durable fail-closed transaction. One versioned JSON
 journal records `preparing`, `unregisterSubmitted`, `removed`, or `registering`,
@@ -131,6 +132,12 @@ installation context when Settings appears or the app becomes active. While the
 System tab remains visible, publish a fresh heartbeat snapshot every ten seconds
 so the displayed state cannot remain stale merely because SwiftUI did not
 otherwise re-render.
+
+The watchdog heartbeat carries both the effective power state and typed raw
+thermal state/latch. When notifications are enabled, the app emits one
+localized temperature-safety warning on each inactive-to-active latch
+transition, including when borrowed external protection makes the effective
+power state unavailable; repeated polls never duplicate the warning.
 
 The watchdog is a signed per-user LaunchAgent with its own embedded
 `__TEXT,__info_plist`. It resolves `~/.local/bin/detach` at runtime, calls

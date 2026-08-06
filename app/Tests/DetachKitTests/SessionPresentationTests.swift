@@ -174,6 +174,9 @@ final class SessionPresentationTests: XCTestCase {
             make(.running, powerState: .lowBattery).powerProtectionLabel,
             L10n.string("Mac can sleep: low battery"))
         XCTAssertEqual(
+            make(.running, powerState: .temperature).powerProtectionLabel,
+            L10n.string("Mac can sleep: temperature"))
+        XCTAssertEqual(
             make(.running, powerState: .unavailable).powerProtectionLabel,
             L10n.string("Sleep protection unavailable"))
         XCTAssertEqual(
@@ -191,6 +194,7 @@ final class SessionPresentationTests: XCTestCase {
             (.allowed, "moon.zzz"),
             (.transitioning, "arrow.triangle.2.circlepath"),
             (.lowBattery, "battery.25"),
+            (.temperature, "thermometer.high"),
             (.unavailable, "exclamationmark.triangle"),
             (.unknown, "questionmark.circle"),
             (nil, "questionmark.circle"),

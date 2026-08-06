@@ -36,6 +36,7 @@ final class SessionNotificationService: ObservableObject {
 
     private let center: SessionNotificationCenterBackend
     private let identifierProvider: () -> String
+    private let powerReader: PowerHeartbeatReader?
     private var detector = SessionTransitionDetector()
     private var pendingPayloads: [SessionNotificationPayload] = []
     private var pendingGeneration: UInt64 = 0
@@ -44,18 +45,24 @@ final class SessionNotificationService: ObservableObject {
     private var configurationGeneration: UInt64 = 0
     private var authorizationStatusGeneration: UInt64 = 0
     private var authorizationRequestTask: Task<Bool, Error>?
+    private var powerMonitorTask: Task<Void, Never>?
+    private var thermalSafetyWasActive = false
 
     init(identifierProvider: @escaping () -> String = { UUID().uuidString }) {
         center = SystemSessionNotificationCenter()
         self.identifierProvider = identifierProvider
+        powerReader = PowerHeartbeatReader(
+            statusURL: PowerHeartbeatReader.defaultStatusURL())
     }
 
     init(
         center: SessionNotificationCenterBackend,
-        identifierProvider: @escaping () -> String = { UUID().uuidString }
+        identifierProvider: @escaping () -> String = { UUID().uuidString },
+        powerReader: PowerHeartbeatReader? = nil
     ) {
         self.center = center
         self.identifierProvider = identifierProvider
+        self.powerReader = powerReader
     }
 
     /// Synchronizes the app preference with macOS authorization. The system
@@ -67,6 +74,14 @@ final class SessionNotificationService: ObservableObject {
         let statusGeneration = authorizationStatusGeneration
         isEnabled = enabled
         errorMessage = nil
+
+        if enabled {
+            startPowerMonitoring()
+        } else {
+            powerMonitorTask?.cancel()
+            powerMonitorTask = nil
+            thermalSafetyWasActive = false
+        }
 
         if !enabled {
             resetBaselineIfNeeded(true)
@@ -153,16 +168,49 @@ final class SessionNotificationService: ObservableObject {
     /// authorization instead of being lost.
     func observe(_ sessions: [Session]) async {
         let transitions = detector.observe(sessions)
+        await enqueue(transitions.map(payload(for:)))
+    }
+
+    /// The thermal latch, not just the effective power label, drives this
+    /// warning so a borrowed external disablesleep setting cannot hide it.
+    func observePower(_ snapshot: PowerHeartbeatSnapshot) async {
+        guard snapshot.healthy else { return }
+        let isActive = snapshot.isThermallyLimited
+        defer { thermalSafetyWasActive = isActive }
+        guard isActive, !thermalSafetyWasActive else { return }
+        await enqueue([SessionNotificationPayload(
+            identifier: "detach.power.temperature.\(identifierProvider())",
+            title: L10n.string("Temperature safety active"),
+            body: L10n.string(
+                "Detach released sleep protection so the Mac can sleep until it cools."),
+            threadIdentifier: "detach.power.temperature")])
+    }
+
+    private func enqueue(_ payloads: [SessionNotificationPayload]) async {
         guard isEnabled else { return }
 
         switch authorizationStatus {
         case .authorized:
-            pendingPayloads.append(contentsOf: transitions.map(payload(for:)))
+            pendingPayloads.append(contentsOf: payloads)
             await deliverPendingPayloads()
         case .unknown, .notDetermined:
-            pendingPayloads.append(contentsOf: transitions.map(payload(for:)))
+            pendingPayloads.append(contentsOf: payloads)
         case .denied:
             clearPendingPayloads()
+        }
+    }
+
+    private func startPowerMonitoring() {
+        guard powerMonitorTask == nil, let powerReader else { return }
+        powerMonitorTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                await self?.observePower(powerReader.read())
+                do {
+                    try await Task.sleep(nanoseconds: 5_000_000_000)
+                } catch {
+                    return
+                }
+            }
         }
     }
 

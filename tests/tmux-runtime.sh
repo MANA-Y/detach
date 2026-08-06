@@ -357,16 +357,17 @@ fi
 classify_power_baseline() {
   DETACH_TEST_BASELINE_CLASSIFY_ONLY=1 "$POWER_SMOKE_TEST" "$@"
 }
-[ "$(classify_power_baseline allowed 0 false false true false false 0)" = pristine ]
-[ "$(classify_power_baseline protected 1 true true true false false 1)" = protected ]
-[ "$(classify_power_baseline protected 7 true true true false false 1)" = protected ]
+[ "$(classify_power_baseline allowed 0 false false true false false nominal false 0)" = pristine ]
+[ "$(classify_power_baseline protected 1 true true true false false nominal false 1)" = protected ]
+[ "$(classify_power_baseline protected 7 true true true false false fair false 1)" = protected ]
 for unsafe_baseline in \
-  'allowed 0 false false true false false 1' \
-  'protected 0 true true true false false 1' \
-  'protected 1 false true true false false 1' \
-  'protected 1 true true true true false 1' \
-  'protected 1 true true true false true 1' \
-  'protected nope true true true false false 1'; do
+  'allowed 0 false false true false false nominal false 1' \
+  'protected 0 true true true false false nominal false 1' \
+  'protected 1 false true true false false nominal false 1' \
+  'protected 1 true true true true false nominal false 1' \
+  'protected 1 true true true false true nominal false 1' \
+  'protected 1 true true true false false serious true 1' \
+  'protected nope true true true false false nominal false 1'; do
   if classify_power_baseline $unsafe_baseline >/dev/null 2>&1; then
     printf 'power smoke accepted unsafe baseline: %s\n' "$unsafe_baseline" >&2
     exit 1

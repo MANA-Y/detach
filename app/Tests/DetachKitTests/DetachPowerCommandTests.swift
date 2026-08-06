@@ -22,6 +22,23 @@ final class DetachPowerCommandTests: XCTestCase {
         }
     }
 
+    private final class TestClock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storedDate = Date(timeIntervalSince1970: 1_000)
+        var date: Date {
+            get {
+                lock.lock()
+                defer { lock.unlock() }
+                return storedDate
+            }
+            set {
+                lock.lock()
+                storedDate = newValue
+                lock.unlock()
+            }
+        }
+    }
+
     private final class FakeAssertionController:
         IdleSleepAssertionControlling, @unchecked Sendable
     {
@@ -213,6 +230,31 @@ final class DetachPowerCommandTests: XCTestCase {
         }
     }
 
+    private final class FakeThermalWatcher:
+        PowerThermalStateWatching, @unchecked Sendable
+    {
+        let initialState: PowerThermalState
+        private var callback: (@Sendable (PowerThermalState) -> Void)?
+
+        init(_ initialState: PowerThermalState = .nominal) {
+            self.initialState = initialState
+        }
+
+        func run(
+            onStateChange: @escaping @Sendable (PowerThermalState) -> Void,
+            operation: @escaping @Sendable () throws -> ChildCommandResult
+        ) throws -> ChildCommandResult {
+            callback = onStateChange
+            onStateChange(initialState)
+            defer { callback = nil }
+            return try operation()
+        }
+
+        func emit(_ state: PowerThermalState) {
+            callback?(state)
+        }
+    }
+
     private struct FailingClamshellWatcher: ClamshellStateWatching {
         func run(
             onStateChange: @escaping @Sendable (Bool) -> Void,
@@ -226,7 +268,11 @@ final class DetachPowerCommandTests: XCTestCase {
         func requestLock() throws {}
     }
 
-    private func fixture() -> (
+    private func fixture(
+        thermalWatcher: any PowerThermalStateWatching = FakeThermalWatcher(),
+        thermalNow: @escaping @Sendable () -> Date = { Date() },
+        thermalCooldown: TimeInterval = PowerThermalSafetyLatch.defaultCooldown
+    ) -> (
         DetachPowerCommand,
         EventLog,
         FakeAssertionController,
@@ -244,7 +290,10 @@ final class DetachPowerCommandTests: XCTestCase {
                 helperClient: helper,
                 assertionController: assertion,
                 childRunner: child,
-                heartbeatRunner: heartbeat),
+                heartbeatRunner: heartbeat,
+                thermalWatcher: thermalWatcher,
+                thermalNow: thermalNow,
+                thermalCooldown: thermalCooldown),
             events,
             assertion,
             helper,
@@ -277,6 +326,8 @@ final class DetachPowerCommandTests: XCTestCase {
         XCTAssertEqual(object["helper_reachable"] as? Bool, true)
         XCTAssertEqual(object["transition_in_progress"] as? Bool, false)
         XCTAssertEqual(object["low_battery"] as? Bool, false)
+        XCTAssertEqual(object["thermal_state"] as? String, "nominal")
+        XCTAssertEqual(object["thermal_safety_active"] as? Bool, false)
         XCTAssertNil(object["leaseCount"])
         XCTAssertEqual(result.exitCode, 0)
         XCTAssertEqual(events.values, ["helper.status"])
@@ -294,6 +345,9 @@ final class DetachPowerCommandTests: XCTestCase {
         XCTAssertEqual(
             DetachPowerCommandError.helperLeaseUnavailable.localizedDescription,
             "closed-lid protection lease could not be confirmed")
+        XCTAssertEqual(
+            DetachPowerCommandError.temperatureSafetyActive.localizedDescription,
+            "sleep protection is paused until the Mac cools")
     }
 
     func testReadinessMarkerAtomicallyCreatesEmptyFile() throws {
@@ -359,6 +413,25 @@ final class DetachPowerCommandTests: XCTestCase {
         XCTAssertEqual(events.values, ["assertion.acquire", "assertion.release"])
     }
 
+    func testHotInitialStateRefusesProtectionAndProviderLaunch() {
+        let thermal = FakeThermalWatcher(.serious)
+        let (command, events, _, helper, child, _) = fixture(
+            thermalWatcher: thermal)
+
+        XCTAssertThrowsError(try command.execute(arguments: [
+            "run", "--session", "session", "--run-token", "token",
+            "--", "/fixture/provider",
+        ])) { error in
+            XCTAssertEqual(
+                error as? DetachPowerCommandError,
+                .temperatureSafetyActive)
+        }
+
+        XCTAssertTrue(events.values.isEmpty)
+        XCTAssertTrue(helper.acquired.isEmpty)
+        XCTAssertTrue(child.commands.isEmpty)
+    }
+
     func testInactiveAssertionRefusesToAcquireLeaseOrLaunchChild() {
         let (command, _, assertion, helper, child, _) = fixture()
         assertion.acquisitionActivates = false
@@ -409,6 +482,7 @@ final class DetachPowerCommandTests: XCTestCase {
         XCTAssertEqual(events.values, [
             "assertion.acquire",
             "helper.acquire",
+            "helper.status",
             "helper.release",
             "assertion.release",
         ])
@@ -491,6 +565,62 @@ final class DetachPowerCommandTests: XCTestCase {
             "helper.release",
             "assertion.release",
         ])
+    }
+
+    func testThermalNotificationImmediatelyReleasesAssertionAndLetsChildFinish() throws {
+        let thermal = FakeThermalWatcher()
+        let (command, events, assertion, helper, child, heartbeat) = fixture(
+            thermalWatcher: thermal)
+        heartbeat.heartbeatCount = 1
+        heartbeat.beforeHeartbeat = { thermal.emit(.critical) }
+        child.result = ChildCommandResult(exitCode: 31)
+
+        let result = try command.execute(arguments: [
+            "run", "--session", "session", "--run-token", "token",
+            "--", "/fixture/provider",
+        ])
+
+        XCTAssertEqual(result.exitCode, 31)
+        XCTAssertFalse(assertion.isActive)
+        XCTAssertEqual(helper.renewed.map(\.1), [false, false])
+        let releaseIndex = try XCTUnwrap(
+            events.values.firstIndex(of: "assertion.release"))
+        let childIndex = try XCTUnwrap(events.values.firstIndex(of: "child.run"))
+        XCTAssertLessThan(releaseIndex, childIndex)
+    }
+
+    func testThermalProtectionReturnsOnlyAfterStableCooldown() throws {
+        let thermal = FakeThermalWatcher()
+        let clock = TestClock()
+        let (command, events, _, helper, _, heartbeat) = fixture(
+            thermalWatcher: thermal,
+            thermalNow: { clock.date },
+            thermalCooldown: 30)
+        heartbeat.heartbeatCount = 3
+        var heartbeatIndex = 0
+        heartbeat.beforeHeartbeat = {
+            heartbeatIndex += 1
+            switch heartbeatIndex {
+            case 1:
+                thermal.emit(.serious)
+            case 2:
+                clock.date = Date(timeIntervalSince1970: 1_001)
+                thermal.emit(.fair)
+            default:
+                clock.date = Date(timeIntervalSince1970: 1_031)
+                thermal.emit(.fair)
+            }
+        }
+
+        _ = try command.execute(arguments: [
+            "run", "--session", "session", "--run-token", "token",
+            "--", "/fixture/provider",
+        ])
+
+        XCTAssertEqual(helper.renewed.map(\.1), [false, false, false, false, true])
+        XCTAssertEqual(
+            events.values.filter { $0 == "assertion.acquire" }.count,
+            2)
     }
 
     func testHeartbeatWithAlreadyReleasedAssertionReportsLowBatteryWithoutReacquire() throws {

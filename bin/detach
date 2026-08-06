@@ -251,7 +251,7 @@ doctor_report() {
        "$STATE_BIN" meta get /dev/stdin state 2>/dev/null)" && \
      [ "$power_reachable" = true ]; then
     case "$power_state" in
-      allowed|protected|low_battery)
+      allowed|protected|low_battery|temperature)
         doctor_add power_helper base "Detach power helper" true ok "$POWER_BIN" \
           "Power helper отвечает: $power_state"
         ;;

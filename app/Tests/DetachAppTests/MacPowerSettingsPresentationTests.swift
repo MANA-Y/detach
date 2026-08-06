@@ -9,6 +9,7 @@ final class MacPowerSettingsPresentationTests: XCTestCase {
             (.allowed, "Mac can sleep"),
             (.transitioning, "Enabling sleep protection"),
             (.lowBattery, "Mac can sleep: low battery"),
+            (.temperature, "Mac can sleep: temperature"),
             (.unavailable, "Sleep protection unavailable"),
             (.unknown, "Sleep status unknown"),
         ]
@@ -60,6 +61,7 @@ final class MacPowerSettingsPresentationTests: XCTestCase {
         XCTAssertNil(presentation(state: .protected).action)
         XCTAssertNil(presentation(state: .allowed).action)
         XCTAssertNil(presentation(state: .lowBattery).action)
+        XCTAssertNil(presentation(state: .temperature).action)
     }
 
     func testReasonComesFromHeartbeatStateFirst() {
@@ -93,6 +95,7 @@ final class MacPowerSettingsPresentationTests: XCTestCase {
         let expected: [(PowerProtectionState, MacPowerSettingsPresentation.Reason)] = [
             (.allowed, .noActiveSessions),
             (.lowBattery, .lowBattery),
+            (.temperature, .temperature),
             (.transitioning, .confirming),
             (.unavailable, .helperUnreachable),
         ]

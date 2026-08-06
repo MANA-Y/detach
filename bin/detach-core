@@ -959,7 +959,7 @@ tmux_apply_session_style() {
 
   power_state="$(tmux_option "$session" '@detach_power_state')"
   case "$power_state" in
-    protected|allowed|transitioning|low_battery|unavailable|unknown) ;;
+    protected|allowed|transitioning|low_battery|temperature|unavailable|unknown) ;;
     *) power_state="$(power_protection_state)" ;;
   esac
   power_label="$(power_protection_label "$power_state")"
@@ -968,6 +968,7 @@ tmux_apply_session_style() {
   case "$power_state" in
     protected) power_color='#4FE8C6'; power_attr='bold' ;;
     low_battery) power_color='#FFC24D'; power_attr='bold' ;;
+    temperature) power_color='#FF9F43'; power_attr='bold' ;;
     transitioning) power_color='#FFC24D' ;;
     unavailable|unknown) power_color='#FF8A8E' ;;
   esac
@@ -2864,7 +2865,7 @@ power_protection_state() {
   fi
   state="$(printf '%s' "$report" | "$STATE_BIN" meta get /dev/stdin state 2>/dev/null || true)"
   case "$state" in
-    protected|allowed|transitioning|low_battery|unavailable|unknown)
+    protected|allowed|transitioning|low_battery|temperature|unavailable|unknown)
       printf '%s\n' "$state"
       ;;
     *)
@@ -2894,6 +2895,9 @@ power_start_preflight() {
     low_battery)
       die "Mac sleep protection is disabled at low battery; charge the Mac before starting a new session"
       ;;
+    temperature)
+      die "Mac sleep protection is paused until the Mac cools"
+      ;;
     transitioning)
       die "Mac sleep protection is still transitioning; retry in a moment"
       ;;
@@ -2909,6 +2913,7 @@ power_protection_label() {
     allowed) printf 'MAC CAN SLEEP' ;;
     transitioning) printf 'POWER…' ;;
     low_battery) printf 'LOW BATTERY' ;;
+    temperature) printf 'MAC CAN SLEEP: TEMPERATURE' ;;
     unavailable|unknown|*) printf 'POWER UNAVAILABLE' ;;
   esac
 }
@@ -3881,7 +3886,7 @@ list_sessions() {
       reported_power_state="$(printf '%s' "$power_status" | \
         "$STATE_BIN" meta get /dev/stdin state 2>/dev/null || true)"
       case "$reported_power_state" in
-        allowed|transitioning|protected|low_battery|unavailable|unknown)
+        allowed|transitioning|protected|low_battery|temperature|unavailable|unknown)
           power_state="$reported_power_state"
           ;;
       esac

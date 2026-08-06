@@ -4,6 +4,63 @@ import XCTest
 
 @MainActor
 final class SessionNotificationServiceTests: XCTestCase {
+    func testThermalWarningIsDeduplicatedUntilSafetyRecovers() async {
+        let center = FakeNotificationCenter(status: .authorized)
+        let service = SessionNotificationService(
+            center: center, identifierProvider: { "thermal-id" })
+        await service.configure(enabled: true)
+        let hot = PowerHeartbeatSnapshot(
+            statusURL: URL(fileURLWithPath: "/fixture/power.json"),
+            state: "ok",
+            powerState: .temperature,
+            checkedAt: Date(),
+            isFresh: true,
+            thermalState: .serious,
+            thermalSafetyActive: true)
+        let cool = PowerHeartbeatSnapshot(
+            statusURL: hot.statusURL,
+            state: "ok",
+            powerState: .allowed,
+            checkedAt: Date(),
+            isFresh: true,
+            thermalState: .fair,
+            thermalSafetyActive: false)
+
+        await service.observePower(hot)
+        await service.observePower(hot)
+        await service.observePower(cool)
+        await service.observePower(hot)
+
+        XCTAssertEqual(center.delivered.count, 2)
+        XCTAssertEqual(
+            center.delivered.first?.identifier,
+            "detach.power.temperature.thermal-id")
+        XCTAssertEqual(
+            center.delivered.first?.title,
+            L10n.string("Temperature safety active"))
+    }
+
+    func testBorrowedProtectionStillEmitsThermalWarning() async {
+        let center = FakeNotificationCenter(status: .authorized)
+        let service = SessionNotificationService(center: center)
+        await service.configure(enabled: true)
+
+        await service.observePower(PowerHeartbeatSnapshot(
+            statusURL: URL(fileURLWithPath: "/fixture/power.json"),
+            state: "ok",
+            powerState: .unavailable,
+            checkedAt: Date(),
+            isFresh: true,
+            thermalState: .critical,
+            thermalSafetyActive: true))
+
+        XCTAssertEqual(center.delivered.count, 1)
+        XCTAssertEqual(
+            center.delivered.first?.body,
+            L10n.string(
+                "Detach released sleep protection so the Mac can sleep until it cools."))
+    }
+
     func testEnablingRequestsUndeterminedPermissionOnce() async {
         let center = FakeNotificationCenter(
             status: .notDetermined, requestResult: .success(true), statusAfterRequest: .authorized)

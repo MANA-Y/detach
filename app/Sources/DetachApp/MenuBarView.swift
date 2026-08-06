@@ -59,6 +59,7 @@ struct MenuBarLabel: View {
         case .active: L10n.string("Mac stays awake")
         case .canSleep: L10n.string("Mac can sleep")
         case .lowBattery: L10n.string("Mac can sleep: low battery")
+        case .temperature: L10n.string("Mac can sleep: temperature")
         case .attention: L10n.string("Sleep protection unavailable")
         case .unknown: L10n.string("Sleep status unknown")
         }

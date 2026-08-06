@@ -7,6 +7,8 @@ public struct PowerHeartbeatSnapshot: Equatable, Sendable {
     public let statusURL: URL
     public let state: String?
     public let powerState: PowerProtectionState?
+    public let thermalState: PowerThermalState?
+    public let thermalSafetyActive: Bool
     public let checkedAt: Date?
     public let isFresh: Bool
 
@@ -17,6 +19,33 @@ public struct PowerHeartbeatSnapshot: Equatable, Sendable {
     public var effectivePowerState: PowerProtectionState {
         guard healthy, let powerState else { return .unknown }
         return powerState
+    }
+
+    public var effectiveThermalState: PowerThermalState {
+        guard healthy, let thermalState else { return .unknown }
+        return thermalState
+    }
+
+    public var isThermallyLimited: Bool {
+        healthy && thermalSafetyActive
+    }
+
+    public init(
+        statusURL: URL,
+        state: String?,
+        powerState: PowerProtectionState?,
+        checkedAt: Date?,
+        isFresh: Bool,
+        thermalState: PowerThermalState? = nil,
+        thermalSafetyActive: Bool = false
+    ) {
+        self.statusURL = statusURL
+        self.state = state
+        self.powerState = powerState
+        self.checkedAt = checkedAt
+        self.isFresh = isFresh
+        self.thermalState = thermalState
+        self.thermalSafetyActive = thermalSafetyActive
     }
 
     public func age(relativeTo now: Date) -> TimeInterval? {
@@ -36,11 +65,15 @@ public struct PowerHeartbeatReader: Sendable {
         let state: String
         let powerState: String?
         let checkedAt: String?
+        let thermalState: String?
+        let thermalSafetyActive: Bool?
 
         enum CodingKeys: String, CodingKey {
             case state
             case powerState = "power_state"
             case checkedAt = "checked_at"
+            case thermalState = "thermal_state"
+            case thermalSafetyActive = "thermal_safety_active"
         }
     }
 
@@ -102,7 +135,11 @@ public struct PowerHeartbeatReader: Sendable {
                 PowerProtectionState(rawValue: $0) ?? .unknown
             },
             checkedAt: checkedAt,
-            isFresh: isFresh)
+            isFresh: isFresh,
+            thermalState: payload.thermalState.map {
+                PowerThermalState(rawValue: $0) ?? .unknown
+            },
+            thermalSafetyActive: payload.thermalSafetyActive ?? false)
     }
 
     private static func parseTimestamp(_ raw: String) -> Date? {

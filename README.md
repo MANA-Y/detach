@@ -300,8 +300,9 @@ narrowly scoped signed helper manages closed-lid protection. The provider is
 started only after both protections are confirmed.
 
 The app, menu bar, CLI, and tmux status bar expose the same text-first state:
-**Mac stays awake**, **Mac can sleep**, **Low battery**, or an honest unknown
-state when the helper or health report cannot be trusted.
+**Mac stays awake**, **Mac can sleep**, **Low battery**, **Mac can sleep:
+temperature**, or an honest unknown state when the helper or health report
+cannot be trusted.
 
 When the lid closes during a protected run, Detach asks macOS to turn the
 display off through the normal Lock Screen path. Reopening the lid returns to
@@ -312,11 +313,18 @@ At 10% battery or below on battery power, Detach releases its sleep assertions
 and reports **Mac can sleep: low battery**. It will not trade the machine's last
 battery reserve for a hidden promise that the run is protected.
 
+At a public macOS thermal state of `serious` or `critical`, Detach immediately
+releases both sleep-protection layers it owns and reports **Mac can sleep:
+temperature**. The provider may continue only while macOS keeps the machine
+awake. New protected runs are refused, and protection is eligible to return
+only after `nominal` or `fair` has remained stable for 30 seconds. The app sends
+one warning per hot interval when session notifications are enabled.
+
 > [!CAUTION]
 > Sustained closed-lid work can hide excess heat. Keep the Mac on a hard, flat,
-> well-ventilated surface—never in a sleeve, bag, or on bedding. Open the lid or
-> stop the session if the Mac becomes unusually hot or reports a temperature
-> warning. See [Apple's temperature guidance](https://support.apple.com/en-us/102336).
+> well-ventilated surface—never in a sleeve, bag, or on bedding. Thermal safety
+> permits sleep but cannot cool a blocked Mac or disable another tool's sleep
+> setting. See [Apple's temperature guidance](https://support.apple.com/en-us/102336).
 
 <details>
 <summary><strong>How the power safety boundary works</strong></summary>
