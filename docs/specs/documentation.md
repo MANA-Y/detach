@@ -30,6 +30,9 @@ against the same deterministic quality gate.
   readiness evidence because it delegates to the repository quality gate.
 - Resume evidence retains stage timing and digest-bound logs, binds its parent,
   and cannot turn a prior time-budget regression into readiness.
+- A local timing-budget failure creates performance work. Warm-cache or
+  variance reruns cannot turn it into readiness; an unchanged rerun is allowed
+  only for an evidenced unrelated external transient whose cause is recorded.
 - Hosted CI runs every selected functional check and timing-policy ratchet but
   does not enforce reference-machine wall or per-stage timing ceilings.
 - Ready task-scoped changes are committed and pushed to the current branch by
