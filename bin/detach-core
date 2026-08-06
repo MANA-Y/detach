@@ -93,6 +93,8 @@ CONFIG_TMUX_STYLE="$(config_value TMUX_STYLE 2>/dev/null || true)"
 case "$CONFIG_TMUX_STYLE" in 0|1|'') ;; *) CONFIG_TMUX_STYLE="" ;; esac
 CONFIG_TMUX_MOUSE="$(config_value TMUX_MOUSE 2>/dev/null || true)"
 case "$CONFIG_TMUX_MOUSE" in 0|1|'') ;; *) CONFIG_TMUX_MOUSE="" ;; esac
+CONFIG_TMUX_EXTENDED_KEYS="$(config_value TMUX_EXTENDED_KEYS 2>/dev/null || true)"
+case "$CONFIG_TMUX_EXTENDED_KEYS" in 0|1|'') ;; *) CONFIG_TMUX_EXTENDED_KEYS="" ;; esac
 CODEX_STATE_ROOT="${DETACH_CODEX_STATE_ROOT:-$STATE_BASE_ROOT/codex}"
 CLAUDE_STATE_ROOT="${DETACH_CLAUDE_STATE_ROOT:-$STATE_BASE_ROOT/claude}"
 CODEX_SESSIONS_ROOT="$CODEX_STATE_ROOT/sessions"
@@ -119,6 +121,11 @@ TMUX_MOUSE_ENABLED="${DETACH_TMUX_MOUSE:-${CONFIG_TMUX_MOUSE:-1}}"
 case "$TMUX_MOUSE_ENABLED" in
   0|1) ;;
   *) die "DETACH_TMUX_MOUSE must be 0 or 1" ;;
+esac
+TMUX_EXTENDED_KEYS_ENABLED="${DETACH_TMUX_EXTENDED_KEYS:-${CONFIG_TMUX_EXTENDED_KEYS:-1}}"
+case "$TMUX_EXTENDED_KEYS_ENABLED" in
+  0|1) ;;
+  *) die "DETACH_TMUX_EXTENDED_KEYS must be 0 or 1" ;;
 esac
 DEFAULT_TMUX_SOCKET_PATH="$INSTALL_STATE_ROOT/tmux/tmux.sock"
 TMUX_SOCKET_PATH="${DETACH_TMUX_SOCKET_PATH:-$DEFAULT_TMUX_SOCKET_PATH}"
@@ -159,6 +166,7 @@ usage() {
     "  $PROGRAM list [--json]" \
     "  $PROGRAM config tmux-style [detach|inherit]" \
     "  $PROGRAM config tmux-mouse [on|off]" \
+    "  $PROGRAM config tmux-extended-keys [on|off]" \
     "  $PROGRAM status [NAME]" \
     "  $PROGRAM logs [--ansi] [NAME]" \
     "  $PROGRAM stop [NAME]" \
@@ -892,9 +900,168 @@ tmux_refresh_managed_styles() {
   done < <("${TMUX_CMD[@]}" list-sessions -F '#{session_name}' 2>/dev/null || true)
 }
 
-# One-line wheel steps in copy mode and mouse selections that land in the
-# macOS clipboard. These are options and key bindings on the private
-# Detach-owned tmux server only; the user's own tmux server is never touched.
+# Advertise a terminal-feature on the private server exactly once. tmux appends
+# blindly with `set -a`, so the value would accumulate on every start/attach;
+# only add it when `show-options -sv` proves it is absent.
+tmux_add_terminal_feature() {
+  local feature="$1"
+  local current
+
+  current="$("${TMUX_CMD[@]}" show-options -sv terminal-features 2>/dev/null || true)"
+  if printf '%s\n' "$current" | grep -Fxq -- "$feature"; then
+    return 0
+  fi
+  "${TMUX_CMD[@]}" set-option -q -s -a terminal-features "$feature"
+}
+
+# Copy one live key table into a Detach-owned fallback table. tmux key bindings
+# are server-wide, so managed wrappers delegate here when a session-local input
+# feature is disabled instead of assuming or destroying the user's originals.
+tmux_clone_key_table() {
+  local source_table="$1"
+  local fallback_table="$2"
+  local cfg
+
+  cfg="$(mktemp "${TMPDIR:-/tmp}/detach-key-table.XXXXXX")" || return 1
+  if ! "${TMUX_CMD[@]}" list-keys -T "$source_table" | \
+      sed "s/-T $source_table /-T $fallback_table /" >"$cfg"; then
+    rm -f "$cfg"
+    return 1
+  fi
+  "${TMUX_CMD[@]}" unbind-key -a -q -T "$fallback_table" || {
+    rm -f "$cfg"
+    return 1
+  }
+  if ! "${TMUX_CMD[@]}" source-file "$cfg"; then
+    rm -f "$cfg"
+    return 1
+  fi
+  rm -f "$cfg"
+}
+
+# Preserve any original Shift+Return binding and install one managed wrapper.
+# tmux's forced mode 1 can collapse Shift+Return to ordinary Return for panes
+# that do not negotiate extended-key mode 2. Option+Return is already the stable
+# multiline input understood by both providers, so the enabled branch sends
+# that representation explicitly. The disabled branch delegates to the saved
+# root table, whose fallback is ordinary Return when no custom binding existed.
+tmux_configure_shift_return() {
+  local initialized keys
+
+  initialized="$("${TMUX_CMD[@]}" show-options -sqv @detach_shift_return_initialized 2>/dev/null || true)"
+  if [ "$initialized" != "1" ]; then
+    tmux_clone_key_table root detach-root-original || return 1
+    keys="$("${TMUX_CMD[@]}" list-keys -T detach-root-original -F '#{key_string}' 2>/dev/null || true)"
+    if ! printf '%s\n' "$keys" | grep -Fxq -- 'S-Enter' && \
+        ! printf '%s\n' "$keys" | grep -Fxq -- 'Any'; then
+      "${TMUX_CMD[@]}" bind-key -T detach-root-original S-Enter send-keys Enter || return 1
+    fi
+    "${TMUX_CMD[@]}" bind-key -T root S-Enter \
+      if-shell -F '#{==:#{@detach_extended_keys},1}' \
+      'send-keys M-Enter' \
+      'switch-client -T detach-root-original ; send-keys -K' || return 1
+    "${TMUX_CMD[@]}" set-option -q -s @detach_shift_return_initialized 1 || return 1
+  fi
+  "${TMUX_CMD[@]}" set-option -q -s @detach_extended_keys "$TMUX_EXTENDED_KEYS_ENABLED"
+}
+
+# Server-wide input options applied on every start/attach/resume, independently
+# of the mouse toggle. The extkeys feature lets tmux recognize modified keys
+# from terminals such as ghostty; the managed Shift+Return binding above keeps
+# multiline input provider-compatible. The hyperlinks feature lets tmux emit
+# parsed OSC 8 links to capable outer terminals. These options live only on the
+# private Detach tmux server.
+tmux_configure_server() {
+  [ -n "$TMUX_BIN" ] && [ -x "$TMUX_BIN" ] || return 0
+
+  if [ "$TMUX_EXTENDED_KEYS_ENABLED" = "1" ]; then
+    "${TMUX_CMD[@]}" set-option -q -s extended-keys always || return 1
+  else
+    "${TMUX_CMD[@]}" set-option -q -s extended-keys off || return 1
+  fi
+  tmux_configure_shift_return || return 1
+  tmux_add_terminal_feature '*:extkeys' || return 1
+  tmux_add_terminal_feature '*:hyperlinks' || return 1
+}
+
+tmux_refresh_extended_keys() {
+  local enabled="$1"
+
+  [ -n "$TMUX_BIN" ] && [ -x "$TMUX_BIN" ] || return 0
+  if [ "$enabled" = "1" ]; then
+    "${TMUX_CMD[@]}" set-option -q -s extended-keys always || true
+  else
+    "${TMUX_CMD[@]}" set-option -q -s extended-keys off || true
+  fi
+  TMUX_EXTENDED_KEYS_ENABLED="$enabled"
+  tmux_configure_shift_return || true
+}
+
+# Emit wrappers that make copy-mode type-through work like ghostty while the
+# session's managed mouse behavior is enabled. Each wrapper cancels copy-mode
+# and forwards its invoking key without reconstructing the character. When the
+# behavior is off it re-dispatches the key through a saved original table, so
+# ordinary emacs/vi/custom copy-mode bindings return without a server restart.
+# Punctuation is escaped only for tmux's configuration parser.
+tmux_emit_type_through_config() {
+  local table fallback_table code char key cp b1 b2 utf
+
+  for table in copy-mode copy-mode-vi; do
+    fallback_table="detach-$table-original"
+    # Printable ASCII 0x21-0x7E. `q` is intentionally rebound too, trading the
+    # copy-mode shortcut for consistent type-through only while managed mouse
+    # input is enabled.
+    for ((code = 33; code <= 126; code++)); do
+      char="$(printf "\\$(printf '%03o' "$code")")"
+      case "$char" in
+        [A-Za-z0-9]) key="$char" ;;
+        *) key="\\$char" ;;
+      esac
+      printf 'bind-key -T %s %s if-shell -F "#{==:#{@detach_copy_type_through},1}" "send-keys -X cancel ; send-keys" "switch-client -T %s ; send-keys -K"\n' \
+        "$table" "$key" "$fallback_table"
+    done
+    printf 'bind-key -T %s Space if-shell -F "#{==:#{@detach_copy_type_through},1}" "send-keys -X cancel ; send-keys" "switch-client -T %s ; send-keys -K"\n' \
+      "$table" "$fallback_table"
+    # Cyrillic А-Я, а-я, Ё, ё delivered as literal UTF-8; multibyte keys never
+    # collide with tmux's ASCII syntax, so they need no escaping.
+    for cp in $(seq 1040 1103) 1025 1105; do
+      b1=$(( 0xC0 | (cp >> 6) ))
+      b2=$(( 0x80 | (cp & 0x3F) ))
+      utf="$(printf "\\$(printf '%03o' "$b1")\\$(printf '%03o' "$b2")")"
+      printf 'bind-key -T %s %s if-shell -F "#{==:#{@detach_copy_type_through},1}" "send-keys -X cancel ; send-keys" "switch-client -T %s ; send-keys -K"\n' \
+        "$table" "$utf" "$fallback_table"
+    done
+    printf 'bind-key -T %s Enter if-shell -F "#{==:#{@detach_copy_type_through},1}" "send-keys -X cancel ; send-keys" "switch-client -T %s ; send-keys -K"\n' \
+      "$table" "$fallback_table"
+    printf 'bind-key -T %s BSpace if-shell -F "#{==:#{@detach_copy_type_through},1}" "send-keys -X cancel ; send-keys" "switch-client -T %s ; send-keys -K"\n' \
+      "$table" "$fallback_table"
+  done
+}
+
+tmux_bind_copy_type_through() {
+  local cfg initialized
+
+  initialized="$("${TMUX_CMD[@]}" show-options -sqv @detach_copy_type_through_initialized 2>/dev/null || true)"
+  [ "$initialized" != "1" ] || return 0
+  tmux_clone_key_table copy-mode detach-copy-mode-original || return 1
+  tmux_clone_key_table copy-mode-vi detach-copy-mode-vi-original || return 1
+  cfg="$(mktemp "${TMPDIR:-/tmp}/detach-copy-binds.XXXXXX")" || return 1
+  if ! tmux_emit_type_through_config >"$cfg"; then
+    rm -f "$cfg"
+    return 1
+  fi
+  if ! "${TMUX_CMD[@]}" source-file "$cfg"; then
+    rm -f "$cfg"
+    return 1
+  fi
+  rm -f "$cfg"
+  "${TMUX_CMD[@]}" set-option -q -s @detach_copy_type_through_initialized 1
+}
+
+# One-line wheel steps in copy mode, mouse selections that land in the macOS
+# clipboard without leaving copy-mode, and ghostty-style type-through. These are
+# options and key bindings on the private Detach-owned tmux server only; the
+# user's own tmux server is never touched.
 tmux_configure_copy_input() {
   local table
 
@@ -903,8 +1070,13 @@ tmux_configure_copy_input() {
   for table in copy-mode copy-mode-vi; do
     "${TMUX_CMD[@]}" bind-key -T "$table" WheelUpPane send-keys -X -N 1 scroll-up || return 1
     "${TMUX_CMD[@]}" bind-key -T "$table" WheelDownPane send-keys -X -N 1 scroll-down || return 1
-    "${TMUX_CMD[@]}" bind-key -T "$table" MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel || return 1
+    # Copy the selection to the clipboard on release but keep the highlight and
+    # stay in copy-mode, so a scrolled-up view no longer snaps to the bottom.
+    "${TMUX_CMD[@]}" bind-key -T "$table" MouseDragEnd1Pane send-keys -X copy-pipe-no-clear || return 1
+    # A plain click clears the leftover highlight without leaving copy-mode.
+    "${TMUX_CMD[@]}" bind-key -T "$table" MouseDown1Pane send-keys -X clear-selection || return 1
   done
+  tmux_bind_copy_type_through || return 1
 }
 
 tmux_apply_mouse_input() {
@@ -913,8 +1085,10 @@ tmux_apply_mouse_input() {
   if [ "$TMUX_MOUSE_ENABLED" = "1" ]; then
     "${TMUX_CMD[@]}" set-option -q -t "=$session:" mouse on || return 1
     tmux_configure_copy_input || return 1
+    "${TMUX_CMD[@]}" set-option -q -t "=$session:" @detach_copy_type_through 1 || return 1
   else
     "${TMUX_CMD[@]}" set-option -q -t "=$session:" mouse off || return 1
+    "${TMUX_CMD[@]}" set-option -q -t "=$session:" @detach_copy_type_through 0 || return 1
   fi
 }
 
@@ -929,8 +1103,10 @@ tmux_refresh_managed_mouse() {
     tmux_is_any_managed "$session" || continue
     if [ "$enabled" = "1" ]; then
       "${TMUX_CMD[@]}" set-option -q -t "=$session:" mouse on || true
+      "${TMUX_CMD[@]}" set-option -q -t "=$session:" @detach_copy_type_through 1 || true
     else
       "${TMUX_CMD[@]}" set-option -q -t "=$session:" mouse off || true
+      "${TMUX_CMD[@]}" set-option -q -t "=$session:" @detach_copy_type_through 0 || true
     fi
   done < <("${TMUX_CMD[@]}" list-sessions -F '#{session_name}' 2>/dev/null || true)
 }
@@ -953,7 +1129,7 @@ write_config_key_locked() {
   local line
   local found=0
 
-  case "$key" in TMUX_STYLE|TMUX_MOUSE) ;; *) die "invalid internal config key" ;; esac
+  case "$key" in TMUX_STYLE|TMUX_MOUSE|TMUX_EXTENDED_KEYS) ;; *) die "invalid internal config key" ;; esac
   case "$value" in 0|1) ;; *) die "invalid internal config value" ;; esac
   ensure_config_root
   if [ -e "$CONFIG_FILE" ] || [ -L "$CONFIG_FILE" ]; then
@@ -1005,6 +1181,7 @@ write_config_key_locked() {
   case "$key" in
     TMUX_STYLE) tmux_refresh_managed_styles "$value" ;;
     TMUX_MOUSE) tmux_refresh_managed_mouse "$value" ;;
+    TMUX_EXTENDED_KEYS) tmux_refresh_extended_keys "$value" ;;
   esac
 }
 
@@ -1062,12 +1239,33 @@ config_tmux_mouse() {
   write_config_key_under_lock TMUX_MOUSE "$value" "tmux mouse input"
 }
 
+config_tmux_extended_keys() {
+  local requested="${1:-}"
+  local value
+
+  if [ "$#" -eq 0 ]; then
+    if [ "$TMUX_EXTENDED_KEYS_ENABLED" = "1" ]; then printf 'on\n'; else printf 'off\n'; fi
+    return 0
+  fi
+  [ "$#" -eq 1 ] || die "config tmux-extended-keys accepts at most one value"
+  [ "${DETACH_TMUX_EXTENDED_KEYS+x}" != "x" ] || \
+    die "cannot change tmux extended keys while DETACH_TMUX_EXTENDED_KEYS overrides the config"
+  case "$requested" in
+    on) value=1 ;;
+    off) value=0 ;;
+    *) die "tmux extended keys must be 'on' or 'off'" ;;
+  esac
+  write_config_key_under_lock TMUX_EXTENDED_KEYS "$value" "tmux extended keys"
+}
+
 attach_session() {
   local session="$1"
   local current_socket target_socket
 
   tmux_has_session "$session" || die "tmux session '$session' is not running"
   tmux_is_managed "$session" || die "refusing to attach to unmanaged tmux session '$session'"
+  tmux_configure_server || \
+    error "warning: could not configure Detach server input options for this session"
   if [ -n "$INSIDE_TMUX" ]; then
     current_socket="${INSIDE_TMUX%%,*}"
     target_socket="$("${TMUX_CMD[@]}" display-message -p -t "=$session:" '#{socket_path}' 2>/dev/null)" || \
@@ -2804,7 +3002,8 @@ tmux_environment_args() {
               DETACH_CORE_ENTRYPOINT DETACH_PROVIDER DETACH_PROGRAM DETACH_LOCKS_ROOT \
               DETACH_STATE_ROOT DETACH_INSTALL_STATE_ROOT \
               DETACH_CONFIG_ROOT DETACH_TMUX_SOCKET_PATH DETACH_TMUX_CONFIG \
-              DETACH_TMUX_BIN DETACH_TMUX_STYLE DETACH_TMUX_MOUSE DETACH_STATE_BIN DETACH_POWER_BIN \
+              DETACH_TMUX_BIN DETACH_TMUX_STYLE DETACH_TMUX_MOUSE DETACH_TMUX_EXTENDED_KEYS \
+              DETACH_STATE_BIN DETACH_POWER_BIN \
               DETACH_SQLITE_BIN DETACH_TAR_BIN DETACH_ENV_BIN DETACH_LOCKF_BIN \
               DETACH_CODEX_STATE_ROOT DETACH_CODEX_CHECKPOINT_INTERVAL \
               DETACH_CODEX_HISTORY_LIMIT DETACH_CODEX_REQUIREMENTS_FILE \
@@ -2904,6 +3103,8 @@ start_tmux_session() {
   "${TMUX_CMD[@]}" set-option -q -t "=$session:" @detach_core_path "$SELF"
   "${TMUX_CMD[@]}" set-option -q -w -t "$pane_id" remain-on-exit on
   "${TMUX_CMD[@]}" set-option -q -t "=$session:" history-limit "$HISTORY_LIMIT"
+  tmux_configure_server || \
+    error "warning: could not configure Detach server input options for this session"
   tmux_apply_mouse_input "$session" || \
     error "warning: could not configure Detach mouse input for this session"
   if ! tmux_apply_session_style "$session" starting; then
@@ -3976,6 +4177,10 @@ main() {
       tmux-mouse)
         shift
         config_tmux_mouse "$@"
+        ;;
+      tmux-extended-keys)
+        shift
+        config_tmux_extended_keys "$@"
         ;;
       *) die "unknown config key: ${1:-missing}" ;;
     esac

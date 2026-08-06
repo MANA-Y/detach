@@ -287,6 +287,15 @@ tmux -L "$SOCKET" show-options -qv -t "=$session:" status-left | \
   grep -F 'Claude' | grep -F "$PROJECT_LABEL" | grep -F 'RUNNING' >/dev/null
 tmux -L "$SOCKET" show-options -qv -t "=$session:" status-right | \
   grep -F 'MAC AWAKE' >/dev/null
+# The shared private-server input contract applies to Claude sessions too.
+[ "$(tmux -L "$SOCKET" show-options -qv -t "=$session:" mouse)" = "on" ]
+[ "$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_copy_type_through)" = "1" ]
+[ "$(tmux -L "$SOCKET" show-options -sqv extended-keys)" = "always" ]
+[ "$(tmux -L "$SOCKET" show-options -sqv @detach_extended_keys)" = "1" ]
+[ "$(tmux -L "$SOCKET" show-options -sv terminal-features | grep -Fxc -- '*:extkeys')" = "1" ]
+[ "$(tmux -L "$SOCKET" show-options -sv terminal-features | grep -Fxc -- '*:hyperlinks')" = "1" ]
+tmux -L "$SOCKET" list-keys -T root | grep -F 'S-Enter' | \
+  grep -F 'send-keys M-Enter' >/dev/null
 grep -Fx -- 'run' "$FAKE_POWER_ARGS_FILE" >/dev/null
 grep -Fx -- '--session' "$FAKE_POWER_ARGS_FILE" >/dev/null
 grep -Fx -- "$session" "$FAKE_POWER_ARGS_FILE" >/dev/null

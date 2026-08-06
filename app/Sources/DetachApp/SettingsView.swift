@@ -143,6 +143,7 @@ struct SettingsView: View {
     @State private var tmuxStyle: TmuxStyle?
     @State private var isUpdatingTmuxStyle = false
     @State private var tmuxStyleError: String?
+    @StateObject private var extendedKeys = TmuxExtendedKeysSettingsController()
     @State private var fontSizeDraft: AppFontSizeDraft?
     @State private var selectedStorageSessionIDs = Set<String>()
     @State private var pendingStorageCleanup: [StorageSession] = []
@@ -238,6 +239,7 @@ struct SettingsView: View {
             await storageStore.configure(cli: ProcessDetachCLI(
                 executable: URL(fileURLWithPath: activeDetachPath)))
             await loadTmuxStyle()
+            await extendedKeys.load(detachPath: activeDetachPath)
         }
         .task(id: navigation.selectedTab) {
             guard navigation.selectedTab == .system else { return }
@@ -510,6 +512,40 @@ struct SettingsView: View {
                             Task { await loadTmuxStyle() }
                         }
                         .disabled(isUpdatingTmuxStyle)
+                    }
+                }
+            }
+            Section(L10n.string("Keyboard")) {
+                Toggle(L10n.string("Insert newline with Shift+Return"), isOn: Binding(
+                    get: { extendedKeys.isEnabled },
+                    set: { newValue in
+                        Task {
+                            await extendedKeys.save(
+                                newValue ? .on : .off, detachPath: activeDetachPath)
+                        }
+                    }))
+                    .disabled(extendedKeys.setting == nil || extendedKeys.isUpdating)
+
+                if extendedKeys.isUpdating && extendedKeys.setting == nil {
+                    HStack(spacing: 7) {
+                        ProgressView().controlSize(.small)
+                        Text(L10n.string("Reading the setting from detach…"))
+                    }
+                    .settingsMessage()
+                } else {
+                    Text(L10n.string(
+                        "Makes managed tmux recognize Shift+Return and forward the same multiline input as Option+Return."))
+                        .settingsMessage()
+                }
+
+                if let extendedKeysError = extendedKeys.errorMessage {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(extendedKeysError).settingsMessage(color: .red)
+                        Spacer(minLength: 8)
+                        Button(L10n.string("Try again")) {
+                            Task { await extendedKeys.load(detachPath: activeDetachPath) }
+                        }
+                        .disabled(extendedKeys.isUpdating)
                     }
                 }
             }

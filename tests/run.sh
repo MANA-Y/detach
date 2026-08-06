@@ -289,7 +289,11 @@ export TMUX_TMPDIR="/tmp/detach-codex-tmux-$$"
 unset TMUX TMUX_PANE DETACH_CORE_ENTRYPOINT DETACH_PROVIDER DETACH_PROGRAM
 unset DETACH_TMUX_SOCKET
 mkdir -p "$TMUX_TMPDIR" "$TMUX_SOCKET_ROOT" "$CODEX_HOME"
-printf '%s\n' 'set -g base-index 1' 'set -g pane-base-index 1' >"$DETACH_TMUX_CONFIG"
+printf '%s\n' \
+  'set -g base-index 1' \
+  'set -g pane-base-index 1' \
+  'bind-key -T copy-mode a send-keys -X cursor-left' \
+  >"$DETACH_TMUX_CONFIG"
 printf '%s\n' 'allowed_approval_policies = ["untrusted", "on-request"]' >"$DETACH_CODEX_REQUIREMENTS_FILE"
 
 bash -n "$SCRIPT"
@@ -510,11 +514,79 @@ tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" status-right | \
 # Mouse input: wheel scrolling stays one line per step and selections land in
 # the macOS clipboard through the Detach-owned server's copy-command.
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" mouse)" = "on" ]
+[ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_copy_type_through)" = "1" ]
 [ "$(tmux -L "$SOCKET" show-options -sqv copy-command)" = "/usr/bin/pbcopy" ]
 tmux -L "$SOCKET" list-keys -T copy-mode | grep -F 'WheelUpPane' | \
   grep -F 'scroll-up' >/dev/null
+# Selections copy through the clipboard but keep the highlight and stay in
+# copy-mode (no snap to the bottom); a plain click clears the leftover highlight.
 tmux -L "$SOCKET" list-keys -T copy-mode-vi | grep -F 'MouseDragEnd1Pane' | \
+  grep -F 'copy-pipe-no-clear' >/dev/null
+tmux -L "$SOCKET" list-keys -T copy-mode | grep -F 'MouseDragEnd1Pane' | \
+  grep -F 'copy-pipe-no-clear' >/dev/null
+! tmux -L "$SOCKET" list-keys -T copy-mode | grep -F 'MouseDragEnd1Pane' | \
   grep -F 'copy-pipe-and-cancel' >/dev/null
+tmux -L "$SOCKET" list-keys -T copy-mode | grep -F 'MouseDown1Pane' | \
+  grep -F 'clear-selection' >/dev/null
+tmux -L "$SOCKET" list-keys -T copy-mode-vi | grep -F 'MouseDown1Pane' | \
+  grep -F 'clear-selection' >/dev/null
+# Type-through: a printable key cancels copy-mode and is delivered literally to
+# the pane. Representative keys, including the escaping-sensitive punctuation and
+# cyrillic, must be bound in both copy-mode tables.
+for type_through_table in copy-mode copy-mode-vi; do
+  type_through_keys="$(tmux -L "$SOCKET" list-keys -T "$type_through_table")"
+  for type_through_key in \
+    'a ' 'q ' '\; ' "\\' " '\" ' '\\ ' '\$ ' 'Space ' 'Enter ' 'BSpace ' 'я '; do
+    printf '%s' "$type_through_keys" | \
+      grep -F "$type_through_table $type_through_key" | \
+      grep -F 'send-keys -X cancel' | \
+      grep -F "switch-client -T detach-$type_through_table-original" >/dev/null || {
+        printf 'type-through binding missing for [%s] in %s\n' \
+          "$type_through_key" "$type_through_table" >&2
+        exit 1
+      }
+  done
+done
+# The fallback tables retain ordinary copy-mode commands for sessions that turn
+# managed mouse input off; wrappers can delegate without a tmux restart.
+tmux -L "$SOCKET" list-keys -T detach-copy-mode-original | grep -F ' q ' | \
+  grep -F 'send-keys -X cancel' >/dev/null
+tmux -L "$SOCKET" list-keys -T detach-copy-mode-original | grep -F ' a ' | \
+  grep -F 'send-keys -X cursor-left' >/dev/null
+tmux -L "$SOCKET" list-keys -T detach-copy-mode-vi-original | grep -F 'Space ' | \
+  grep -F 'begin-selection' >/dev/null
+# Extended keys reach the pane by default, and both passthrough terminal-features
+# are advertised exactly once even after repeated server configuration.
+[ "$(tmux -L "$SOCKET" show-options -sqv extended-keys)" = "always" ]
+[ "$(tmux -L "$SOCKET" show-options -sqv @detach_extended_keys)" = "1" ]
+tmux -L "$SOCKET" list-keys -T root | grep -F 'S-Enter' | \
+  grep -F 'send-keys M-Enter' | grep -F 'detach-root-original' >/dev/null
+tmux -L "$SOCKET" list-keys -T detach-root-original | grep -F 'S-Enter' | \
+  grep -F 'send-keys Enter' >/dev/null
+# Exercise the actual client → tmux → raw-pane path. CSI-u Shift+Return must
+# arrive as the provider-compatible Option+Return bytes (Escape, carriage
+# return), rather than collapsing to ordinary Return as it did without the
+# managed root binding.
+shift_return_session="detach-shift-return-probe"
+shift_return_bytes="$TMP_ROOT/shift-return.bytes"
+tmux -L "$SOCKET" new-session -d -s "$shift_return_session" \
+  "/bin/sh -c 'stty raw -echo; /bin/dd bs=1 count=2 of=\"$shift_return_bytes\" 2>/dev/null'"
+{
+  /bin/sleep 0.5
+  printf '\033[13;2u'
+} | TERM=xterm-256color /usr/bin/perl -e 'alarm 6; exec @ARGV' \
+  /usr/bin/script -q /dev/null \
+  "$TMUX_TEST_BIN" -S "$SOCKET_PATH" attach-session -t "=$shift_return_session" \
+  >/dev/null
+[ "$(od -An -tx1 "$shift_return_bytes" | tr -d '[:space:]')" = "1b0d" ]
+[ "$(tmux -L "$SOCKET" show-options -sv terminal-features | grep -Fxc -- '*:extkeys')" = "1" ]
+[ "$(tmux -L "$SOCKET" show-options -sv terminal-features | grep -Fxc -- '*:hyperlinks')" = "1" ]
+# Re-run the server configuration through a real attach. Attaching without a
+# controlling terminal fails after tmux_configure_server has already run, so the
+# terminal-features must still appear exactly once.
+run_codex attach integration </dev/null >/dev/null 2>&1 || true
+[ "$(tmux -L "$SOCKET" show-options -sv terminal-features | grep -Fxc -- '*:extkeys')" = "1" ]
+[ "$(tmux -L "$SOCKET" show-options -sv terminal-features | grep -Fxc -- '*:hyperlinks')" = "1" ]
 grep -Fx -- 'run' "$FAKE_POWER_ARGS_FILE" >/dev/null
 grep -Fx -- '--session' "$FAKE_POWER_ARGS_FILE" >/dev/null
 grep -Fx -- "$SESSION" "$FAKE_POWER_ARGS_FILE" >/dev/null
@@ -681,8 +753,36 @@ tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" status-left | grep -F 'FAILED
 "$DETACH" config tmux-mouse off
 [ "$("$DETACH" config tmux-mouse)" = "off" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" mouse)" = "off" ]
+[ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_copy_type_through)" = "0" ]
+# The managed wrappers remain installed but now delegate to the saved original
+# table, making the toggle immediately reversible.
+tmux -L "$SOCKET" list-keys -T copy-mode | grep -F ' q ' | \
+  grep -F 'detach-copy-mode-original' >/dev/null
 "$DETACH" config tmux-mouse on
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" mouse)" = "on" ]
+[ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_copy_type_through)" = "1" ]
+
+# The extended-keys toggle round-trips through the same locked config, defaults
+# to on (server option `always`), and flips the live server option both ways.
+[ "$("$DETACH" config tmux-extended-keys)" = "on" ]
+"$DETACH" config tmux-extended-keys off
+[ "$("$DETACH" config tmux-extended-keys)" = "off" ]
+[ "$(tmux -L "$SOCKET" show-options -sqv extended-keys)" = "off" ]
+[ "$(tmux -L "$SOCKET" show-options -sqv @detach_extended_keys)" = "0" ]
+"$DETACH" config tmux-extended-keys on
+[ "$("$DETACH" config tmux-extended-keys)" = "on" ]
+[ "$(tmux -L "$SOCKET" show-options -sqv extended-keys)" = "always" ]
+[ "$(tmux -L "$SOCKET" show-options -sqv @detach_extended_keys)" = "1" ]
+if "$DETACH" config tmux-extended-keys sideways >/dev/null 2>&1; then
+  printf 'config unexpectedly accepted an unsupported extended-keys value\n' >&2
+  exit 1
+fi
+# A live environment override owns the value; config must refuse to persist one.
+[ "$(DETACH_TMUX_EXTENDED_KEYS=0 "$DETACH" config tmux-extended-keys)" = "off" ]
+if DETACH_TMUX_EXTENDED_KEYS=0 "$DETACH" config tmux-extended-keys on >/dev/null 2>&1; then
+  printf 'config unexpectedly changed a value owned by DETACH_TMUX_EXTENDED_KEYS\n' >&2
+  exit 1
+fi
 
 run_codex logs integration | grep -F 'fake Codex finished' >/dev/null
 

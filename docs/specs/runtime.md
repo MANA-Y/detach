@@ -172,13 +172,15 @@ status is the primary power signal: `MAC AWAKE`, `MAC CAN SLEEP`,
 equivalent readable text such as **Mac stays awake** and **Mac can sleep**.
 Temporary icons are secondary.
 
-Mouse input is on by default for managed sessions: copy-mode wheel steps are
-rebound to one line for smooth scrolling, and mouse selections copy through the
-Detach-owned server's `copy-command` into the macOS clipboard (`pbcopy`, plus
-OSC 52 for terminals that support it). Those server options and key bindings
-live only on the private Detach tmux server. `detach config tmux-mouse
-[on|off]` (env override `DETACH_TMUX_MOUSE`) toggles the session `mouse`
-option independently of the visual theme toggle.
+Managed input changes only the private server. `tmux-mouse` defaults on: wheel
+steps are one line; selection copies without clearing, exiting, or snapping;
+click clears it. ASCII/Cyrillic text, Space, Enter, and BSpace exit
+copy-mode and reach the pane while navigation/control keys stay. Off restores
+the original copy tables immediately.
+
+`tmux-extended-keys` defaults on and maps recognized `S-Enter` to stable
+`M-Enter`; off restores the original binding or plain Enter. It adds
+`*:extkeys` and `*:hyperlinks` once; OSC 8 links stay independent.
 
 `list --json` emits JSONL schema 1 and includes the optional `display_name`,
 `power_protection_state`, `agent_turn_state`, opaque `agent_turn_id`, runtime

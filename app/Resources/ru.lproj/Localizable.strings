@@ -299,6 +299,10 @@
 "tmux status line" = "Строка статуса tmux";
 "Detach colors" = "Цвета Detach";
 "My tmux theme" = "Моя тема tmux";
+"Keyboard" = "Клавиатура";
+"Insert newline with Shift+Return" = "Перенос строки по Shift+Return";
+"Makes managed tmux recognize Shift+Return and forward the same multiline input as Option+Return." = "Учит tmux в управляемых сессиях распознавать Shift+Return и передавать тот же перенос строки, что и Option+Return.";
+"detach returned an unsupported tmux extended-keys setting: %@" = "detach вернул неподдерживаемое значение tmux extended-keys: %@";
 "The agent replied in “my-project”" = "Агент ответил в «my-project»";
 "System" = "Система";
 "Mac stays awake" = "Mac не уснёт";

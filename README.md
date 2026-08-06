@@ -379,7 +379,8 @@ detach reconcile --dry-run --json
 | `detach cleanup --dry-run --json` | Preview bulk cleanup of stopped/orphaned sessions. |
 | `detach power status --json` | Read combined idle-sleep and closed-lid protection. |
 | `detach config tmux-style [detach\|inherit]` | Use Detach's session identity bar or your tmux theme. |
-| `detach config tmux-mouse [on\|off]` | Toggle one-line scrolling and clipboard copy bindings. |
+| `detach config tmux-mouse [on\|off]` | Toggle managed scrolling, clipboard selection, and copy-mode type-through behavior. |
+| `detach config tmux-extended-keys [on\|off]` | Toggle Shift+Return multiline input in managed sessions. |
 | `detach doctor [--json]` | Verify the app-installed runtime, provider CLIs, helper, and monitor. |
 | `detach repair` | Reinstall the pristine immutable CLI payload from Detach.app. |
 | `detach uninstall [--keep-state\|--purge-state]` | Remove Detach components and choose whether checkpoints stay. |
@@ -412,9 +413,22 @@ sessions turn red. All styling is session-local: Detach never edits the user's
 global tmux config.
 
 Inside managed tmux, the mouse wheel scrolls one line at a time and mouse
-selection copies to the macOS clipboard. Use `detach config tmux-mouse off` to
-return mouse handling to the terminal emulator. In Terminal.app, Option-drag
-also bypasses tmux selection.
+selection copies to the macOS clipboard while keeping the highlight and your
+scroll position. While managed mouse input is on, typing an ASCII or Cyrillic
+printable key, Space, Enter, or Backspace in copy-mode returns to the live
+prompt and delivers that key to the session. This intentionally gives those
+keys to the live prompt instead of tmux's printable copy-mode commands; arrows,
+page navigation, Escape, and control chords retain their copy-mode behavior.
+Use `detach config tmux-mouse off` to restore the original copy-mode key tables
+and return mouse handling to the terminal emulator. In Terminal.app,
+Option-drag also bypasses tmux selection.
+
+Shift+Return inserts a newline in managed sessions by default. Detach recognizes
+the modified key at its private tmux boundary and sends the same stable
+multiline input as Option+Return. Toggle it in Settings → Terminal or with
+`detach config tmux-extended-keys off`; Option+Return always inserts a newline.
+OSC 8 links from agent output remain clickable in outer terminals that support
+them and are independent of this keyboard toggle.
 
 Choose **My tmux theme** in Settings → Terminal, or run
 `detach config tmux-style inherit`, to remove Detach's bar overrides.

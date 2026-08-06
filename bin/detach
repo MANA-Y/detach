@@ -28,6 +28,7 @@ usage() {
     '  detach power status --json' \
     '  detach config tmux-style [detach|inherit]' \
     '  detach config tmux-mouse [on|off]' \
+    '  detach config tmux-extended-keys [on|off]' \
     '  detach doctor [--json]' \
     '  detach repair' \
     '  detach uninstall [--keep-state|--purge-state]' \

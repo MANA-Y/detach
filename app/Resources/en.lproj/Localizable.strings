@@ -299,6 +299,10 @@
 "tmux status line" = "tmux status line";
 "Detach colors" = "Detach colors";
 "My tmux theme" = "My tmux theme";
+"Keyboard" = "Keyboard";
+"Insert newline with Shift+Return" = "Insert newline with Shift+Return";
+"Makes managed tmux recognize Shift+Return and forward the same multiline input as Option+Return." = "Makes managed tmux recognize Shift+Return and forward the same multiline input as Option+Return.";
+"detach returned an unsupported tmux extended-keys setting: %@" = "detach returned an unsupported tmux extended-keys setting: %@";
 "The agent replied in “my-project”" = "The agent replied in “my-project”";
 "System" = "System";
 "Mac stays awake" = "Mac stays awake";
