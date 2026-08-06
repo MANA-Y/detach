@@ -497,6 +497,8 @@ pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_pane_id)"
 # Detach.app after starting a session).
 [ "$(tmux -L "$SOCKET" display-message -p -t "$pane_id" '#{pane_dead}')" = "0" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_status)" = "running" ]
+[ "$(tmux -L "$SOCKET" show-options -qv -w -t "$pane_id" remain-on-exit)" = off ]
+[ "$(tmux -L "$SOCKET" show-options -qv -p -t "$pane_id" remain-on-exit)" = on ]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_tmux_style)" = "1" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_style_snapshot)" = "1" ]
 session_color="$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_color)"
@@ -1043,10 +1045,6 @@ printf '%s' "$storage_report" | grep -F "\"session_name\":\"$SESSION\"" >/dev/nu
 storage_plan="$("$DETACH" storage cleanup --dry-run --json --session "$SESSION")"
 [ "$(printf '%s' "$storage_plan" | "$STATE_HELPER" meta get /dev/stdin dry_run)" = true ]
 printf '%s' "$storage_plan" | grep -F "\"session_name\":\"$SESSION\"" >/dev/null
-# Reuse this real stopped session/checkpoint later as the old member of the
-# default-history regression without paying for a redundant provider launch.
-default_history_fixture="$TMP_ROOT/default-history-fixture"
-cp -Rp "$DETACH_CODEX_STATE_ROOT/sessions/$SESSION" "$default_history_fixture"
 external_storage="$TMP_ROOT/provider-storage-sentinel"
 mkdir -p "$external_storage"
 printf 'provider data\n' >"$external_storage/keep"
@@ -1289,75 +1287,23 @@ tmux_loss_json="$(run_codex list --json | \
   mark_recoverable ]
 run_codex delete --force "$tmux_loss_name"
 
-# Every fresh project-derived run keeps a separate Detach history. Commands
-# without a name follow the live/newest member, while older checkpoints remain
-# addressable and recoverable by their emitted internal session name.
+# Default-history allocation is provider-root independent. Claude exercises
+# full preservation below in its integration; keep the Codex lane's mirror
+# bounded to exact monotonic slot selection.
 default_slug="$(basename "$ROOT" | LC_ALL=C tr -cs 'A-Za-z0-9_-' '-' | \
   sed 's/^-*//; s/-*$//')"
 [ -n "$default_slug" ] || default_slug=project
 default_slug="${default_slug:0:24}"
 default_digest="$(printf '%s' "$ROOT" | shasum -a 256 | awk '{print substr($1, 1, 8)}')"
 default_session="detach-codex-$default_slug-$default_digest"
-default_meta="$DETACH_CODEX_STATE_ROOT/sessions/$default_session/meta.json"
-cp -Rp "$default_history_fixture" \
-  "$DETACH_CODEX_STATE_ROOT/sessions/$default_session"
-for historical_meta in "$default_meta" \
-    "$DETACH_CODEX_STATE_ROOT/sessions/$default_session/checkpoint/meta.json"; do
-  [ -f "$historical_meta" ] || continue
-  "$STATE_HELPER" meta patch "$historical_meta" \
-    --string session_name "$default_session" \
-    --string project_dir "$ROOT" \
-    --string default_session_base "$default_session" \
-    --null display_name \
-    --string status stopped
-done
-export DETACH_CODEX_BIN="$ROOT/tests/fake-codex"
-export FAKE_CODEX_INIT_DELAY=0
-export FAKE_CODEX_EXIT=0
-[ -s "$DETACH_CODEX_STATE_ROOT/sessions/$default_session/checkpoint/rollout.jsonl" ]
-first_default_token="$("$STATE_HELPER" meta get "$default_meta" run_token)"
-first_default_checkpoint_hash="$(shasum -a 256 \
-  "$DETACH_CODEX_STATE_ROOT/sessions/$default_session/checkpoint/rollout.jsonl" | awk '{print $1}')"
-
-export FAKE_CODEX_SLEEP=20
-second_default_output="$(run_codex --detach -- 'second default history')"
-second_default_session="$(printf '%s\n' "$second_default_output" | \
-  awk '/^Started / { print $2; exit }')"
-[ "$second_default_session" = "$default_session-r000000000001" ]
-[ "$(tmux -L "$SOCKET" show-options -qv -t "=$second_default_session:" \
-  @detach_default_session_base)" = "$default_session" ]
-[ "$("$STATE_HELPER" meta get "$default_meta" run_token)" = "$first_default_token" ]
-[ "$(shasum -a 256 \
-  "$DETACH_CODEX_STATE_ROOT/sessions/$default_session/checkpoint/rollout.jsonl" | awk '{print $1}')" = \
-  "$first_default_checkpoint_hash" ]
-run_codex stop
-! tmux -L "$SOCKET" has-session -t "=$second_default_session" 2>/dev/null
-
-# Stopped and safely orphaned members are both retained by the same allocator;
-# neither status changes the next monotonic history slot.
-second_default_meta="$DETACH_CODEX_STATE_ROOT/sessions/$second_default_session/meta.json"
-[ "$("$STATE_HELPER" meta get "$second_default_meta" status)" = stopped ]
+mkdir -p "$DETACH_CODEX_STATE_ROOT/sessions/$default_session"
+[ "$(run_codex __allocate_default_session_name "$default_session")" = \
+  "$default_session-r000000000001" ]
+mkdir -p "$DETACH_CODEX_STATE_ROOT/sessions/$default_session-r000000000001"
 [ "$(run_codex __allocate_default_session_name "$default_session")" = \
   "$default_session-r000000000002" ]
-"$STATE_HELPER" meta patch "$second_default_meta" --string status orphaned
-[ "$(run_codex __allocate_default_session_name "$default_session")" = \
-  "$default_session-r000000000002" ]
-
-default_storage_report="$($DETACH storage --json)"
-for historical_session in "$default_session" "$second_default_session"; do
-  printf '%s\n' "$default_storage_report" | \
-    grep -F "\"session_name\":\"$historical_session\"" >/dev/null
-done
-
-# The preserved stopped history retains its provider UUID and remains eligible
-# for the real Resume path exercised earlier in this suite.
-first_default_json="$(run_codex list --json | \
-  grep -F "\"session_name\":\"$default_session\"")"
-printf '%s' "$first_default_json" | \
-  grep -F '"health_actions":["resume","delete"]' >/dev/null
-for historical_session in "$default_session" "$second_default_session"; do
-  run_codex delete --force "$historical_session"
-done
+rmdir "$DETACH_CODEX_STATE_ROOT/sessions/$default_session-r000000000001"
+rmdir "$DETACH_CODEX_STATE_ROOT/sessions/$default_session"
 
 # A symlinked sessions root must never redirect locked deletion into another
 # directory, even when the internal command is called directly.

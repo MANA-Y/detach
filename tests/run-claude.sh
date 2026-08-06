@@ -293,6 +293,8 @@ live_pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_pane_
 # The start command (and therefore its creator process) has returned, yet the
 # private tmux server and provider worker continue without an attached client.
 [ "$(tmux -L "$SOCKET" display-message -p -t "$live_pane_id" '#{pane_dead}')" = "0" ]
+[ "$(tmux -L "$SOCKET" show-options -qv -w -t "$live_pane_id" remain-on-exit)" = off ]
+[ "$(tmux -L "$SOCKET" show-options -qv -p -t "$live_pane_id" remain-on-exit)" = on ]
 session_color="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_color)"
 [[ "$session_color" =~ ^#[[:xdigit:]]{6}$ ]]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_status)" = "running" ]
@@ -667,6 +669,8 @@ while [ "$(tmux -L "$SOCKET" display-message -p -t "$pane_id" '#{pane_dead}')" !
   }
   sleep 0.05
 done
+default_history_fixture="$TMP_ROOT/default-claude-history-fixture"
+cp -Rp "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" "$default_history_fixture"
 "$SCRIPT" claude delete --force "$human_label"
 [ ! -d "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" ]
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
@@ -680,21 +684,17 @@ default_slug="${default_slug:0:24}"
 default_digest="$(printf '%s' "$ROOT" | shasum -a 256 | awk '{print substr($1, 1, 8)}')"
 default_session="detach-claude-$default_slug-$default_digest"
 default_meta="$DETACH_CLAUDE_STATE_ROOT/sessions/$default_session/meta.json"
-export FAKE_CLAUDE_SLEEP=1
-export FAKE_CLAUDE_EXIT=0
-reset_fake_claude_ready
-first_default_output="$("$SCRIPT" claude --detach -- 'first default history')"
-wait_for_fake_claude_ready
-printf '%s\n' "$first_default_output" | grep -F "Started $default_session " >/dev/null
-default_pane="$(tmux -L "$SOCKET" show-options -qv -t "=$default_session:" @detach_pane_id)"
-attempts=0
-while [ "$(tmux -L "$SOCKET" display-message -p -t "$default_pane" '#{pane_dead}')" != 1 ]; do
-  attempts=$((attempts + 1))
-  [ "$attempts" -lt 100 ] || {
-    printf 'first default Claude history did not finish\n' >&2
-    exit 1
-  }
-  sleep 0.05
+cp -Rp "$default_history_fixture" \
+  "$DETACH_CLAUDE_STATE_ROOT/sessions/$default_session"
+for historical_meta in "$default_meta" \
+    "$DETACH_CLAUDE_STATE_ROOT/sessions/$default_session/checkpoint/meta.json"; do
+  [ -f "$historical_meta" ] || continue
+  "$STATE_HELPER" meta patch "$historical_meta" \
+    --string session_name "$default_session" \
+    --string project_dir "$ROOT" \
+    --string default_session_base "$default_session" \
+    --null display_name \
+    --string status completed
 done
 [ -s "$DETACH_CLAUDE_STATE_ROOT/sessions/$default_session/checkpoint/claude-session.tar" ]
 first_default_token="$("$STATE_HELPER" meta get "$default_meta" run_token)"
@@ -704,7 +704,6 @@ first_default_checkpoint_hash="$(shasum -a 256 \
 export FAKE_CLAUDE_SLEEP=20
 reset_fake_claude_ready
 second_default_output="$("$SCRIPT" claude --detach -- 'second default history')"
-wait_for_fake_claude_ready
 second_default_session="$(printf '%s\n' "$second_default_output" | \
   awk '/^Started / { print $2; exit }')"
 [ "$second_default_session" = "$default_session-r000000000001" ]

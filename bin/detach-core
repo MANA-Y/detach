@@ -3236,7 +3236,10 @@ start_tmux_session() {
   "${TMUX_CMD[@]}" set-option -q -t "=$session:" @detach_power_state "$(power_protection_state)"
   "${TMUX_CMD[@]}" set-option -q -t "=$session:" @detach_cli_version "$(release_version 2>/dev/null || printf 'unknown')"
   "${TMUX_CMD[@]}" set-option -q -t "=$session:" @detach_core_path "$SELF"
-  "${TMUX_CMD[@]}" set-option -q -w -t "$pane_id" remain-on-exit on
+  # Retain only the managed provider pane for logs and exit status. User-created
+  # splits inherit the window-level off value and disappear normally on exit.
+  "${TMUX_CMD[@]}" set-option -q -w -t "$pane_id" remain-on-exit off
+  "${TMUX_CMD[@]}" set-option -q -p -t "$pane_id" remain-on-exit on
   "${TMUX_CMD[@]}" set-option -q -t "=$session:" history-limit "$HISTORY_LIMIT"
   tmux_configure_server || \
     error "warning: could not configure Detach server input options for this session"

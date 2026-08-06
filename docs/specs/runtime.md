@@ -93,8 +93,9 @@ must leave every failed session in place and continue reporting it explicitly.
 
 ### Session lifecycle and tmux
 
-`start` takes one project lock shared by both providers, creates a safe internal
-session identifier, enables `remain-on-exit`, and launches `__worker`. Without
+`start` takes one cross-provider project lock, creates a safe identifier, sets
+window `remain-on-exit` off and the provider pane on, then launches `__worker`.
+Splits close on exit; provider logs and status remain. Without
 `--name`, the identifier is
 `detach-<provider>-<project-slug>-<project-hash>` for the first history;
 successors use a monotonic `-r<12-hex>` suffix and persist the unsuffixed

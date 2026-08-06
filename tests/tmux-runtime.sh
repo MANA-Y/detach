@@ -14,12 +14,16 @@ INSTALLER="$ROOT/scripts/install.sh"
 POWER_SMOKE_TEST="$ROOT/tests/power-smoke.sh"
 POWER_HELPER_MAIN="$ROOT/app/Sources/DetachPowerHelper/main.swift"
 APP_RESOURCES="$ROOT/app/Resources"
+TMUX_BINARY="$ROOT/app/build/Detach.app/Contents/MacOS/tmux"
 POWER_DAEMON="$APP_RESOURCES/dev.tsarev.detach.power-helper.plist"
 SPARKLE_LICENSE="$APP_RESOURCES/ThirdParty/Sparkle/LICENSE.txt"
 SPARKLE_LICENSE_SHA256="389a4e4e9a32f059775b13a06e25a591445ba229d2838d26dd3e7c0c45127cfe"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-tmux-contract.XXXXXX")"
 
 cleanup() {
+  if [ -n "${TMUX_SOCKET:-}" ] && [ -x "$TMUX_BINARY" ]; then
+    "$TMUX_BINARY" -S "$TMUX_SOCKET" kill-server >/dev/null 2>&1 || true
+  fi
   rm -rf "$TMP_ROOT"
 }
 trap cleanup EXIT
@@ -210,6 +214,52 @@ for integration in "$ROOT/tests/run.sh" "$ROOT/tests/run-claude.sh"; do
   grep -F 'TMUX_TEST_BIN="${DETACH_TEST_TMUX_BIN:-}"' "$integration" >/dev/null
   ! grep -F 'TMUX_TEST_BIN="$(command -v tmux' "$integration" >/dev/null
 done
+
+# Only the managed provider pane is retained. New horizontal, vertical, and
+# multiple user splits inherit window-level `off` and disappear on exit 0 or a
+# failure, while the provider's non-zero exit remains available for diagnosis.
+[ -x "$TMUX_BINARY" ]
+TMUX_SOCKET="$TMP_ROOT/pane-lifecycle.sock"
+provider_pane="$("$TMUX_BINARY" -S "$TMUX_SOCKET" -f /dev/null \
+  new-session -d -P -F '#{pane_id}' -s pane-lifecycle \
+  '/bin/sh -c "/bin/sleep 1; exit 9"')"
+"$TMUX_BINARY" -S "$TMUX_SOCKET" set-option -w -t "$provider_pane" remain-on-exit off
+"$TMUX_BINARY" -S "$TMUX_SOCKET" set-option -p -t "$provider_pane" remain-on-exit on
+split_horizontal="$("$TMUX_BINARY" -S "$TMUX_SOCKET" split-window \
+  -h -d -P -F '#{pane_id}' -t "$provider_pane" '/bin/sh -c "exit 0"')"
+split_vertical="$("$TMUX_BINARY" -S "$TMUX_SOCKET" split-window \
+  -v -d -P -F '#{pane_id}' -t "$provider_pane" '/bin/sh -c "exit 7"')"
+split_multiple="$("$TMUX_BINARY" -S "$TMUX_SOCKET" split-window \
+  -v -d -P -F '#{pane_id}' -t "$provider_pane" '/bin/sh -c "exit 0"')"
+
+pane_exists() {
+  [ "$("$TMUX_BINARY" -S "$TMUX_SOCKET" display-message -p -t "$1" \
+    '#{pane_id}' 2>/dev/null || true)" = "$1" ]
+}
+for split_pane in "$split_horizontal" "$split_vertical" "$split_multiple"; do
+  attempts=0
+  while pane_exists "$split_pane" && [ "$attempts" -lt 80 ]; do
+    attempts=$((attempts + 1))
+    sleep 0.05
+  done
+  ! pane_exists "$split_pane"
+done
+[ "$("$TMUX_BINARY" -S "$TMUX_SOCKET" list-panes \
+  -t '=pane-lifecycle:' -F '#{pane_id}')" = "$provider_pane" ]
+attempts=0
+while [ "$("$TMUX_BINARY" -S "$TMUX_SOCKET" display-message -p \
+    -t "$provider_pane" '#{pane_dead}')" != 1 ] && [ "$attempts" -lt 80 ]; do
+  attempts=$((attempts + 1))
+  sleep 0.05
+done
+[ "$("$TMUX_BINARY" -S "$TMUX_SOCKET" display-message -p \
+  -t "$provider_pane" '#{pane_dead}')" = 1 ]
+[ "$("$TMUX_BINARY" -S "$TMUX_SOCKET" display-message -p \
+  -t "$provider_pane" '#{pane_dead_status}')" = 9 ]
+[ "$("$TMUX_BINARY" -S "$TMUX_SOCKET" show-options -qv \
+  -p -t "$provider_pane" remain-on-exit)" = on ]
+"$TMUX_BINARY" -S "$TMUX_SOCKET" kill-server
+TMUX_SOCKET=""
 
 # The rest of the self-contained runtime follows the same arm64-only packaging
 # contract as tmux. SwiftPM emits one arm64 target triple, and the app retains

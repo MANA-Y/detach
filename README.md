@@ -413,6 +413,10 @@ provider, project, state, and power labels. Completed sessions fade and failed
 sessions turn red. All styling is session-local: Detach never edits the user's
 global tmux config.
 
+Shells opened in user-created split panes close normally on `Ctrl-D` or exit.
+Only the managed Codex or Claude pane is retained after completion so Detach
+can preserve its output and exit status.
+
 Inside managed tmux, the mouse wheel scrolls one line at a time and mouse
 selection copies to the macOS clipboard while keeping the highlight and your
 scroll position. While managed mouse input is on, typing an ASCII or Cyrillic
