@@ -534,7 +534,9 @@ tmux -L "$SOCKET" list-keys -T copy-mode-vi | grep -F 'MouseDown1Pane' | \
 # the pane. Representative keys, including the escaping-sensitive punctuation and
 # cyrillic, must be bound in both copy-mode tables.
 for type_through_table in copy-mode copy-mode-vi; do
-  type_through_keys="$(tmux -L "$SOCKET" list-keys -T "$type_through_table")"
+  # tmux renders non-ASCII key names as `_` in the release workflow's C locale.
+  # Ask only this textual key-table assertion for deterministic UTF-8 output.
+  type_through_keys="$(LC_ALL=C.UTF-8 tmux -L "$SOCKET" list-keys -T "$type_through_table")"
   for type_through_key in \
     'a ' 'q ' '\; ' "\\' " '\" ' '\\ ' '\$ ' 'Space ' 'Enter ' 'BSpace ' 'я '; do
     printf '%s' "$type_through_keys" | \
