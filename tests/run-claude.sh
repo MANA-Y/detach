@@ -167,6 +167,7 @@ export CLAUDE_CONFIG_DIR="$TMP_ROOT/claude-home"
 CLAUDE_CONFIG_REAL_DIR="$TMP_ROOT/claude-home-real"
 export CODEX_HOME="$TMP_ROOT/codex-home"
 export FAKE_CLAUDE_ARGS_FILE="$TMP_ROOT/args.txt"
+export FAKE_CLAUDE_READY_FILE="$TMP_ROOT/claude-ready"
 export FAKE_CODEX_ARGS_FILE="$TMP_ROOT/codex-args.txt"
 export FAKE_CLAUDE_SLEEP=detach-test-live
 export FAKE_CLAUDE_EXIT=7
@@ -179,6 +180,23 @@ printf '%s\n' 'set -g base-index 1' 'set -g pane-base-index 1' >"$DETACH_TMUX_CO
 
 test_sqlite() {
   sqlite3 -cmd '.timeout 5000' "$@"
+}
+
+reset_fake_claude_ready() {
+  rm -f "$FAKE_CLAUDE_READY_FILE"
+}
+
+wait_for_fake_claude_ready() {
+  local attempts=0
+
+  while [ ! -e "$FAKE_CLAUDE_READY_FILE" ]; do
+    attempts=$((attempts + 1))
+    [ "$attempts" -lt 100 ] || {
+      printf 'fake Claude did not finish initialization within 5 seconds\n' >&2
+      return 1
+    }
+    sleep 0.05
+  done
 }
 
 bash -n "$SCRIPT"
@@ -231,10 +249,11 @@ literal_prompt="spaces ; \$(touch $marker) * \"quotes\""
 mkdir -p "$TMP_ROOT/extra-a" "$TMP_ROOT/extra-b"
 # The display label stays out of tmux and filesystem identifiers, remains
 # usable for every lifecycle command, and survives resume/recovery.
+reset_fake_claude_ready
 "$SCRIPT" claude --name "$human_label" --detach -- \
   --name display-name "$literal_prompt" --add-dir "$TMP_ROOT/extra-a" "$TMP_ROOT/extra-b"
 
-sleep 2
+wait_for_fake_claude_ready
 grep -Fx -- "$literal_prompt" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 grep -Fx -- '--session-id' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 grep -Fx -- '--name' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
@@ -542,8 +561,9 @@ mkdir -p \
 printf 'previous live tree\n' >"$stale_restore_destination.detach.old/sentinel"
 printf 'incomplete new tree\n' >"$stale_restore_destination.detach.tmp/sentinel"
 
+reset_fake_claude_ready
 "$SCRIPT" claude recover --detach "$human_label"
-sleep 1
+wait_for_fake_claude_ready
 [ "$("$STATE_HELPER" meta get "$meta" display_name)" = "$human_label" ]
 grep -Fx -- '--resume' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 grep -Fx -- "$session_id" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
@@ -568,8 +588,9 @@ grep -Fx -- "$TMP_ROOT/extra-b" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 # Recovery must also recreate the encoded project directory if it disappeared
 # together with the live transcript.
 rm -rf "$CLAUDE_CONFIG_DIR/projects/fake"
+reset_fake_claude_ready
 "$SCRIPT" claude recover --detach "$human_label"
-sleep 1
+wait_for_fake_claude_ready
 "$SCRIPT" claude stop "$human_label"
 
 # Cross-provider resume must route a known Claude UUID back to Claude.
@@ -582,8 +603,9 @@ rm -f \
   "$CLAUDE_CONFIG_DIR/teams/session-${session_id:0:8}/config.json"
 other_cwd="$TMP_ROOT/other-cwd"
 mkdir -p "$other_cwd"
+reset_fake_claude_ready
 (cd "$other_cwd" && "$SCRIPT" resume --detach "$session_id")
-sleep 1
+wait_for_fake_claude_ready
 grep -Fx -- '--resume' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 grep -Fx -- "$session_id" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 "$STATE_HELPER" meta matches "$meta" claude "$session_id"
@@ -596,16 +618,18 @@ second_id="11111111-2222-4333-8444-555555555555"
 printf '{"type":"user","sessionId":"%s","cwd":"%s","message":{"role":"user","content":"session B"}}\n' \
   "$second_id" "$ROOT" >"$CLAUDE_CONFIG_DIR/projects/fake/$second_id.jsonl"
 export FAKE_CLAUDE_EXPECT_RESTORED=0
+reset_fake_claude_ready
 "$SCRIPT" claude resume --name "$human_label" --detach "$second_id"
-sleep 1
+wait_for_fake_claude_ready
 grep -Fx -- '--resume' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 grep -Fx -- "$second_id" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 "$SCRIPT" claude stop "$human_label"
 
 printf '{truncated task\n' >"$CLAUDE_CONFIG_DIR/tasks/$second_id/task.json"
 export FAKE_CLAUDE_EXPECT_RESTORED=1
+reset_fake_claude_ready
 "$SCRIPT" claude recover --detach "$human_label"
-sleep 1
+wait_for_fake_claude_ready
 "$SCRIPT" claude stop "$human_label"
 export FAKE_CLAUDE_EXPECT_RESTORED=0
 
@@ -629,11 +653,20 @@ grep -Fx 'outside sentinel' "$outside" >/dev/null
 # delete kills a retained pane and removes the session state.
 export FAKE_CLAUDE_SLEEP=1
 export FAKE_CLAUDE_EXIT=0
+reset_fake_claude_ready
 "$SCRIPT" claude --name "$human_label" --detach -- 'delete coverage'
-sleep 3
+wait_for_fake_claude_ready
 tmux -L "$SOCKET" has-session -t "=$session"
 pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_pane_id)"
-[ "$(tmux -L "$SOCKET" display-message -p -t "$pane_id" '#{pane_dead}')" = "1" ]
+attempts=0
+while [ "$(tmux -L "$SOCKET" display-message -p -t "$pane_id" '#{pane_dead}')" != "1" ]; do
+  attempts=$((attempts + 1))
+  [ "$attempts" -lt 100 ] || {
+    printf 'fake Claude pane did not exit within 5 seconds\n' >&2
+    exit 1
+  }
+  sleep 0.05
+done
 "$SCRIPT" claude delete --force "$human_label"
 [ ! -d "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" ]
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null

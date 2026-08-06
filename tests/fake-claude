@@ -128,6 +128,7 @@ jq -cn \
     timestamp: "2099-01-01T00:00:01.000Z"
   }' >"$companion_dir/subagents/agent-fake.jsonl"
 
+[ -z "${FAKE_CLAUDE_READY_FILE:-}" ] || : >"$FAKE_CLAUDE_READY_FILE"
 printf 'fake Claude started in %s\n' "$PWD"
 printf 'mode=%s id=%s\n' "$mode" "$session_id"
 sleep "${FAKE_CLAUDE_SLEEP:-4}"
