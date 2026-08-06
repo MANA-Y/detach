@@ -356,6 +356,7 @@ SH
 
 run_workflow() {
   local fail_after="${1:-}" lid_confirmation="${2:-example/detach@$TARGET_TAG}"
+  local release_confirmation="${3:-example/detach@$TARGET_TAG}" ignore_timing="${4:-0}"
   (
     cd -P "$REPO"
     PATH="$BIN:/usr/bin:/bin" \
@@ -371,7 +372,8 @@ run_workflow() {
       DETACH_RELEASE_TEST_APPLICATIONS_DIR="$APPS" \
       DETACH_RELEASE_TEST_LID_MIN_SECONDS=0 \
       DETACH_RELEASE_TEST_FAIL_AFTER="$fail_after" \
-      DETACH_CONFIRM_RELEASE="example/detach@$TARGET_TAG" \
+      DETACH_RELEASE_IGNORE_TIMING="$ignore_timing" \
+      DETACH_CONFIRM_RELEASE="$release_confirmation" \
       DETACH_CONFIRM_LID_TEST="$lid_confirmation" \
       "$REPO/scripts/release-version" "$TARGET_VERSION"
   )
@@ -406,6 +408,29 @@ run_workflow
 [ "$(grep -c '^power-smoke$' "$ACTION_LOG")" = 1 ]
 [ "$(grep -c '^release-preflight.sh$' "$ACTION_LOG")" = 2 ]
 [ "$(grep -c '^publish-preflight.sh$' "$ACTION_LOG")" = 2 ]
+
+setup_fixture timing-override-confirmation
+expect_failure timing-override-confirmation \
+  "confirmation must exactly equal example/detach@$TARGET_TAG" \
+  run_workflow '' "example/detach@$TARGET_TAG" wrong-confirmation 1
+[ ! -s "$ACTION_LOG" ]
+
+setup_fixture timing-override-invalid
+expect_failure timing-override-invalid 'DETACH_RELEASE_IGNORE_TIMING must be 0 or 1' \
+  run_workflow '' "example/detach@$TARGET_TAG" "example/detach@$TARGET_TAG" invalid
+[ ! -s "$ACTION_LOG" ]
+
+setup_fixture timing-override
+expect_failure timing-override 'injected safe failure after preflight' \
+  run_workflow preflight "example/detach@$TARGET_TAG" "example/detach@$TARGET_TAG" 1
+[ "$(<"$REPO/app/build/release-workflow/$TARGET_VERSION/timing-budget-enforced")" = false ]
+grep -F $'release_timing_override\t1' \
+  "$REPO"/app/build/quality-gates/*/environment.tsv >/dev/null
+! grep -F $'\trelease-budget\t' \
+  "$REPO"/app/build/quality-gates/*/summary.tsv >/dev/null
+run_workflow
+[ "$(<"$REPO/VERSION")" = "$TARGET_VERSION" ]
+[ "$(grep -c '^release$' "$ACTION_LOG")" = 1 ]
 [ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-verified" ]
 
 setup_fixture dirty

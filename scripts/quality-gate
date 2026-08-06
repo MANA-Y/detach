@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
-POLICY_VERSION=9
+POLICY_VERSION=10
 MODE=change
 BASE_REF=""
 PLAN_ONLY=0
@@ -16,6 +16,8 @@ RESUME_LATEST=0
 WITHOUT_RELEASE_BUDGET=0
 TEST_MODE="${DETACH_QUALITY_GATE_TEST_MODE:-0}"
 TEST_REAL_STATIC="${DETACH_QUALITY_GATE_TEST_REAL_STATIC:-0}"
+RELEASE_TIMING_OVERRIDE="${DETACH_RELEASE_TIMING_OVERRIDE:-}"
+RELEASE_TIMING_OVERRIDE_ACTIVE=0
 RESULT_ROOT="${DETACH_QUALITY_GATE_RESULT_ROOT:-$ROOT/app/build/quality-gates}"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 RUN_DIR="$RESULT_ROOT/$RUN_ID"
@@ -148,7 +150,19 @@ done
 case "$TEST_MODE" in 0|1) ;; *) die 'DETACH_QUALITY_GATE_TEST_MODE must be 0 or 1' ;; esac
 case "$TEST_REAL_STATIC" in 0|1) ;; *) die 'DETACH_QUALITY_GATE_TEST_REAL_STATIC must be 0 or 1' ;; esac
 [ "$TEST_MODE" = 1 ] || [ "$TEST_REAL_STATIC" = 0 ] || die 'real static fixture mode is test-only'
-[ "$WITHOUT_RELEASE_BUDGET" = 0 ] || [ "${GITHUB_ACTIONS:-}" = true ] || [ "$TEST_MODE" = 1 ] || \
+case "$MODE" in change|repository|release) ;; *) die "invalid mode: $MODE" ;; esac
+if [ -n "$RELEASE_TIMING_OVERRIDE" ]; then
+  [[ "$RELEASE_TIMING_OVERRIDE" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@v[0-9A-Za-z._+-]+$ ]] || \
+    die 'DETACH_RELEASE_TIMING_OVERRIDE must be an exact owner/repository@tag'
+  [ "${DETACH_CONFIRM_RELEASE:-}" = "$RELEASE_TIMING_OVERRIDE" ] || \
+    die 'release timing override requires matching exact release confirmation'
+  { [ "$MODE" = release ] || [ "$MODE" = repository ]; } && \
+    [ "$WITHOUT_RELEASE_BUDGET" = 1 ] || \
+    die 'release timing override requires repository or release mode with --without-release-budget'
+  RELEASE_TIMING_OVERRIDE_ACTIVE=1
+fi
+[ "$WITHOUT_RELEASE_BUDGET" = 0 ] || [ "${GITHUB_ACTIONS:-}" = true ] || \
+  [ "$TEST_MODE" = 1 ] || [ "$RELEASE_TIMING_OVERRIDE_ACTIVE" = 1 ] || \
   die '--without-release-budget is restricted to GitHub Actions'
 if [ "$TEST_MODE" != 1 ]; then
   [ -z "${DETACH_QUALITY_GATE_TEST_WALL_SECONDS:-}" ] || die 'quality-gate clock overrides are test-only'
@@ -159,7 +173,6 @@ if [ "$TEST_MODE" != 1 ]; then
     [ -z "${!test_variable:-}" ] || die 'quality-gate clock overrides are test-only'
   done
 fi
-case "$MODE" in change|repository|release) ;; *) die "invalid mode: $MODE" ;; esac
 case "$OUTPUT_FORMAT" in text|json) ;; *) die "invalid format: $OUTPUT_FORMAT" ;; esac
 [ -z "$DIAGNOSTIC_STAGE" ] || { [ "$MODE" = change ] && [ -z "$BASE_REF" ] || die '--stage cannot be combined with another selection'; }
 [ "$OUTPUT_FORMAT" = text ] || [ "$PLAN_ONLY" = 1 ] || die '--format json requires --plan'
@@ -376,6 +389,7 @@ if [ "$TEST_MODE" = 1 ]; then
     printf 'xcode\ttest\n'
     printf 'swift\ttest\n'
     printf 'github_actions\tfalse\n'
+    printf 'release_timing_override\t%s\n' "$RELEASE_TIMING_OVERRIDE_ACTIVE"
     printf 'managed_sandbox_declared\tfalse\n'
   } >"$ENVIRONMENT"
 else
@@ -387,6 +401,7 @@ else
     printf 'xcode\t%s\n' "$(xcodebuild -version 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//' || printf unavailable)"
     printf 'swift\t%s\n' "$(swift --version 2>/dev/null | head -1 || printf unavailable)"
     printf 'github_actions\t%s\n' "${GITHUB_ACTIONS:-false}"
+    printf 'release_timing_override\t%s\n' "$RELEASE_TIMING_OVERRIDE_ACTIVE"
     if [ -n "${CODEX_SANDBOX:-}" ]; then
       printf 'managed_sandbox_declared\ttrue\n'
     else
@@ -792,6 +807,7 @@ run_tmux_socket_preflight() {
 run_stage_command() {
   local stage="$1" payload_root="$ROOT/app/build/Detach.app/Contents/Resources/DetachCLI"
   local tmux_bin="$payload_root/tmux" state_bin="$payload_root/detach-state"
+  unset DETACH_RELEASE_TIMING_OVERRIDE DETACH_CONFIRM_RELEASE DETACH_RELEASE_IGNORE_TIMING
   mkdir -p "$ROOT/app/.build/module-cache"
   export CLANG_MODULE_CACHE_PATH="$ROOT/app/.build/module-cache"
   export SWIFTPM_MODULECACHE_OVERRIDE="$ROOT/app/.build/module-cache"

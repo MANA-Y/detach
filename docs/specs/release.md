@@ -24,6 +24,13 @@ change real power state, upload assets, or claim publication.
 - Publication requires exact `owner/repository@tag` confirmation. After
   upload, every remote asset is downloaded and its digest independently
   matched. Missing, extra, changed, or mismatched assets fail closed.
+- Reference-machine timing budgets are mandatory by default. When the release
+  Mac is intentionally busy, the owner may set
+  `DETACH_RELEASE_IGNORE_TIMING=1` for one `release-version` invocation and
+  confirm the exact `owner/repository@tag`; this omits only wall and per-stage
+  timing enforcement. Every functional, artifact, signing, power, lid, and
+  publication gate remains mandatory, and the waiver is recorded in private
+  gate and workflow evidence.
 - Resume state is private under `app/build/`. Resume is allowed only when
   source, durable stage evidence, and existing asset digests still match.
 - Sparkle remains pinned and signed inside-out. Production builds never carry

@@ -34,7 +34,7 @@ prepare_template() {
   printf '%s\n' baseline >"$TEMPLATE_REPO/README.md"
   printf '%s\n' actions.log results '*.out' >"$TEMPLATE_REPO/.gitignore"
   for stage in static gate-contract swift quality-contracts app ui-e2e codex claude distribution tmux-runtime release-preflight publish-preflight release-workflow; do
-    printf '#!/bin/bash\nset -eu\n[ "${CLANG_MODULE_CACHE_PATH:-}" = "${GATE_EXPECTED_MODULE_CACHE:?}" ] || { printf "unexpected Clang module cache: %%s\\n" "${CLANG_MODULE_CACHE_PATH:-missing}" >&2; exit 1; }\n[ "${SWIFTPM_MODULECACHE_OVERRIDE:-}" = "$GATE_EXPECTED_MODULE_CACHE" ] || { printf "unexpected SwiftPM module cache: %%s\\n" "${SWIFTPM_MODULECACHE_OVERRIDE:-missing}" >&2; exit 1; }\nprintf "%%s\\n" "%s" >>"${GATE_ACTION_LOG:?}"\nsleep "${STAGE_SLEEP:-0}"\ncase " ${FAIL_STAGES:-} " in *" %s "*) exit 23 ;; esac\n' "$stage" "$stage" \
+    printf '#!/bin/bash\nset -eu\n[ -z "${DETACH_RELEASE_TIMING_OVERRIDE:-}" ] || { printf "release timing override leaked into stage\\n" >&2; exit 1; }\n[ -z "${DETACH_CONFIRM_RELEASE:-}" ] || { printf "release confirmation leaked into stage\\n" >&2; exit 1; }\n[ "${CLANG_MODULE_CACHE_PATH:-}" = "${GATE_EXPECTED_MODULE_CACHE:?}" ] || { printf "unexpected Clang module cache: %%s\\n" "${CLANG_MODULE_CACHE_PATH:-missing}" >&2; exit 1; }\n[ "${SWIFTPM_MODULECACHE_OVERRIDE:-}" = "$GATE_EXPECTED_MODULE_CACHE" ] || { printf "unexpected SwiftPM module cache: %%s\\n" "${SWIFTPM_MODULECACHE_OVERRIDE:-missing}" >&2; exit 1; }\nprintf "%%s\\n" "%s" >>"${GATE_ACTION_LOG:?}"\nsleep "${STAGE_SLEEP:-0}"\ncase " ${FAIL_STAGES:-} " in *" %s "*) exit 23 ;; esac\n' "$stage" "$stage" \
       >"$TEMPLATE_REPO/tests/quality-gate-fixtures/$stage"
     chmod 0755 "$TEMPLATE_REPO/tests/quality-gate-fixtures/$stage"
   done
@@ -55,12 +55,27 @@ setup_fixture() {
 }
 
 gate() {
+  local release_override="${DETACH_TEST_RELEASE_TIMING_OVERRIDE:-}"
+  local release_confirmation="${DETACH_TEST_RELEASE_CONFIRMATION:-$release_override}"
   (
     cd -P "$REPO"
     GATE_ACTION_LOG="$ACTION_LOG" \
       GATE_EXPECTED_MODULE_CACHE="$REPO/app/.build/module-cache" \
       DETACH_QUALITY_GATE_TEST_MODE=1 \
       DETACH_QUALITY_GATE_RESULT_ROOT="$RESULT_ROOT" \
+      DETACH_RELEASE_TIMING_OVERRIDE="$release_override" \
+      DETACH_CONFIRM_RELEASE="$release_confirmation" \
+      "$REPO/scripts/quality-gate" "$@"
+  )
+}
+
+production_plan() {
+  local release_override="${DETACH_TEST_RELEASE_TIMING_OVERRIDE:-}"
+  local release_confirmation="${DETACH_TEST_RELEASE_CONFIRMATION:-$release_override}"
+  (
+    cd -P "$REPO"
+    DETACH_RELEASE_TIMING_OVERRIDE="$release_override" \
+      DETACH_CONFIRM_RELEASE="$release_confirmation" \
       "$REPO/scripts/quality-gate" "$@"
   )
 }
@@ -185,7 +200,7 @@ mkdir -p "$REPO/app/Sources/DetachKit"
 printf '%s\n' 'struct OddName {}' >"$REPO/app/Sources/DetachKit/line
 break.swift"
 plan="$(gate --plan --format json)"
-[[ "$plan" = '{"policy":9,"mode":"change","source_commit":"'* ]]
+[[ "$plan" = '{"policy":10,"mode":"change","source_commit":"'* ]]
 [[ "$plan" = *'"base_commit":"","input_fingerprint":"'* ]]
 [[ "$plan" = *'"stages":["static","swift","quality-contracts","app","ui-e2e","release-budget"]}' ]]
 
@@ -219,6 +234,45 @@ setup_fixture github-budget
 plan="$(GITHUB_ACTIONS=true gate --mode repository --without-release-budget --plan)"
 [[ "$plan" = *'stages=static,gate-contract,swift,quality-contracts,app,ui-e2e,codex,claude,distribution,tmux-runtime,release-preflight,publish-preflight,release-workflow' ]]
 [[ "$plan" != *'release-budget'* ]]
+
+setup_fixture release-timing-override
+if production_plan --mode release --without-release-budget --plan \
+    >"$REPO/local-budget.stdout" 2>"$REPO/local-budget.stderr"; then
+  printf 'quality gate accepted an unconfirmed local timing override\n' >&2
+  exit 1
+fi
+grep -F -- '--without-release-budget is restricted to GitHub Actions' \
+  "$REPO/local-budget.stderr" >/dev/null
+if DETACH_TEST_RELEASE_TIMING_OVERRIDE=example/detach@v1.2.4 \
+    production_plan --mode change --without-release-budget --plan \
+    >"$REPO/wrong-mode.stdout" 2>"$REPO/wrong-mode.stderr"; then
+  printf 'quality gate accepted a release timing override outside release mode\n' >&2
+  exit 1
+fi
+grep -F 'release timing override requires repository or release mode' \
+  "$REPO/wrong-mode.stderr" >/dev/null
+if DETACH_TEST_RELEASE_TIMING_OVERRIDE=example/detach@v1.2.4 \
+    DETACH_TEST_RELEASE_CONFIRMATION=wrong \
+    production_plan --mode release --without-release-budget --plan \
+    >"$REPO/wrong-confirmation.stdout" 2>"$REPO/wrong-confirmation.stderr"; then
+  printf 'quality gate accepted a mismatched release confirmation\n' >&2
+  exit 1
+fi
+grep -F 'requires matching exact release confirmation' \
+  "$REPO/wrong-confirmation.stderr" >/dev/null
+plan="$(DETACH_TEST_RELEASE_TIMING_OVERRIDE=example/detach@v1.2.4 \
+  production_plan --mode release --without-release-budget --plan)"
+[[ "$plan" != *'release-budget'* ]]
+plan="$(DETACH_TEST_RELEASE_TIMING_OVERRIDE=example/detach@v1.2.4 \
+  production_plan --mode repository --without-release-budget --plan)"
+[[ "$plan" != *'release-budget'* ]]
+if ! DETACH_TEST_RELEASE_TIMING_OVERRIDE=example/detach@v1.2.4 \
+    gate --mode repository --without-release-budget \
+    >"$REPO/override-run.stdout" 2>"$REPO/override-run.stderr"; then
+  cat "$REPO/override-run.stderr" >&2
+  exit 1
+fi
+grep -F $'release_timing_override\t1' "$RESULT_ROOT"/*/environment.tsv >/dev/null
 fi
 
 if [ "$CONTRACT_SHARD" = all ] || [ "$CONTRACT_SHARD" = execution ] || [ "$CONTRACT_SHARD" = failures ]; then

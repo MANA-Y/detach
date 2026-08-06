@@ -35,8 +35,11 @@
 - `scripts/quality-gate --mode repository` — every automated repository gate.
   CI uses the same entry point with `--without-release-budget`, disabling local
   reference-machine wall and stage timing enforcement while retaining every
-  selected functional stage and the static budget ratchets; that option is not
-  local or release readiness evidence. `--stage` is diagnostic only and is not
+  selected functional stage and the static budget ratchets. Direct local use is
+  not readiness evidence. A normal release enforces the budgets; only the
+  owner-confirmed `DETACH_RELEASE_IGNORE_TIMING=1 scripts/release-version X.Y.Z`
+  path may omit them for one intentionally busy-machine release, with the
+  waiver recorded in private evidence. `--stage` is diagnostic only and is not
   proof that a change is ready. Policy 4 keeps SwiftPM work exclusive, then
   runs the isolated Codex and Claude suites concurrently against the verified
   bundled tmux and state helper. Policy 5 additionally rejects wall time above
@@ -51,7 +54,8 @@
   explicit GitHub-only budget-free plan, and raises the established UI floors.
   Policy 9 adds contract-locked `critical`, `unit`, `coverage`, `smoke`, and
   `full` operator entry points while retaining the quality gate as the only
-  readiness authority.
+  readiness authority. Policy 10 adds the exact-owner-confirmed busy-machine
+  release timing waiver without removing any functional or hardware gate.
 
 - `DETACH_TEST_TMUX_BIN="$PWD/app/build/Detach.app/Contents/Resources/DetachCLI/tmux" tests/run.sh`
   — hermetic Codex integration with a fake provider, private tmux
@@ -126,6 +130,9 @@ strict `app/scripts/release.sh` and `app/scripts/publish-release.sh`, installs
 the signed candidate, runs the real power smoke, measures a supervised
 closed-lid probe, publishes, and independently downloads and hashes every
 remote asset. Its private resume state lives under ignored `app/build/`.
+Set `DETACH_RELEASE_IGNORE_TIMING=1` only when the owner explicitly accepts
+busy-machine timing for that single release; the script requires the same exact
+release-target confirmation before it omits reference-machine timing checks.
 Interrupted draft uploads may resume only after every existing asset digest is
 matched; an unexpected or changed asset fails closed. Do not run the two
 low-level scripts manually during a normal release. Do not run, tag, notarize,

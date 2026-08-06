@@ -1,7 +1,7 @@
 # Quality gates
 
 `scripts/quality-gate` is the tracked readiness contract for local agents, CI,
-and releases. Policy version 9 derives
+and releases. Policy version 10 derives
 the mandatory set from the Git diff, and selects the full repository gate for
 unknown paths or changes to this policy itself. Its resource-aware scheduler
 runs isolated work concurrently without allowing two SwiftPM operations to
@@ -18,7 +18,10 @@ share the same build directory.
   reference-machine wall and per-stage timing checks. The `main` and pull
   request CI workflows use it because hosted-runner timing is not comparable
   release evidence. Functional stages and static budget-ratchet checks remain
-  mandatory. The option is not valid for local or release readiness.
+  mandatory. Unconfirmed local use is not readiness evidence. A pre-release
+  repository audit or the release orchestrator may use it only after the owner
+  requests `DETACH_RELEASE_IGNORE_TIMING=1` and confirms the exact release
+  target.
 - `scripts/quality-gate --mode release` runs the complete pre-release suite.
   It omits only the recursive test of `scripts/release-version` itself.
 - `scripts/quality-gate --plan` prints the selected stages without running
@@ -78,9 +81,25 @@ of these stages invokes SwiftPM. Distribution and hermetic release contracts
 form independent lanes. The gate therefore does not depend on writable user
 caches, ambient tmux, provider session state, or the installed Detach app.
 
-There are no quarantined tests in policy version 9. A future quarantine must be
+There are no quarantined tests in policy version 10. A future quarantine must be
 tracked here with an owner, expiry, and reason, and may not remove a release
 contract check.
+
+## Policy version 10: explicit busy-machine release waiver
+
+Policy 10 retains policy 9's functional stages, quality floors, default timing
+ceilings, and performance-regression workflow. It adds one auditable operator
+exception: `DETACH_RELEASE_IGNORE_TIMING=1 scripts/release-version X.Y.Z` may
+omit reference-machine wall and per-stage enforcement after exact
+`owner/repository@tag` confirmation. Pre-release repository audits and the
+release orchestrator pass that exact target as an internal authorization to the
+gate; missing, malformed, or mismatched confirmation fails closed. Static
+budget ratchets, stage timeouts, functional tests,
+signing, notarization, real-power and closed-lid checks, publication, and remote
+asset verification are unchanged. Private quality-gate environment evidence
+and resumable release state record the waiver. The authorization variables are
+removed from every stage subprocess, so nested workflow and gate contracts
+cannot accidentally inherit the owner's capability.
 
 ## Policy version 9: stable diagnostic test sets
 
