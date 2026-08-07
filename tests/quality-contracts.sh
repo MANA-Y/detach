@@ -112,7 +112,7 @@ read -r ui_covered ui_total business_covered business_total < <(
         ui_total += $8; ui_covered += $8 - $9
       }
     $1 ~ /^Sources\/DetachKit\// &&
-      $1 !~ /\/(ClamshellLockRunner|DetachCLI)\.swift$/ {
+      $1 !~ /\/(BoundedProcessRunner|ClamshellLockRunner|DetachCLI)\.swift$/ {
         business_total += $8; business_covered += $8 - $9
       }
     END {

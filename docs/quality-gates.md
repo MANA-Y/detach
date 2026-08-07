@@ -1,7 +1,7 @@
 # Quality gates
 
 `scripts/quality-gate` is the tracked readiness contract for local agents, CI,
-and releases. Policy version 10 derives
+and releases. Policy version 11 derives
 the mandatory set from the Git diff, and selects the full repository gate for
 unknown paths or changes to this policy itself. Its resource-aware scheduler
 runs isolated work concurrently without allowing two SwiftPM operations to
@@ -69,21 +69,44 @@ PASS. The failure output names the exact diagnostic rerun. A red gate must be
 diagnosed, not made green by blind retries.
 
 Swift and Clang module caches are rooted under `app/.build`. Coverage-enabled
-Swift tests finish before the release app build because SwiftPM owns that
-shared directory. Artifact-only coverage analysis then overlaps the release
-build and reads test discovery from the completed Swift log instead of invoking
-SwiftPM again. Once the app is verified, `ui-e2e`, Codex, and Claude run
-concurrently. The UI stage launches a stripped process-private background copy
-with a fake CLI and private HOME/preferences/state; it cannot reach the
-installed Detach payload or user session data. Provider suites use private
-state/socket roots and only the freshly bundled tmux and `detach-state`; none
-of these stages invokes SwiftPM. Distribution and hermetic release contracts
-form independent lanes. The gate therefore does not depend on writable user
-caches, ambient tmux, provider session state, or the installed Detach app.
+Swift tests and the release app build get the reference machine's build
+resources in sequence because their locked stage ceilings are not meaningful
+while unrelated Git/release fixtures compete for CPU and disk. Artifact-only
+coverage analysis overlaps the app build and reads test discovery from the
+completed Swift log instead of invoking SwiftPM again. Once the app is
+verified, the provider and orchestrator lanes start together and drain before
+the independent distribution, preflight, and release-workflow lanes overlap as
+a second wave. This keeps every locked stage duration free of cross-wave CPU
+and disk contention. The UI stage launches a stripped
+process-private background copy with a fake CLI and private
+HOME/preferences/state; it cannot reach the installed Detach payload or user
+session data. Provider suites use private state/socket roots and only the
+freshly bundled tmux and `detach-state`; none of these stages invokes SwiftPM.
+The gate therefore does not depend on writable user caches, ambient tmux,
+provider session state, or the installed Detach app.
 
-There are no quarantined tests in policy version 10. A future quarantine must be
+There are no quarantined tests in policy version 11. A future quarantine must be
 tracked here with an owner, expiry, and reason, and may not remove a release
 contract check.
+
+## Policy version 11: deterministic reference-machine scheduling
+
+Policy 11 retains policy 10's functional stages, coverage floors, timing
+ceilings, and release waiver. It makes the locked timings reproducible again:
+
+1. Coverage compilation and the packaged app build run before CPU/disk-heavy
+   distribution and release fixtures, so their 20- and 70-second measurements
+   describe the stage rather than scheduler contention.
+2. Independent lanes overlap within two non-overlapping waves after the app
+   prerequisite; deterministic marker contracts pin ordering and real overlap.
+3. The release-workflow contract runs its disjoint resumability and rejection
+   fixture lanes concurrently, preserving every scenario while removing
+   unrelated serial Git and fake-publication work.
+4. The new bounded POSIX process adapter is exercised by lifecycle tests but,
+   like the existing CLI and clamshell OS adapters, is excluded from the stable
+   business-core aggregate coverage denominator.
+5. App packaging reuses only the fingerprinted, revalidated pinned-tmux build
+   product and compiles only libevent's linked core target.
 
 ## Policy version 10: explicit busy-machine release waiver
 

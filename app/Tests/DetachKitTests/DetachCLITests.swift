@@ -1,3 +1,5 @@
+import Darwin
+import Foundation
 import XCTest
 @testable import DetachKit
 
@@ -63,12 +65,77 @@ final class DetachCLITests: XCTestCase {
         XCTAssertEqual(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines), helper.path)
     }
 
+    func testVersionManagerPathsUseSemanticNodeOrdering() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-cli-semver-home-\(UUID().uuidString)")
+        let root = home.appendingPathComponent(".nvm/versions/node")
+        for version in ["v9.99.0", "v22.1.0-beta.2", "v22.1.0", "current"] {
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent(version).appendingPathComponent("bin"),
+                withIntermediateDirectories: true)
+        }
+
+        let paths = try XCTUnwrap(ProcessDetachCLI.runtimeEnvironment([
+            "HOME": home.path,
+            "PATH": "/usr/bin:/bin",
+        ])["PATH"]?.split(separator: ":").map(String.init))
+
+        let stable = try XCTUnwrap(paths.firstIndex(of:
+            root.appendingPathComponent("v22.1.0/bin").path))
+        let prerelease = try XCTUnwrap(paths.firstIndex(of:
+            root.appendingPathComponent("v22.1.0-beta.2/bin").path))
+        let legacy = try XCTUnwrap(paths.firstIndex(of:
+            root.appendingPathComponent("v9.99.0/bin").path))
+        let invalid = try XCTUnwrap(paths.firstIndex(of:
+            root.appendingPathComponent("current/bin").path))
+        XCTAssertLessThan(stable, prerelease)
+        XCTAssertLessThan(prerelease, legacy)
+        XCTAssertLessThan(legacy, invalid)
+    }
+
     func testTimeoutTerminatesProcess() async throws {
-        let cli = ProcessDetachCLI(executable: try fixture("sleep 30"))
+        let descendantPID = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-cli-descendant-\(UUID().uuidString)")
+        let cli = ProcessDetachCLI(executable: try fixture("""
+        (trap '' TERM; while :; do sleep 1; done) &
+        printf '%s\n' "$!" >"$1"
+        trap '' TERM
+        while :; do sleep 1; done
+        """), terminationGrace: 0.2)
         let start = Date()
-        let result = try await cli.run(arguments: [], timeout: 1)
+        let result = try await cli.run(
+            arguments: [descendantPID.path], timeout: 1)
         XCTAssertTrue(result.timedOut)
-        XCTAssertLessThan(Date().timeIntervalSince(start), 10)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 5)
+        let pid = try XCTUnwrap(Int32(
+            String(contentsOf: descendantPID, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines)))
+        defer { _ = Darwin.kill(pid, SIGKILL) }
+        XCTAssertFalse(processExists(pid))
+    }
+
+    func testInheritedOutputPipeCannotOutliveCompletedLeader() async throws {
+        let descendantPID = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-cli-pipe-owner-\(UUID().uuidString)")
+        let cli = ProcessDetachCLI(executable: try fixture("""
+        sleep 30 &
+        printf '%s\n' "$!" >"$1"
+        printf 'leader done\n'
+        """))
+
+        let start = Date()
+        let result = try await cli.run(
+            arguments: [descendantPID.path], timeout: 5)
+
+        XCTAssertFalse(result.timedOut)
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertEqual(result.stdout, "leader done\n")
+        XCTAssertLessThan(Date().timeIntervalSince(start), 3)
+        let pid = try XCTUnwrap(Int32(
+            String(contentsOf: descendantPID, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines)))
+        defer { _ = Darwin.kill(pid, SIGKILL) }
+        XCTAssertFalse(processExists(pid))
     }
 
     func testMissingBinaryThrows() async {
@@ -77,5 +144,9 @@ final class DetachCLITests: XCTestCase {
             _ = try await cli.run(arguments: [], timeout: 1)
             XCTFail("expected throw")
         } catch {}
+    }
+
+    private func processExists(_ pid: Int32) -> Bool {
+        Darwin.kill(pid, 0) == 0 || errno == EPERM
     }
 }

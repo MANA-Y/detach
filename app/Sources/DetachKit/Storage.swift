@@ -176,12 +176,11 @@ enum StorageInspector {
         guard !parsed.hadInvalidLines else { throw StorageInspectionError.invalidInventory }
         let statuses = Dictionary(
             parsed.sessions.map {
-                let legacyEligible = $0.effectiveStatus == .stopped || $0.effectiveStatus == .orphaned
                 return (
                     SessionKey(provider: $0.provider, name: $0.sessionName),
                     StorageEligibility(
                         status: $0.effectiveStatus,
-                        cleanupEligible: $0.cleanupEligible ?? legacyEligible))
+                        cleanupEligible: $0.cleanupEligible ?? false))
             },
             uniquingKeysWith: { _, latest in latest })
         var scanner = StorageScanner(

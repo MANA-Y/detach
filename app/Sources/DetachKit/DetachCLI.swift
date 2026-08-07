@@ -1,5 +1,99 @@
 import Foundation
 
+private struct NodeSemanticVersion: Comparable {
+    private struct Identifier: Equatable {
+        let raw: String
+        let numeric: Bool
+
+        static func < (lhs: Identifier, rhs: Identifier) -> Bool {
+            switch (lhs.numeric, rhs.numeric) {
+            case (true, true):
+                if lhs.raw.count != rhs.raw.count {
+                    return lhs.raw.count < rhs.raw.count
+                }
+                return lhs.raw < rhs.raw
+            case (true, false): return true
+            case (false, true): return false
+            case (false, false): return lhs.raw < rhs.raw
+            }
+        }
+    }
+
+    private let core: [Identifier]
+    private let prerelease: [Identifier]?
+
+    init?(_ entry: String) {
+        var value = entry[...]
+        if value.first == "v" || value.first == "V" {
+            value = value.dropFirst()
+        }
+        let withoutBuild = value.split(
+            separator: "+", maxSplits: 1,
+            omittingEmptySubsequences: false)[0]
+        let parts = withoutBuild.split(
+            separator: "-", maxSplits: 1,
+            omittingEmptySubsequences: false)
+        let coreParts = parts[0].split(
+            separator: ".", omittingEmptySubsequences: false)
+        guard coreParts.count == 3 else { return nil }
+        var parsedCore: [Identifier] = []
+        for part in coreParts {
+            let raw = String(part)
+            guard Self.isNumeric(raw),
+                  raw == "0" || raw.first != "0" else { return nil }
+            parsedCore.append(Identifier(raw: raw, numeric: true))
+        }
+        let parsedPrerelease: [Identifier]?
+        if parts.count == 2 {
+            let identifiers = parts[1].split(
+                separator: ".", omittingEmptySubsequences: false)
+            guard !identifiers.isEmpty else { return nil }
+            var parsed: [Identifier] = []
+            for identifier in identifiers {
+                let raw = String(identifier)
+                guard !raw.isEmpty,
+                      raw.utf8.allSatisfy({
+                          ($0 >= 48 && $0 <= 57)
+                              || ($0 >= 65 && $0 <= 90)
+                              || ($0 >= 97 && $0 <= 122)
+                              || $0 == 45
+                      }) else { return nil }
+                let numeric = Self.isNumeric(raw)
+                guard !numeric || raw == "0" || raw.first != "0" else {
+                    return nil
+                }
+                parsed.append(Identifier(raw: raw, numeric: numeric))
+            }
+            parsedPrerelease = parsed
+        } else {
+            parsedPrerelease = nil
+        }
+        core = parsedCore
+        prerelease = parsedPrerelease
+    }
+
+    static func < (lhs: NodeSemanticVersion, rhs: NodeSemanticVersion) -> Bool {
+        for (left, right) in zip(lhs.core, rhs.core) where left != right {
+            return left < right
+        }
+        switch (lhs.prerelease, rhs.prerelease) {
+        case (nil, nil): return false
+        case (.some, nil): return true
+        case (nil, .some): return false
+        case let (.some(left), .some(right)):
+            for (leftIdentifier, rightIdentifier) in zip(left, right)
+                where leftIdentifier != rightIdentifier {
+                return leftIdentifier < rightIdentifier
+            }
+            return left.count < right.count
+        }
+    }
+
+    private static func isNumeric(_ value: String) -> Bool {
+        !value.isEmpty && value.utf8.allSatisfy { $0 >= 48 && $0 <= 57 }
+    }
+}
+
 public struct CLIResult: Equatable, Sendable {
     public var exitCode: Int32
     public var stdout: String
@@ -21,11 +115,23 @@ public protocol DetachCLIRunning: Sendable {
 public final class ProcessDetachCLI: DetachCLIRunning, Sendable {
     public let executable: URL
     private let environment: [String: String]
+    private let processRunner: BoundedProcessRunner
+    private let terminationGrace: TimeInterval
+    private let outputDrainGrace: TimeInterval
 
-    public init(executable: URL, environment: [String: String]? = nil) {
+    public init(
+        executable: URL,
+        environment: [String: String]? = nil,
+        processRunner: BoundedProcessRunner = BoundedProcessRunner(),
+        terminationGrace: TimeInterval = 2,
+        outputDrainGrace: TimeInterval = 0.05
+    ) {
         self.executable = executable
         self.environment = Self.runtimeEnvironment(
             environment ?? ProcessInfo.processInfo.environment)
+        self.processRunner = processRunner
+        self.terminationGrace = terminationGrace
+        self.outputDrainGrace = outputDrainGrace
     }
 
     static func runtimeEnvironment(_ base: [String: String]) -> [String: String] {
@@ -62,53 +168,38 @@ public final class ProcessDetachCLI: DetachCLIRunning, Sendable {
             guard let entries = try? fileManager.contentsOfDirectory(atPath: root) else {
                 return []
             }
-            return entries.sorted(by: >).map { "\(root)/\($0)/bin" }
+            return entries.sorted { left, right in
+                switch (NodeSemanticVersion(left), NodeSemanticVersion(right)) {
+                case let (.some(leftVersion), .some(rightVersion)):
+                    return leftVersion == rightVersion
+                        ? left > right : leftVersion > rightVersion
+                case (.some, nil): return true
+                case (nil, .some): return false
+                case (nil, nil): return left > right
+                }
+            }.map { "\(root)/\($0)/bin" }
         }
     }
 
     public func run(arguments: [String], timeout: TimeInterval) async throws -> CLIResult {
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = arguments
-        process.environment = environment
-        process.standardInput = FileHandle.nullDevice
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
-        try process.run()
-
-        // Drain both pipes concurrently so >64 KiB of output cannot deadlock.
-        let stdoutTask = Task.detached {
-            (try? stdoutPipe.fileHandleForReading.readToEnd()) ?? Data()
-        }
-        let stderrTask = Task.detached {
-            (try? stderrPipe.fileHandleForReading.readToEnd()) ?? Data()
-        }
-
-        // Poll for exit: no terminationHandler, no continuation races.
-        var timedOut = false
-        let deadline = Date().addingTimeInterval(timeout)
-        var killDeadline: Date?
-        while process.isRunning {
-            let now = Date()
-            if !timedOut && now > deadline {
-                timedOut = true
-                process.terminate()
-                killDeadline = now.addingTimeInterval(2)
-            } else if let forcedKillAt = killDeadline, now > forcedKillAt {
-                // Kill only while this Process instance still reports its child
-                // alive; do not leave a delayed task that can target a reused PID.
-                kill(process.processIdentifier, SIGKILL)
-                killDeadline = nil
-            }
-            try? await Task.sleep(nanoseconds: 50_000_000)
-        }
-
-        let stdout = String(data: await stdoutTask.value, encoding: .utf8) ?? ""
-        let stderr = String(data: await stderrTask.value, encoding: .utf8) ?? ""
-        return CLIResult(exitCode: process.terminationStatus,
-                         stdout: stdout, stderr: stderr, timedOut: timedOut)
+        let request = BoundedProcessRequest(
+            executableURL: executable,
+            arguments: arguments,
+            environment: environment,
+            currentDirectoryURL: URL(
+                fileURLWithPath: FileManager.default.currentDirectoryPath,
+                isDirectory: true),
+            timeout: timeout,
+            terminationGrace: terminationGrace,
+            outputDrainGrace: outputDrainGrace)
+        let runner = processRunner
+        let result = try await Task.detached {
+            try runner.run(request)
+        }.value
+        return CLIResult(
+            exitCode: result.exitCode,
+            stdout: String(decoding: result.standardOutput, as: UTF8.self),
+            stderr: String(decoding: result.standardError, as: UTF8.self),
+            timedOut: result.timedOut)
     }
 }

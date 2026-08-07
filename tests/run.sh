@@ -29,6 +29,19 @@ fi
   printf 'detach-state test helper is missing: %s\n' "$STATE_HELPER" >&2
   exit 1
 }
+integer_boundary_file="$TMP_ROOT/integer-boundary.json"
+printf '%s\n' \
+  '{"maximum":9223372036854775807,"above":9223372036854775808}' \
+  >"$integer_boundary_file"
+[ "$("$STATE_HELPER" meta get "$integer_boundary_file" maximum)" = 9223372036854775807 ]
+boundary_output="$("$STATE_HELPER" meta get "$integer_boundary_file" above)" || {
+  printf 'detach-state trapped or failed on Int.max + 1\n' >&2
+  exit 1
+}
+[ -n "$boundary_output" ] || {
+  printf 'detach-state discarded the out-of-range JSON number\n' >&2
+  exit 1
+}
 TMUX_TEST_BIN="${DETACH_TEST_TMUX_BIN:-}"
 [ -x "$TMUX_TEST_BIN" ] || {
   printf 'DETACH_TEST_TMUX_BIN must name an executable bundled tmux binary\n' >&2
@@ -308,7 +321,9 @@ fi
 ! tmux -L "$SOCKET" has-session -t '=detach-codex-power-preflight' 2>/dev/null
 
 readiness_output=""
-if readiness_output="$(FAKE_POWER_FAIL_RUN=1 \
+if readiness_output="$(OPENAI_API_KEY=detach-test-openai-key \
+  ANTHROPIC_API_KEY=detach-test-anthropic-key \
+  FAKE_POWER_FAIL_RUN=1 \
   run_codex --name worker-readiness --detach -- \
     'must not claim a start before the lease is ready' 2>&1)"; then
   printf 'start unexpectedly passed a failed worker readiness handshake\n' >&2
@@ -319,6 +334,14 @@ if printf '%s\n' "$readiness_output" | grep -F 'Started ' >/dev/null; then
   exit 1
 fi
 ! tmux -L "$SOCKET" has-session -t '=detach-codex-worker-readiness' 2>/dev/null
+[ ! -e "$DETACH_CODEX_STATE_ROOT/sessions/detach-codex-worker-readiness/tmux-environment.bin" ] || {
+  printf 'failed start retained a credential-bearing tmux environment scratch file\n' >&2
+  exit 1
+}
+if grep -F 'tmux_environment_args >' "$ROOT/bin/detach-core" >/dev/null; then
+  printf 'runtime still writes tmux environment arguments to disk\n' >&2
+  exit 1
+fi
 if FAKE_POWER_STATE=low_battery run_codex --name power-preflight --detach -- \
   'must not start at low battery' >/dev/null 2>&1; then
   printf 'start unexpectedly passed the low-battery power preflight\n' >&2
@@ -1310,6 +1333,77 @@ mkdir -p "$DETACH_CODEX_STATE_ROOT/sessions/$default_session-r000000000001"
   "$default_session-r000000000002" ]
 rmdir "$DETACH_CODEX_STATE_ROOT/sessions/$default_session-r000000000001"
 rmdir "$DETACH_CODEX_STATE_ROOT/sessions/$default_session"
+
+# Listing saved histories must remain below the app's five-second deadline as
+# state grows. Count helper launches as a deterministic guard against restoring
+# the former per-field subprocess fan-out, and retain a real wall-clock ceiling
+# on the reference test machine.
+list_scale_root="$TMP_ROOT/list-scale-state"
+list_scale_output="$TMP_ROOT/list-scale.jsonl"
+list_scale_invocations="$TMP_ROOT/list-scale-invocations.txt"
+list_scale_wrapper="$TMP_ROOT/list-scale-detach-state"
+mkdir -p "$list_scale_root/sessions"
+list_scale_index=1
+while [ "$list_scale_index" -le 25 ]; do
+  list_scale_session="detach-codex-list-scale-$list_scale_index"
+  list_scale_dir="$list_scale_root/sessions/$list_scale_session"
+  mkdir -p "$list_scale_dir"
+  "$STATE_HELPER" meta create "$list_scale_dir/meta.json" \
+    --integer schema 1 \
+    --string session_name "$list_scale_session" \
+    --string project_dir "$ROOT" \
+    --string status stopped
+  list_scale_index=$((list_scale_index + 1))
+done
+printf '%s\n' \
+  '#!/bin/bash' \
+  'printf x\\n >>"$DETACH_LIST_SCALE_INVOCATIONS"' \
+  'exec "$DETACH_LIST_SCALE_STATE_HELPER" "$@"' >"$list_scale_wrapper"
+chmod 0755 "$list_scale_wrapper"
+SECONDS=0
+DETACH_CODEX_STATE_ROOT="$list_scale_root" \
+DETACH_STATE_BIN="$list_scale_wrapper" \
+DETACH_LIST_SCALE_STATE_HELPER="$STATE_HELPER" \
+DETACH_LIST_SCALE_INVOCATIONS="$list_scale_invocations" \
+DETACH_POWER_BIN=/usr/bin/false \
+DETACH_TMUX_BIN=/usr/bin/false \
+DETACH_TMUX_SOCKET_PATH="$TMUX_SOCKET_ROOT/list-scale.sock" \
+  "$SCRIPT" codex list --json >"$list_scale_output"
+list_scale_elapsed="$SECONDS"
+[ "$(wc -l <"$list_scale_output" | tr -d '[:space:]')" = 25 ]
+[ "$(wc -l <"$list_scale_invocations" | tr -d '[:space:]')" -le 55 ] || {
+  printf 'list restored per-field state helper fan-out\n' >&2
+  exit 1
+}
+[ "$list_scale_elapsed" -lt 5 ] || {
+  printf '25-session list exceeded the app deadline: %ss\n' "$list_scale_elapsed" >&2
+  exit 1
+}
+
+# Public read paths must reject state-root redirection before creating or
+# traversing sessions in an unrelated directory.
+unsafe_provider_link="$TMP_ROOT/unsafe-provider-link"
+unsafe_provider_target="$TMP_ROOT/unsafe-provider-target"
+mkdir -p "$unsafe_provider_target"
+printf 'do not touch\n' >"$unsafe_provider_target/sentinel"
+ln -s "$unsafe_provider_target" "$unsafe_provider_link"
+if DETACH_CODEX_STATE_ROOT="$unsafe_provider_link" run_codex list --json >/dev/null 2>&1; then
+  printf 'list unexpectedly accepted a symlinked provider state root\n' >&2
+  exit 1
+fi
+grep -Fx 'do not touch' "$unsafe_provider_target/sentinel" >/dev/null
+[ ! -e "$unsafe_provider_target/sessions" ]
+
+unsafe_list_state="$TMP_ROOT/unsafe-list-state"
+unsafe_list_target="$TMP_ROOT/unsafe-list-target"
+mkdir -p "$unsafe_list_state" "$unsafe_list_target"
+printf 'do not traverse\n' >"$unsafe_list_target/sentinel"
+ln -s "$unsafe_list_target" "$unsafe_list_state/sessions"
+if DETACH_CODEX_STATE_ROOT="$unsafe_list_state" run_codex list --json >/dev/null 2>&1; then
+  printf 'list unexpectedly accepted a symlinked sessions root\n' >&2
+  exit 1
+fi
+grep -Fx 'do not traverse' "$unsafe_list_target/sentinel" >/dev/null
 
 # A symlinked sessions root must never redirect locked deletion into another
 # directory, even when the internal command is called directly.

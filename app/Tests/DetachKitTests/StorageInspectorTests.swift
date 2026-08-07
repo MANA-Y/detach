@@ -142,6 +142,46 @@ final class StorageInspectorTests: XCTestCase {
         XCTAssertTrue(report.issues.contains { $0.code == "state_root_unsafe" })
     }
 
+    func testScannerRequiresExplicitCleanupEligibility() throws {
+        let roots = try makeProviderRoots()
+        let name = "detach-codex-missing-cleanup-authorization"
+        let sessionRoot = roots[.codex]!
+            .appendingPathComponent("sessions", isDirectory: true)
+            .appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: sessionRoot, withIntermediateDirectories: true)
+        try Data(#"{"schema":1,"provider":"codex","session_name":"detach-codex-missing-cleanup-authorization"}"#.utf8)
+            .write(to: sessionRoot.appendingPathComponent("meta.json"))
+        let inventory = try JSONSerialization.data(withJSONObject: [
+            "schema": 1,
+            "provider": "codex",
+            "session_name": name,
+            "name": name,
+            "effective_status": "stopped",
+        ], options: [.sortedKeys])
+        let authorizedInventory = try JSONSerialization.data(withJSONObject: [
+            "schema": 1,
+            "provider": "codex",
+            "session_name": name,
+            "name": name,
+            "effective_status": "stopped",
+            "cleanup_eligible": true,
+        ], options: [.sortedKeys])
+
+        let report = try StorageInspector.report(
+            stateRoot: temporaryDirectory.path,
+            providerRoots: roots.mapValues(\.path),
+            excludedRoots: [],
+            inventory: authorizedInventory + Data("\n".utf8)
+                + inventory + Data("\n".utf8))
+
+        let measured = try XCTUnwrap(report.sessions.first {
+            $0.sessionName == name
+        })
+        XCTAssertFalse(measured.deletable)
+        XCTAssertEqual(measured.blockedReason, "status_stopped")
+    }
+
     func testStateRootCannotAlsoBeAProviderSessionsRoot() throws {
         let sharedProviderRoot = temporaryDirectory.appendingPathComponent(
             "shared-provider", isDirectory: true)

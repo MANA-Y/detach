@@ -54,14 +54,12 @@ keep the lock around the whole child process and preserve that lock order.
 
 ### Typed state boundary
 
-`detach-state` replaces the former jq dependency. Its stable typed commands
-cover guarded metadata create/get/patch/match operations, JSONL validation and
-summary, context/session JSON emission, health evaluation, reconcile plans,
-and storage report/cleanup-plan JSON.
-Storage accounting uses allocated blocks as the user-facing disk size, keeps
-logical bytes separately for sparse files, never follows symlinks, excludes
-provider storage, and treats an incomplete scan as ineligible for cleanup. Do
-not reintroduce ad-hoc JSON text editing or a jq runtime requirement.
+`detach-state` is the JSON boundary; do not restore jq or shell JSON
+editing. Its typed commands cover guarded metadata mutation and batch reads,
+JSONL validation/summary, health/reconcile, emission, and storage plans.
+Out-of-range integer conversion must never trap. Storage reports allocated and
+logical bytes, exclude provider storage, never follow symlinks, and authorize
+cleanup only after a complete scan with explicit `cleanup_eligible: true`.
 
 Per-session `meta.json` uses schema 1, an internal `session_name`, an optional
 human-facing `display_name`, and a `run_token`. Older schema-1 documents without
@@ -81,8 +79,9 @@ again, and only then be moved into place.
 
 State is private (`umask 077`) under
 `~/.local/state/detach/{codex,claude}/sessions/<name>/` and contains full
-conversation data. Codex's shared SQLite database may be backed up after an
-integrity check but is never restored automatically.
+conversations. Public operations reject symlinked or foreign-owned mutable
+roots before traversal. Codex's integrity-checked SQLite backup is never
+restored automatically.
 
 Bulk cleanup may select only fully scanned `stopped` or `orphaned` sessions.
 Before deletion the app must re-read and match the displayed status and byte
@@ -117,6 +116,9 @@ Install migration checks both the older default socket and the historical
 `-L dev.tsarev.detach` socket before switching payloads. Each worker starts
 from stable install state and then enters the canonical project beneath its
 cleanup trap.
+
+Tmux environment arguments stay in memory; provider credentials are never
+session scratch data.
 
 Default starts form a provider/project history series. A fresh start refuses a
 live member or second writer; otherwise it allocates a successor without
@@ -185,9 +187,9 @@ the original copy tables immediately.
 `power_protection_state`, `agent_turn_state`, opaque `agent_turn_id`, runtime
 PIDs, health reason/actions, reconcile action, freshness, ownership proof, and
 cleanup eligibility. Keep the emitter and Swift `Session` decoder synchronized.
-Derive turn state only from structured provider lifecycle records, never
-terminal text. Storage cleanup must consume typed `cleanup_eligible`, not infer
-safety again from a display status.
+Derive turn state from structured provider lifecycle records, never terminal
+text. Cleanup uses typed `cleanup_eligible`. List decodes metadata once and
+combines health assessment with public JSON emission in one typed call.
 
 ### Provider identity and checkpoints
 

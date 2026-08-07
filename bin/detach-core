@@ -327,12 +327,42 @@ ensure_tmux_socket_dir() {
   fi
 }
 
+ensure_owned_state_directory() {
+  local path="$1"
+  local label="$2"
+  local owner_uid
+
+  case "$path" in
+    /*) ;;
+    *) die "$label must be absolute: $path" ;;
+  esac
+  case "$path" in
+    *$'\n'*|*$'\r'*|*/|*/./*|*/../*) die "$label is unsafe: $path" ;;
+  esac
+  [ ! -L "$path" ] || die "$label must not be a symlink: $path"
+  if [ ! -e "$path" ]; then
+    mkdir -p "$path" || {
+      [ -d "$path" ] && [ ! -L "$path" ] || \
+        die "cannot create $label: $path"
+    }
+  fi
+  owner_uid="$(/usr/bin/id -u)" || die "could not determine the current user"
+  [ -d "$path" ] && [ ! -L "$path" ] && \
+    [ "$(/usr/bin/stat -f '%u' "$path" 2>/dev/null || true)" = "$owner_uid" ] || \
+      die "$label is not a user-owned directory: $path"
+  chmod 0700 "$path" || die "cannot secure $label: $path"
+}
+
 ensure_state_dirs() {
-  # This check is intentionally first: a hostile install-state symlink must
-  # not receive session directories, locks, chmods, or socket files.
+  # Validate every mutable root before a public read or write. In particular,
+  # never let mkdir follow a provider or sessions-root symlink into unrelated
+  # user data.
   validate_tmux_socket_path
-  mkdir -p "$SESSIONS_ROOT" "$LOCKS_ROOT" "$INSTALL_STATE_ROOT" || \
-    die "cannot create state directory: $STATE_ROOT"
+  ensure_owned_state_directory "$INSTALL_STATE_ROOT" "install state root"
+  ensure_owned_state_directory "$STATE_BASE_ROOT" "state root"
+  ensure_owned_state_directory "$STATE_ROOT" "provider state root"
+  ensure_owned_state_directory "$SESSIONS_ROOT" "sessions root"
+  ensure_owned_state_directory "$LOCKS_ROOT" "locks root"
   ensure_tmux_socket_dir
 }
 
@@ -616,6 +646,79 @@ usable_meta_path() {
       return 0
     fi
   done
+  return 1
+}
+
+reset_meta_snapshot() {
+  META_SNAPSHOT_PATH=""
+  META_SNAPSHOT_COMPLETE=0
+  META_STATUS=""
+  META_DISPLAY_NAME=""
+  META_PROJECT_DIR=""
+  META_LAST_CHECKPOINT_AT=""
+  META_AGENT_SESSION_ID=""
+  META_CREATED_AT=""
+  META_FINISHED_AT=""
+  META_EXIT_STATUS=""
+  META_WORKER_PID=""
+  META_PROVIDER_PID=""
+  META_WORKER_HEARTBEAT_AT=""
+  META_SESSION_COLOR=""
+  META_TRANSCRIPT_PATH=""
+  META_RUN_TOKEN=""
+  META_WORKER_HEARTBEAT_EPOCH=""
+  META_LAST_CHECKPOINT_EPOCH=""
+  META_HEALTH_SCHEMA=""
+}
+
+load_meta_snapshot_path() {
+  local path="$1"
+  local session="$2"
+  local key
+  local value
+
+  reset_meta_snapshot
+  while IFS= read -r -d '' key && IFS= read -r -d '' value; do
+    case "$key" in
+      status) META_STATUS="$value" ;;
+      display_name) META_DISPLAY_NAME="$value" ;;
+      project_dir) META_PROJECT_DIR="$value" ;;
+      last_checkpoint_at) META_LAST_CHECKPOINT_AT="$value" ;;
+      agent_session_id) META_AGENT_SESSION_ID="$value" ;;
+      created_at) META_CREATED_AT="$value" ;;
+      finished_at) META_FINISHED_AT="$value" ;;
+      exit_status) META_EXIT_STATUS="$value" ;;
+      worker_pid) META_WORKER_PID="$value" ;;
+      provider_pid) META_PROVIDER_PID="$value" ;;
+      worker_heartbeat_at) META_WORKER_HEARTBEAT_AT="$value" ;;
+      session_color) META_SESSION_COLOR="$value" ;;
+      transcript_path) META_TRANSCRIPT_PATH="$value" ;;
+      run_token) META_RUN_TOKEN="$value" ;;
+      worker_heartbeat_epoch) META_WORKER_HEARTBEAT_EPOCH="$value" ;;
+      last_checkpoint_epoch) META_LAST_CHECKPOINT_EPOCH="$value" ;;
+      health_schema) META_HEALTH_SCHEMA="$value" ;;
+      snapshot_complete) [ "$value" = true ] && META_SNAPSHOT_COMPLETE=1 ;;
+      *) return 1 ;;
+    esac
+  done < <("$STATE_BIN" meta snapshot "$path" "$session" 2>/dev/null)
+  [ "$META_SNAPSHOT_COMPLETE" -eq 1 ] || return 1
+  META_SNAPSHOT_PATH="$path"
+}
+
+load_usable_meta_snapshot() {
+  local session="$1"
+  local primary
+  local checkpoint
+
+  primary="$(session_meta "$session")"
+  checkpoint="$(session_dir "$session")/checkpoint/meta.json"
+  if [ -f "$primary" ] && load_meta_snapshot_path "$primary" "$session"; then
+    return 0
+  fi
+  if [ -f "$checkpoint" ] && load_meta_snapshot_path "$checkpoint" "$session"; then
+    return 0
+  fi
+  reset_meta_snapshot
   return 1
 }
 
@@ -3170,7 +3273,7 @@ start_tmux_session() {
   local created=0
   local started=0
   local pane_id=""
-  local env_file
+  local legacy_env_file
   local env_args=()
   local session_color
   local default_base
@@ -3188,6 +3291,10 @@ start_tmux_session() {
     recovery_id="$(new_run_token)"
   fi
   ensure_state_dirs
+  legacy_env_file="$(session_dir "$session")/tmux-environment.bin"
+  # Versions before 0.7 briefly stored tmux environment arguments in the
+  # session directory. Remove any interrupted-start residue before proceeding.
+  rm -f "$legacy_env_file"
 
   if tmux_has_session "$session"; then
     die "tmux session '$session' appeared while starting"
@@ -3200,7 +3307,7 @@ start_tmux_session() {
       [ "$created" -eq 0 ] || "${TMUX_CMD[@]}" kill-session -t "=$session" 2>/dev/null || true
       "$POWER_BIN" release --session "$session" --run-token "$run_token" \
         >/dev/null 2>&1 || true
-      rm -f "$power_ready_file" "$provider_pid_file"
+      rm -f "$power_ready_file" "$provider_pid_file" "$legacy_env_file"
       state_update_meta_for_run "$session" "$run_token" \
         --string status start_failed --string finished_at "$(now_iso)" || true
     fi
@@ -3256,12 +3363,9 @@ start_tmux_session() {
     error "warning: could not apply Detach tmux styling; inheriting the tmux theme for this session"
   fi
 
-  env_file="$(session_dir "$session")/tmux-environment.bin"
-  tmux_environment_args >"$env_file"
   while IFS= read -r -d '' arg; do
     env_args+=( "$arg" )
-  done <"$env_file"
-  rm -f "$env_file"
+  done < <(tmux_environment_args)
 
   "${TMUX_CMD[@]}" respawn-pane -k \
     -t "$pane_id" \
@@ -3649,7 +3753,7 @@ freshness_for_epoch() {
   fi
 }
 
-session_health_json() {
+session_health_envelope() {
   local session="$1"
   local metadata_valid="$2"
   local meta_status="$3"
@@ -3658,22 +3762,29 @@ session_health_json() {
   local token_state="missing"
   local worker_state="unknown"
   local provider_state="unknown"
-  local meta_run_token=""
+  local meta_run_token="${5:-}"
   local tmux_run_token=""
-  local worker_pid=""
-  local provider_pid=""
+  local worker_pid="${6:-}"
+  local provider_pid="${7:-}"
   local pane_pid=""
-  local heartbeat_epoch=""
+  local heartbeat_epoch="${8:-}"
   local tmux_heartbeat_epoch=""
-  local checkpoint_epoch=""
+  local checkpoint_epoch="${9:-}"
   local heartbeat_freshness
   local checkpoint_freshness
   local checkpoint_recoverable=false
   local agent_session_known=false
   local runtime_identity_expected=false
-  local health_schema=""
+  local health_schema="${10:-}"
+  local output_mode="${11:-assessment}"
   local now
   local checkpoint_threshold
+
+  if [ "$#" -ge 11 ]; then
+    shift 11
+  else
+    set --
+  fi
 
   case "$meta_status" in
     starting|running|recovering|hung|completed|failed|interrupted|stopped|\
@@ -3682,12 +3793,6 @@ session_health_json() {
     *) meta_status="unknown" ;;
   esac
   if [ "$metadata_valid" = "true" ]; then
-    meta_run_token="$(read_meta_field "$session" run_token 2>/dev/null || true)"
-    worker_pid="$(read_meta_field "$session" worker_pid 2>/dev/null || true)"
-    provider_pid="$(read_meta_field "$session" provider_pid 2>/dev/null || true)"
-    heartbeat_epoch="$(read_meta_field "$session" worker_heartbeat_epoch 2>/dev/null || true)"
-    checkpoint_epoch="$(read_meta_field "$session" last_checkpoint_epoch 2>/dev/null || true)"
-    health_schema="$(read_meta_field "$session" health_schema 2>/dev/null || true)"
     [ "$health_schema" = "1" ] && runtime_identity_expected=true
     [ -n "$id" ] && [ "$id" != "-" ] && agent_session_known=true
   fi
@@ -3776,7 +3881,7 @@ session_health_json() {
   checkpoint_freshness="$(freshness_for_epoch \
     "$checkpoint_epoch" "$checkpoint_threshold" "$now")"
 
-  "$STATE_BIN" health evaluate \
+  local health_args=(
     --metadata-valid "$metadata_valid" \
     --runtime-identity-expected "$runtime_identity_expected" \
     --meta-status "$meta_status" \
@@ -3788,47 +3893,58 @@ session_health_json() {
     --checkpoint "$checkpoint_freshness" \
     --checkpoint-recoverable "$checkpoint_recoverable" \
     --agent-session-known "$agent_session_known"
+  )
+  if [ "$output_mode" = session ]; then
+    "$STATE_BIN" health session "${health_args[@]}" -- "$@"
+  else
+    [ "$output_mode" = assessment ] || return 1
+    "$STATE_BIN" health evaluate "${health_args[@]}" --envelope
+  fi
 }
 
 refuse_runtime_without_managed_tmux() {
   local session="$1"
-  local meta
   local status
   local id
+  local health_output
   local health_json
   local reason
 
-  meta="$(usable_meta_path "$session" 2>/dev/null || true)"
-  [ -n "$meta" ] || return 0
-  status="$("$STATE_BIN" meta get "$meta" status 2>/dev/null || true)"
-  id="$("$STATE_BIN" meta get "$meta" agent_session_id codex_session_id 2>/dev/null || true)"
+  load_usable_meta_snapshot "$session" || return 0
+  status="$META_STATUS"
+  id="$META_AGENT_SESSION_ID"
   [ -n "$status" ] || status="unknown"
   [ -n "$id" ] || id="-"
-  health_json="$(session_health_json "$session" true "$status" "$id")" || \
+  health_output="$(session_health_envelope \
+    "$session" true "$status" "$id" "$META_RUN_TOKEN" \
+    "$META_WORKER_PID" "$META_PROVIDER_PID" "$META_WORKER_HEARTBEAT_EPOCH" \
+    "$META_LAST_CHECKPOINT_EPOCH" "$META_HEALTH_SCHEMA")" || \
     die "could not safely evaluate runtime ownership for '$session'"
+  health_json="${health_output#*$'\n'}"
+  [ "$health_json" != "$health_output" ] || \
+    die "could not decode runtime ownership for '$session'"
   reason="$(printf '%s' "$health_json" | \
     "$STATE_BIN" meta get /dev/stdin reason 2>/dev/null || true)"
   [ "$reason" != "runtime_process_without_tmux" ] || \
     die "recorded runtime process for '$session' is still alive without managed tmux; refusing to signal it or change saved state"
 }
 
-emit_list_json() {
-  local session="$1" effective="$2" meta_status="$3" id="$4" checkpoint="$5"
-  local cwd="$6" created="$7" exit_json="$8" finished="$9"
-  local model="${10:-}" ctx_used="${11:-}" ctx_window="${12:-}"
-  local agent_turn_state="${13:-}" agent_turn_id="${14:-}"
-  local session_color="${15:-}"
-  local power_state="${16:-unavailable}"
-  local health_json="${17:-}"
-  local worker_pid="${18:-}"
-  local provider_pid="${19:-}"
-  local worker_heartbeat_at="${20:-}"
-  local display_name="${21:-}"
-  local emit_args
+prepare_list_json_args() {
+  local session="$1" meta_status="$2" id="$3" checkpoint="$4"
+  local cwd="$5" created="$6" exit_json="$7" finished="$8"
+  local model="${9:-}" ctx_used="${10:-}" ctx_window="${11:-}"
+  local agent_turn_state="${12:-}" agent_turn_id="${13:-}"
+  local session_color="${14:-}"
+  local power_state="${15:-unavailable}"
+  local worker_pid="${16:-}"
+  local provider_pid="${17:-}"
+  local worker_heartbeat_at="${18:-}"
+  local display_name="${19:-}"
+  local session_args
 
   [[ "$session_color" =~ ^#[0-9A-Fa-f]{6}$ ]] || session_color=''
-  emit_args=(
-    emit session "$PROVIDER" "$session" "$effective"
+  session_args=(
+    "$PROVIDER" "$session"
     --display-name "$display_name"
     --meta-status "$meta_status"
     --agent-session-id "$id"
@@ -3842,18 +3958,15 @@ emit_list_json() {
     --session-color "$session_color"
     --power-state "$power_state"
   )
-  [[ "$exit_json" =~ ^-?[0-9]+$ ]] && emit_args+=( --exit-status "$exit_json" )
-  [[ "$ctx_used" =~ ^-?[0-9]+$ ]] && emit_args+=( --context-used "$ctx_used" )
-  [[ "$ctx_window" =~ ^-?[0-9]+$ ]] && emit_args+=( --context-window "$ctx_window" )
-  if [ -n "$health_json" ]; then
-    emit_args+=( --health-json "$health_json" )
-  fi
-  emit_args+=(
+  [[ "$exit_json" =~ ^-?[0-9]+$ ]] && session_args+=( --exit-status "$exit_json" )
+  [[ "$ctx_used" =~ ^-?[0-9]+$ ]] && session_args+=( --context-used "$ctx_used" )
+  [[ "$ctx_window" =~ ^-?[0-9]+$ ]] && session_args+=( --context-window "$ctx_window" )
+  session_args+=(
     --worker-pid "${worker_pid:--}"
     --provider-pid "${provider_pid:--}"
     --worker-heartbeat-at "${worker_heartbeat_at:--}"
   )
-  "$STATE_BIN" "${emit_args[@]}"
+  LIST_JSON_ARGS=( "${session_args[@]}" )
 }
 
 list_sessions() {
@@ -3865,7 +3978,6 @@ list_sessions() {
   local checkpoint
   local live
   local id
-  local meta
   local display_name
   local created
   local finished
@@ -3874,7 +3986,8 @@ list_sessions() {
   local power_status
   local reported_power_state
   local power_state="unavailable"
-  local health_json
+  local health_output
+  local health_payload
   local worker_pid
   local provider_pid
   local worker_heartbeat_at
@@ -3901,8 +4014,7 @@ list_sessions() {
   for dir in "$SESSIONS_ROOT"/*; do
     [ -d "$dir" ] || continue
     session="$(basename "$dir")"
-    meta="$(usable_meta_path "$session" 2>/dev/null || true)"
-    if [ -z "$meta" ]; then
+    if ! load_usable_meta_snapshot "$session"; then
       cwd="?"
       display_name=""
       session_color=""
@@ -3912,53 +4024,78 @@ list_sessions() {
           session_color="$(tmux_option "$session" '@detach_color')"
         fi
       fi
-      health_json="$(session_health_json "$session" false unknown "-")" || \
-        die "could not evaluate health for '$session'"
-      live="$(printf '%s' "$health_json" | \
-        "$STATE_BIN" meta get /dev/stdin effective_status)"
       if [ "$json_mode" = "1" ]; then
-        emit_list_json "$session" "$live" "" "-" "-" "${cwd:-?}" "" "null" "" \
-          "" "null" "null" "" "" "$session_color" "$power_state" "$health_json"
+        prepare_list_json_args \
+          "$session" "" "-" "-" "${cwd:-?}" "" "null" "" \
+          "" "null" "null" "" "" "$session_color" "$power_state" \
+          "" "" "" ""
+        health_output="$(session_health_envelope \
+          "$session" false unknown "-" "" "" "" "" "" "" \
+          session "${LIST_JSON_ARGS[@]}")" || \
+          die "could not evaluate health for '$session'"
+      else
+        health_output="$(session_health_envelope \
+          "$session" false unknown "-" "" "" "" "" "" "")" || \
+          die "could not evaluate health for '$session'"
+      fi
+      live="${health_output%%$'\n'*}"
+      health_payload="${health_output#*$'\n'}"
+      [ "$health_payload" != "$health_output" ] || \
+        die "could not decode health for '$session'"
+      if [ "$json_mode" = "1" ]; then
+        printf '%s\n' "$health_payload"
       else
         printf '%-9s %-48s %-32s %-12s %-36s %-20s %s\n' \
           "$PROVIDER" "$session" '-' "$live" '-' '-' "${cwd:-?}"
       fi
       continue
     fi
-    status="$(read_meta_field "$session" status 2>/dev/null || true)"
-    display_name="$(read_meta_field "$session" display_name 2>/dev/null || true)"
-    cwd="$(read_meta_field "$session" project_dir 2>/dev/null || true)"
-    checkpoint="$(read_meta_field "$session" last_checkpoint_at 2>/dev/null || true)"
-    id="$(read_meta_field "$session" agent_session_id codex_session_id 2>/dev/null || true)"
+    status="$META_STATUS"
+    display_name="$META_DISPLAY_NAME"
+    cwd="$META_PROJECT_DIR"
+    checkpoint="$META_LAST_CHECKPOINT_AT"
+    id="$META_AGENT_SESSION_ID"
     [ -n "$status" ] || status="unknown"
     [ -n "$cwd" ] || cwd="?"
     [ -n "$checkpoint" ] || checkpoint="-"
     [ -n "$id" ] || id="-"
-    created="$(read_meta_field "$session" created_at 2>/dev/null || true)"
-    finished="$(read_meta_field "$session" finished_at 2>/dev/null || true)"
-    exit_json="$(read_meta_field "$session" exit_status 2>/dev/null || true)"
-    worker_pid="$(read_meta_field "$session" worker_pid 2>/dev/null || true)"
-    provider_pid="$(read_meta_field "$session" provider_pid 2>/dev/null || true)"
-    worker_heartbeat_at="$(read_meta_field "$session" worker_heartbeat_at 2>/dev/null || true)"
-    session_color="$(read_meta_field "$session" session_color 2>/dev/null || true)"
+    created="$META_CREATED_AT"
+    finished="$META_FINISHED_AT"
+    exit_json="$META_EXIT_STATUS"
+    worker_pid="$META_WORKER_PID"
+    provider_pid="$META_PROVIDER_PID"
+    worker_heartbeat_at="$META_WORKER_HEARTBEAT_AT"
+    session_color="$META_SESSION_COLOR"
     if [ -z "$session_color" ] && [ -n "$cwd" ] && [ "$cwd" != "?" ]; then
       session_color="$(session_color_for "$PROVIDER" "$cwd")" || session_color=''
     fi
-    transcript_model_context "$(read_meta_field "$session" transcript_path rollout_path 2>/dev/null || true)"
-    health_json="$(session_health_json "$session" true "$status" "$id")" || \
-      die "could not evaluate health for '$session'"
-    live="$(printf '%s' "$health_json" | \
-      "$STATE_BIN" meta get /dev/stdin effective_status)"
-    if [ "$live" = "collision" ]; then
-      # Do not present Detach identity for a foreign tmux session that only
-      # happens to reuse a saved managed session name.
-      session_color=""
-    fi
+    transcript_model_context "$META_TRANSCRIPT_PATH"
     if [ "$json_mode" = "1" ]; then
-      emit_list_json "$session" "$live" "$status" "$id" "$checkpoint" "$cwd" "$created" "$exit_json" "$finished" \
-        "$TRANSCRIPT_MODEL" "$TRANSCRIPT_CTX_USED" "$TRANSCRIPT_CTX_WINDOW" \
-        "$TRANSCRIPT_AGENT_TURN_STATE" "$TRANSCRIPT_AGENT_TURN_ID" "$session_color" "$power_state" \
-        "$health_json" "$worker_pid" "$provider_pid" "$worker_heartbeat_at" "$display_name"
+      prepare_list_json_args \
+        "$session" "$status" "$id" "$checkpoint" "$cwd" "$created" \
+        "$exit_json" "$finished" "$TRANSCRIPT_MODEL" "$TRANSCRIPT_CTX_USED" \
+        "$TRANSCRIPT_CTX_WINDOW" "$TRANSCRIPT_AGENT_TURN_STATE" \
+        "$TRANSCRIPT_AGENT_TURN_ID" "$session_color" "$power_state" \
+        "$worker_pid" "$provider_pid" "$worker_heartbeat_at" "$display_name"
+      health_output="$(session_health_envelope \
+        "$session" true "$status" "$id" "$META_RUN_TOKEN" \
+        "$worker_pid" "$provider_pid" "$META_WORKER_HEARTBEAT_EPOCH" \
+        "$META_LAST_CHECKPOINT_EPOCH" "$META_HEALTH_SCHEMA" \
+        session "${LIST_JSON_ARGS[@]}")" || \
+        die "could not evaluate health for '$session'"
+    else
+      health_output="$(session_health_envelope \
+        "$session" true "$status" "$id" "$META_RUN_TOKEN" \
+        "$worker_pid" "$provider_pid" "$META_WORKER_HEARTBEAT_EPOCH" \
+        "$META_LAST_CHECKPOINT_EPOCH" "$META_HEALTH_SCHEMA")" || \
+        die "could not evaluate health for '$session'"
+    fi
+    live="${health_output%%$'\n'*}"
+    health_payload="${health_output#*$'\n'}"
+    [ "$health_payload" != "$health_output" ] || \
+      die "could not decode health for '$session'"
+    if [ "$json_mode" = "1" ]; then
+      printf '%s\n' "$health_payload"
     else
       printf '%-9s %-48s %-32s %-12s %-36s %-20s %s\n' \
         "$PROVIDER" "$session" "${display_name:--}" "$live" "$id" "$checkpoint" "$cwd"

@@ -134,6 +134,30 @@ final class DetachStateTests: XCTestCase {
         }
     }
 
+    func testMetadataReadDoesNotTrapAtIntegerBoundaries() throws {
+        let data = Data(#"{"minimum":-9223372036854775808,"maximum":9223372036854775807,"whole":1e16,"above":9223372036854775808,"below":-9223372036854775809}"#.utf8)
+
+        XCTAssertEqual(
+            try SessionMetadataDocument.scalar(in: data, paths: ["minimum"]),
+            .integer(.min))
+        XCTAssertEqual(
+            try SessionMetadataDocument.scalar(in: data, paths: ["maximum"]),
+            .integer(.max))
+        XCTAssertEqual(
+            try SessionMetadataDocument.scalar(in: data, paths: ["whole"]),
+            .integer(10_000_000_000_000_000))
+        guard case .number(let above)? = try SessionMetadataDocument.scalar(
+            in: data, paths: ["above"]) else {
+            return XCTFail("Int.max + 1 must remain a non-trapping JSON number")
+        }
+        guard case .number(let below)? = try SessionMetadataDocument.scalar(
+            in: data, paths: ["below"]) else {
+            return XCTFail("Int.min - 1 must remain a non-trapping JSON number")
+        }
+        XCTAssertTrue(above.isFinite)
+        XCTAssertTrue(below.isFinite)
+    }
+
     func testMetadataSessionMatchDefaultsProviderAndComparesSessionIgnoringCase() throws {
         let legacyCodex = Data(#"{"codex_session_id":"ABC-123"}"#.utf8)
         let claude = Data(#"{"provider":"claude","agent_session_id":"Claude-ID"}"#.utf8)

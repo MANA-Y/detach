@@ -48,6 +48,10 @@ public enum DetachStateCommand {
             return try metaGet(
                 Array(arguments.dropFirst(2)),
                 standardInput: injectedStandardInput)
+        case ("meta", "snapshot"):
+            return try metaSnapshot(
+                Array(arguments.dropFirst(2)),
+                standardInput: injectedStandardInput)
         case ("meta", "usable"):
             return try metaUsable(
                 Array(arguments.dropFirst(2)),
@@ -82,6 +86,8 @@ public enum DetachStateCommand {
                 standardInput: injectedStandardInput)
         case ("health", "evaluate"):
             return try healthEvaluate(Array(arguments.dropFirst(2)))
+        case ("health", "session"):
+            return try healthSession(Array(arguments.dropFirst(2)))
         case ("maintenance", "reconcile"):
             return try maintenanceReconcile(
                 Array(arguments.dropFirst(2)),
@@ -179,7 +185,49 @@ public enum DetachStateCommand {
         }
     }
 
-    private static func healthEvaluate(_ arguments: [String]) throws -> Data {
+    private static func healthEvaluate(_ originalArguments: [String]) throws -> Data {
+        var arguments = originalArguments
+        let envelope = arguments.last == "--envelope"
+        if envelope { arguments.removeLast() }
+        let assessment = try healthAssessment(arguments)
+        let encoded = try encodeJSON(assessment)
+        guard envelope else { return encoded }
+        var output = Data((assessment.effectiveStatus.rawValue + "\n").utf8)
+        output.append(encoded)
+        return output
+    }
+
+    /// Evaluates typed health and emits the matching public session object in
+    /// one helper process. Arguments after `--` are the normal emit-session
+    /// arguments without the effective status or health payload.
+    private static func healthSession(_ arguments: [String]) throws -> Data {
+        guard let separator = arguments.firstIndex(of: "--") else {
+            throw DetachStateCommandError.invalidArguments
+        }
+        let assessment = try healthAssessment(Array(arguments[..<separator]))
+        var sessionArguments = Array(arguments[arguments.index(after: separator)...])
+        guard sessionArguments.count >= 2 else {
+            throw DetachStateCommandError.invalidArguments
+        }
+        sessionArguments.insert(assessment.effectiveStatus.rawValue, at: 2)
+        if assessment.effectiveStatus == .collision,
+           let colorIndex = sessionArguments[3...]
+            .firstIndex(of: "--session-color"),
+           sessionArguments.indices.contains(colorIndex + 1) {
+            sessionArguments[colorIndex + 1] = ""
+        }
+        sessionArguments.append("--health-json")
+        sessionArguments.append(String(
+            decoding: try encodeJSON(assessment),
+            as: UTF8.self))
+        var output = Data((assessment.effectiveStatus.rawValue + "\n").utf8)
+        output.append(try emitSession(sessionArguments))
+        return output
+    }
+
+    private static func healthAssessment(
+        _ arguments: [String]
+    ) throws -> SessionHealthAssessment {
         let allowed = Set([
             "--metadata-valid", "--runtime-identity-expected", "--meta-status",
             "--tmux", "--run-token",
@@ -218,7 +266,7 @@ public enum DetachStateCommand {
               let knownRaw = values["--agent-session-known"] else {
             throw DetachStateCommandError.invalidArguments
         }
-        return try encodeJSON(SessionHealthEvaluator.evaluate(SessionHealthEvidence(
+        return SessionHealthEvaluator.evaluate(SessionHealthEvidence(
             metadataValid: try boolean(metadataRaw),
             runtimeIdentityExpected: try boolean(identityExpectedRaw),
             metaStatus: status,
@@ -229,7 +277,7 @@ public enum DetachStateCommand {
             heartbeatFreshness: heartbeat,
             checkpointFreshness: checkpoint,
             checkpointRecoverable: try boolean(recoverableRaw),
-            agentSessionKnown: try boolean(knownRaw))))
+            agentSessionKnown: try boolean(knownRaw)))
     }
 
     private static func maintenanceReconcile(
@@ -414,6 +462,54 @@ public enum DetachStateCommand {
             return Data()
         }
         return Data((render(scalar) + "\n").utf8)
+    }
+
+    /// Emits fixed key/value pairs separated by NUL bytes. The final complete
+    /// marker lets a Bash process-substitution consumer detect helper failure
+    /// even though Bash cannot directly observe that producer's exit status.
+    private static func metaSnapshot(
+        _ arguments: [String],
+        standardInput: Data?
+    ) throws -> Data {
+        guard arguments.count == 2 else {
+            throw DetachStateCommandError.invalidArguments
+        }
+        let data = try inputData(
+            atPath: arguments[0],
+            standardInput: standardInput)
+        let fields: [(String, [String])] = [
+            ("status", ["status"]),
+            ("display_name", ["display_name"]),
+            ("project_dir", ["project_dir"]),
+            ("last_checkpoint_at", ["last_checkpoint_at"]),
+            ("agent_session_id", ["agent_session_id", "codex_session_id"]),
+            ("created_at", ["created_at"]),
+            ("finished_at", ["finished_at"]),
+            ("exit_status", ["exit_status"]),
+            ("worker_pid", ["worker_pid"]),
+            ("provider_pid", ["provider_pid"]),
+            ("worker_heartbeat_at", ["worker_heartbeat_at"]),
+            ("session_color", ["session_color"]),
+            ("transcript_path", ["transcript_path", "rollout_path"]),
+            ("run_token", ["run_token"]),
+            ("worker_heartbeat_epoch", ["worker_heartbeat_epoch"]),
+            ("last_checkpoint_epoch", ["last_checkpoint_epoch"]),
+            ("health_schema", ["health_schema"]),
+        ]
+        guard let values = try SessionMetadataDocument.usableScalars(
+            in: data,
+            expectedSessionName: arguments[1],
+            pathGroups: fields.map(\.1)) else {
+            throw DetachStateCommandError.unusableMetadata
+        }
+        var output = Data()
+        for ((name, _), value) in zip(fields, values) {
+            appendNULTerminated(name, to: &output)
+            appendNULTerminated(value.map(render) ?? "", to: &output)
+        }
+        appendNULTerminated("snapshot_complete", to: &output)
+        appendNULTerminated("true", to: &output)
+        return output
     }
 
     private static func metaUsable(
@@ -703,6 +799,11 @@ public enum DetachStateCommand {
         case .bool(let value): value ? "true" : "false"
         case .null: "null"
         }
+    }
+
+    private static func appendNULTerminated(_ value: String, to data: inout Data) {
+        data.append(contentsOf: value.utf8)
+        data.append(0)
     }
 
     private static func fileURL(_ path: String) -> URL {

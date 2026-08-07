@@ -393,21 +393,29 @@ expect_failure() {
   }
 }
 
-setup_fixture resume
-for stage in preflight prepared pushed artifacts installed power-smoke lid published verified; do
-  expect_failure "resume-$stage" "injected safe failure after $stage" \
-    run_workflow "$stage"
-done
-run_workflow
-[ "$(<"$REPO/VERSION")" = "$TARGET_VERSION" ]
-[ "$(<"$REPO/BUILD")" = 14 ]
-[ "$(git -C "$REPO" log --format=%s | grep -c "^Prepare $TARGET_VERSION release$")" = 1 ]
-[ "$(git -C "$REPO" cat-file -t "$TARGET_TAG")" = tag ]
-[ "$(grep -c '^release$' "$ACTION_LOG")" = 1 ]
-[ "$(grep -c '^publish$' "$ACTION_LOG")" = 1 ]
-[ "$(grep -c '^power-smoke$' "$ACTION_LOG")" = 1 ]
-[ "$(grep -c '^release-preflight.sh$' "$ACTION_LOG")" = 2 ]
-[ "$(grep -c '^publish-preflight.sh$' "$ACTION_LOG")" = 2 ]
+run_resume_case() {
+  setup_fixture resume
+  for stage in preflight prepared pushed artifacts installed power-smoke lid published verified; do
+    expect_failure "resume-$stage" "injected safe failure after $stage" \
+      run_workflow "$stage"
+  done
+  run_workflow
+  [ "$(<"$REPO/VERSION")" = "$TARGET_VERSION" ]
+  [ "$(<"$REPO/BUILD")" = 14 ]
+  [ "$(git -C "$REPO" log --format=%s | grep -c "^Prepare $TARGET_VERSION release$")" = 1 ]
+  [ "$(git -C "$REPO" cat-file -t "$TARGET_TAG")" = tag ]
+  [ "$(grep -c '^release$' "$ACTION_LOG")" = 1 ]
+  [ "$(grep -c '^publish$' "$ACTION_LOG")" = 1 ]
+  [ "$(grep -c '^power-smoke$' "$ACTION_LOG")" = 1 ]
+  [ "$(grep -c '^release-preflight.sh$' "$ACTION_LOG")" = 2 ]
+  [ "$(grep -c '^publish-preflight.sh$' "$ACTION_LOG")" = 2 ]
+}
+
+# The resumability matrix and the independent rejection cases own disjoint
+# repositories below TMP_ROOT. Run those two lanes together so the release
+# contract does not serialize unrelated Git and fake-publication work.
+run_resume_case &
+resume_case_pid=$!
 
 setup_fixture timing-override-confirmation
 expect_failure timing-override-confirmation \
@@ -472,5 +480,12 @@ expect_failure remote-hash 'published asset hash mismatch: Detach.dmg' run_workf
 unset FAKE_PUBLISH_CORRUPT
 [ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-published" ]
 [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-verified" ]
+
+resume_case_status=0
+wait "$resume_case_pid" || resume_case_status=$?
+[ "$resume_case_status" -eq 0 ] || {
+  printf 'release workflow resumability lane failed\n' >&2
+  exit "$resume_case_status"
+}
 
 printf 'Detach release workflow tests passed\n'

@@ -175,6 +175,7 @@ final class DetachPowerCommandTests: XCTestCase {
         let events: EventLog
         var result = ChildCommandResult(exitCode: 0)
         var error: Error?
+        var onRun: (() -> Void)?
         private(set) var commands: [ChildCommand] = []
 
         init(events: EventLog) {
@@ -184,6 +185,7 @@ final class DetachPowerCommandTests: XCTestCase {
         func run(_ command: ChildCommand) throws -> ChildCommandResult {
             events.append("child.run")
             commands.append(command)
+            onRun?()
             if let error { throw error }
             return result
         }
@@ -587,6 +589,45 @@ final class DetachPowerCommandTests: XCTestCase {
             events.values.firstIndex(of: "assertion.release"))
         let childIndex = try XCTUnwrap(events.values.firstIndex(of: "child.run"))
         XCTAssertLessThan(releaseIndex, childIndex)
+    }
+
+    func testThermalReleaseFailureIsNotSilentlyDiscarded() {
+        let thermal = FakeThermalWatcher()
+        let (command, events, assertion, helper, child, heartbeat) = fixture(
+            thermalWatcher: thermal)
+        heartbeat.heartbeatCount = 0
+        assertion.releaseError = ExpectedFailure()
+        child.onRun = { thermal.emit(.critical) }
+
+        XCTAssertThrowsError(try command.execute(arguments: [
+            "run", "--session", "session", "--run-token", "token",
+            "--", "/fixture/provider",
+        ])) { error in
+            XCTAssertTrue(error is ExpectedFailure)
+        }
+
+        XCTAssertTrue(assertion.isActive)
+        XCTAssertEqual(helper.renewed.map(\.1), [false])
+        XCTAssertTrue(events.values.contains("assertion.release"))
+    }
+
+    func testThermalReleaseFailureDuringLeaseAcquisitionWinsOverSafetyError() {
+        let thermal = FakeThermalWatcher()
+        let (command, events, assertion, helper, child, _) = fixture(
+            thermalWatcher: thermal)
+        helper.renewError = ExpectedFailure()
+        helper.onAcquire = { thermal.emit(.critical) }
+
+        XCTAssertThrowsError(try command.execute(arguments: [
+            "run", "--session", "session", "--run-token", "token",
+            "--", "/fixture/provider",
+        ])) { error in
+            XCTAssertTrue(error is ExpectedFailure)
+        }
+
+        XCTAssertFalse(assertion.isActive)
+        XCTAssertTrue(events.values.contains("helper.renew"))
+        XCTAssertTrue(child.commands.isEmpty)
     }
 
     func testThermalProtectionReturnsOnlyAfterStableCooldown() throws {

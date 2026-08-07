@@ -62,6 +62,7 @@ gate() {
     GATE_ACTION_LOG="$ACTION_LOG" \
       GATE_EXPECTED_MODULE_CACHE="$REPO/app/.build/module-cache" \
       DETACH_QUALITY_GATE_TEST_MODE=1 \
+      DETACH_QUALITY_GATE_TEST_DIRECT="${DETACH_QUALITY_GATE_TEST_DIRECT:-1}" \
       DETACH_QUALITY_GATE_RESULT_ROOT="$RESULT_ROOT" \
       DETACH_RELEASE_TIMING_OVERRIDE="$release_override" \
       DETACH_CONFIRM_RELEASE="$release_confirmation" \
@@ -96,7 +97,7 @@ refresh_summary_digest() {
 
 CONTRACT_SHARD="${DETACH_QUALITY_GATE_CONTRACT_SHARD:-all}"
 case "$CONTRACT_SHARD" in
-  all|selection|execution|failures|evidence) ;;
+  all|selection|execution|failures|evidence|evidence-resume|evidence-resume-a|evidence-resume-b|evidence-runtime) ;;
   *) printf 'invalid quality-gate contract shard\n' >&2; exit 2 ;;
 esac
 
@@ -200,7 +201,7 @@ mkdir -p "$REPO/app/Sources/DetachKit"
 printf '%s\n' 'struct OddName {}' >"$REPO/app/Sources/DetachKit/line
 break.swift"
 plan="$(gate --plan --format json)"
-[[ "$plan" = '{"policy":10,"mode":"change","source_commit":"'* ]]
+[[ "$plan" = '{"policy":11,"mode":"change","source_commit":"'* ]]
 [[ "$plan" = *'"base_commit":"","input_fingerprint":"'* ]]
 [[ "$plan" = *'"stages":["static","swift","quality-contracts","app","ui-e2e","release-budget"]}' ]]
 
@@ -294,7 +295,8 @@ grep -F $'release-budget\tblocked' "$RESULT_ROOT"/*/summary.tsv >/dev/null
 setup_fixture ui-e2e-timeout
 printf '#!/bin/bash\nsleep 5\n' >"$REPO/tests/quality-gate-fixtures/ui-e2e"
 chmod 0755 "$REPO/tests/quality-gate-fixtures/ui-e2e"
-if DETACH_QUALITY_GATE_TIMEOUT_UI_E2E=1 gate --stage ui-e2e \
+if DETACH_QUALITY_GATE_TEST_DIRECT=0 DETACH_QUALITY_GATE_TIMEOUT_UI_E2E=1 \
+  gate --stage ui-e2e \
   >"$REPO/ui-e2e-timeout.out" 2>&1; then
   printf 'quality gate unexpectedly ignored a UI e2e timeout\n' >&2
   exit 1
@@ -310,6 +312,7 @@ chmod 0755 "$REPO/tests/quality-gate-fixtures/static"
   exec env GATE_ACTION_LOG="$ACTION_LOG" \
     GATE_EXPECTED_MODULE_CACHE="$REPO/app/.build/module-cache" \
     DETACH_QUALITY_GATE_TEST_MODE=1 \
+    DETACH_QUALITY_GATE_TEST_DIRECT=0 \
     DETACH_QUALITY_GATE_RESULT_ROOT="$RESULT_ROOT" \
     "$REPO/scripts/quality-gate" --stage static
 ) >"$REPO/interrupt.out" 2>&1 &
@@ -397,7 +400,9 @@ grep -F 'codex environment-failed' "$REPO/environment-failure.out" >/dev/null
 grep -F '<failure message="environment-failed">' "$RESULT_ROOT"/*/junit.xml >/dev/null
 fi
 
-if [ "$CONTRACT_SHARD" = all ] || [ "$CONTRACT_SHARD" = execution ] || [ "$CONTRACT_SHARD" = evidence ]; then
+if [ "$CONTRACT_SHARD" = all ] || [ "$CONTRACT_SHARD" = execution ] || \
+   [ "$CONTRACT_SHARD" = evidence ] || [ "$CONTRACT_SHARD" = evidence-resume ] || \
+   [ "$CONTRACT_SHARD" = evidence-resume-a ]; then
 setup_fixture provenance
 printf '%s\n' docs >>"$REPO/README.md"
 plan="$(gate --base "$BASE" --plan --format json)"
@@ -453,7 +458,11 @@ if gate --mode repository --base comparison --resume "$resume_dir" >"$REPO/base-
   exit 1
 fi
 grep -F 'resume evidence uses another base commit' "$REPO/base-second.out" >/dev/null
+fi
 
+if [ "$CONTRACT_SHARD" = all ] || [ "$CONTRACT_SHARD" = execution ] || \
+   [ "$CONTRACT_SHARD" = evidence ] || [ "$CONTRACT_SHARD" = evidence-resume ] || \
+   [ "$CONTRACT_SHARD" = evidence-resume-b ]; then
 setup_fixture tampered-summary
 if FAIL_STAGES=swift gate --mode repository >"$REPO/tamper-first.out" 2>&1; then
   exit 1
@@ -528,11 +537,16 @@ if gate --mode repository --resume "$resume_dir" >"$REPO/invalid-summary-second.
   exit 1
 fi
 grep -F 'resume summary contains invalid or duplicate stage records' "$REPO/invalid-summary-second.out" >/dev/null
+fi
 
+if [ "$CONTRACT_SHARD" = all ] || [ "$CONTRACT_SHARD" = execution ] || \
+   [ "$CONTRACT_SHARD" = evidence ] || [ "$CONTRACT_SHARD" = evidence-runtime ]; then
 setup_fixture stage-timeout
 printf '#!/bin/bash\nsleep 5\n' >"$REPO/tests/quality-gate-fixtures/static"
 chmod 0755 "$REPO/tests/quality-gate-fixtures/static"
-if DETACH_QUALITY_GATE_TIMEOUT=10 DETACH_QUALITY_GATE_TIMEOUT_STATIC=1 gate --stage static >"$REPO/stage-timeout.out" 2>&1; then
+if DETACH_QUALITY_GATE_TEST_DIRECT=0 DETACH_QUALITY_GATE_TIMEOUT=10 \
+  DETACH_QUALITY_GATE_TIMEOUT_STATIC=1 gate --stage static \
+  >"$REPO/stage-timeout.out" 2>&1; then
   printf 'quality gate ignored the stage-specific timeout\n' >&2
   exit 1
 fi
@@ -554,17 +568,77 @@ grep -F $'tmux-runtime\tblocked' "$RESULT_ROOT"/*/summary.tsv >/dev/null
 grep -F $'ui-e2e\tblocked' "$RESULT_ROOT"/*/summary.tsv >/dev/null
 grep -F '<testsuite name="detach-quality-gate" tests="14" failures="1" skipped="5">' "$RESULT_ROOT"/*/junit.xml >/dev/null
 
-setup_fixture parallel-speed
-parallel_started="$(date +%s)"
-STAGE_SLEEP=2 gate --mode repository >"$REPO/parallel.out"
-parallel_duration=$(($(date +%s) - parallel_started))
-[ "$(wc -l <"$ACTION_LOG" | tr -d ' ')" = 13 ]
-[ "$parallel_duration" -le 12 ] || {
-  printf 'parallel gate took %ss; expected at most 12s for a 24s serial fixture\n' \
-    "$parallel_duration" >&2
-  exit 1
-}
+setup_fixture parallel-lanes
+PARALLEL_ROOT="$REPO/parallel"
+mkdir -p "$PARALLEL_ROOT"
+for parallel_stage in distribution release-workflow; do
+  parallel_peer=distribution
+  [ "$parallel_stage" = distribution ] && parallel_peer=release-workflow
+  cat >"$REPO/tests/quality-gate-fixtures/$parallel_stage" <<SH
+#!/bin/bash
+set -eu
+: >"\${GATE_PARALLEL_ROOT:?}/$parallel_stage"
+attempt=0
+while [ ! -f "\$GATE_PARALLEL_ROOT/$parallel_peer" ] && [ "\$attempt" -lt 50 ]; do
+  attempt=\$((attempt + 1))
+  sleep 0.1
+done
+[ -f "\$GATE_PARALLEL_ROOT/$parallel_peer" ]
+SH
+done
+chmod 0755 \
+  "$REPO/tests/quality-gate-fixtures/distribution" \
+  "$REPO/tests/quality-gate-fixtures/release-workflow"
+GATE_PARALLEL_ROOT="$PARALLEL_ROOT" gate --mode repository >"$REPO/parallel.out"
+[ "$(wc -l <"$ACTION_LOG" | tr -d ' ')" = 11 ]
 grep -F 'quality-gate: PASS' "$REPO/parallel.out" >/dev/null
+
+setup_fixture resource-order
+ORDER_ROOT="$REPO/order"
+mkdir -p "$ORDER_ROOT"
+cat >"$REPO/tests/quality-gate-fixtures/swift" <<'SH'
+#!/bin/bash
+set -eu
+sleep 1
+: >"${GATE_ORDER_ROOT:?}/swift"
+SH
+cat >"$REPO/tests/quality-gate-fixtures/app" <<'SH'
+#!/bin/bash
+set -eu
+[ -f "${GATE_ORDER_ROOT:?}/swift" ]
+: >"$GATE_ORDER_ROOT/app"
+SH
+for ordered_stage in ui-e2e codex claude tmux-runtime gate-contract; do
+  cat >"$REPO/tests/quality-gate-fixtures/$ordered_stage" <<SH
+#!/bin/bash
+set -eu
+[ -f "\${GATE_ORDER_ROOT:?}/app" ]
+: >"\$GATE_ORDER_ROOT/$ordered_stage"
+SH
+done
+for ordered_stage in distribution release-preflight publish-preflight release-workflow; do
+  cat >"$REPO/tests/quality-gate-fixtures/$ordered_stage" <<'SH'
+#!/bin/bash
+set -eu
+for first_wave_stage in ui-e2e codex claude tmux-runtime gate-contract; do
+  [ -f "${GATE_ORDER_ROOT:?}/$first_wave_stage" ]
+done
+SH
+done
+chmod 0755 \
+  "$REPO/tests/quality-gate-fixtures/swift" \
+  "$REPO/tests/quality-gate-fixtures/app" \
+  "$REPO/tests/quality-gate-fixtures/ui-e2e" \
+  "$REPO/tests/quality-gate-fixtures/codex" \
+  "$REPO/tests/quality-gate-fixtures/claude" \
+  "$REPO/tests/quality-gate-fixtures/tmux-runtime" \
+  "$REPO/tests/quality-gate-fixtures/gate-contract" \
+  "$REPO/tests/quality-gate-fixtures/distribution" \
+  "$REPO/tests/quality-gate-fixtures/release-preflight" \
+  "$REPO/tests/quality-gate-fixtures/publish-preflight" \
+  "$REPO/tests/quality-gate-fixtures/release-workflow"
+GATE_ORDER_ROOT="$ORDER_ROOT" gate --mode repository >"$REPO/resource-order.out"
+grep -F 'quality-gate: PASS' "$REPO/resource-order.out" >/dev/null
 
 setup_fixture release-budget-wall
 set_manifest_value "$REPO/tests/release-budget.tsv" wall_seconds_max 1
@@ -683,4 +757,8 @@ case "$CONTRACT_SHARD" in
   execution) printf 'Quality gate execution tests passed\n' ;;
   failures) printf 'Quality gate failure tests passed\n' ;;
   evidence) printf 'Quality gate evidence tests passed\n' ;;
+  evidence-resume) printf 'Quality gate resume evidence tests passed\n' ;;
+  evidence-resume-a) printf 'Quality gate resume provenance tests passed\n' ;;
+  evidence-resume-b) printf 'Quality gate resume integrity tests passed\n' ;;
+  evidence-runtime) printf 'Quality gate runtime evidence tests passed\n' ;;
 esac

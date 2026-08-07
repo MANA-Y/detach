@@ -1,6 +1,38 @@
 import CoreFoundation
 import Foundation
 
+/// Converts a Foundation JSON number without ever asking Swift to trap on a
+/// rounded value at the platform-Int boundary. Integer-backed NSNumber values
+/// get an exact string conversion first so Int.max and Int.min remain valid;
+/// whole floating-point values use a strict upper bound because
+/// Double(Int.max) rounds up to 2^63 on 64-bit platforms.
+private func exactJSONInteger(_ value: Any?) -> Int? {
+    guard let number = value as? NSNumber,
+          CFGetTypeID(number) != CFBooleanGetTypeID() else {
+        return nil
+    }
+    let representation = number.stringValue
+    if let exact = Int(representation) { return exact }
+    let unsignedRepresentation: Substring
+    if representation.first == "-" {
+        unsignedRepresentation = representation.dropFirst()
+    } else {
+        unsignedRepresentation = representation.dropFirst(0)
+    }
+    if !unsignedRepresentation.isEmpty,
+       unsignedRepresentation.allSatisfy(\.isNumber) {
+        return nil
+    }
+    let double = number.doubleValue
+    guard double.isFinite,
+          double.rounded(.towardZero) == double,
+          double >= Double(Int.min),
+          double < Double(Int.max) else {
+        return nil
+    }
+    return Int(double)
+}
+
 public enum DetachStateError: Error, Equatable, Sendable {
     case invalidJSON
     case invalidMetadata
@@ -39,13 +71,10 @@ public enum SessionMetadataDocument {
         _ data: Data,
         expectedSessionName: String
     ) -> Bool {
-        guard let object = try? decodeObject(data),
-              integer(from: object["schema"]) == 1,
-              object["session_name"] as? String == expectedSessionName,
-              object["project_dir"] is String else {
-            return false
-        }
-        return true
+        guard let object = try? decodeObject(data) else { return false }
+        return isUsable(
+            object,
+            expectedSessionName: expectedSessionName)
     }
 
     /// Patches top-level metadata without decoding it through a fixed Codable
@@ -137,6 +166,25 @@ public enum SessionMetadataDocument {
         try scalar(inJSONObject: decodeObject(data), paths: paths)
     }
 
+    /// Reads several ordered fallback groups after decoding metadata once.
+    /// The shell list path uses this boundary instead of launching one helper
+    /// process per field.
+    static func usableScalars(
+        in data: Data,
+        expectedSessionName: String,
+        pathGroups: [[String]]
+    ) throws -> [DetachStateScalar?]? {
+        guard let object = try? decodeObject(data),
+              isUsable(
+                object,
+                expectedSessionName: expectedSessionName) else {
+            return nil
+        }
+        return try pathGroups.map {
+            try scalar(inJSONObject: object, paths: $0)
+        }
+    }
+
     static func scalar(
         inJSONObject object: [String: Any],
         paths: [String]
@@ -190,6 +238,15 @@ public enum SessionMetadataDocument {
         }
     }
 
+    private static func isUsable(
+        _ object: [String: Any],
+        expectedSessionName: String
+    ) -> Bool {
+        integer(from: object["schema"]) == 1
+            && object["session_name"] as? String == expectedSessionName
+            && object["project_dir"] is String
+    }
+
     private static func foundationValue(_ scalar: DetachStateScalar) -> Any {
         switch scalar {
         case .string(let value): value
@@ -216,18 +273,7 @@ public enum SessionMetadataDocument {
     }
 
     private static func integer(from value: Any?) -> Int? {
-        guard let number = value as? NSNumber,
-              CFGetTypeID(number) != CFBooleanGetTypeID() else {
-            return nil
-        }
-        let double = number.doubleValue
-        guard double.isFinite,
-              double.rounded(.towardZero) == double,
-              double >= Double(Int.min),
-              double <= Double(Int.max) else {
-            return nil
-        }
-        return Int(double)
+        exactJSONInteger(value)
     }
 }
 
@@ -618,18 +664,7 @@ public enum TranscriptDocument {
     }
 
     private static func integer(_ value: Any?) -> Int {
-        guard let number = value as? NSNumber,
-              CFGetTypeID(number) != CFBooleanGetTypeID() else {
-            return 0
-        }
-        let double = number.doubleValue
-        guard double.isFinite,
-              double.rounded(.towardZero) == double,
-              double >= Double(Int.min),
-              double <= Double(Int.max) else {
-            return 0
-        }
-        return Int(double)
+        exactJSONInteger(value) ?? 0
     }
 
     private static func safeSum(_ values: Int...) -> Int {

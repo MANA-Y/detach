@@ -41,6 +41,18 @@ sha256_file() {
   /usr/bin/shasum -a 256 "$1" | /usr/bin/awk '{print $1}'
 }
 
+validate_tmux_binary() {
+  local binary="$1"
+  local dependencies
+  [ -f "$binary" ] && [ ! -L "$binary" ] || return 1
+  [ "$(/usr/bin/lipo -archs "$binary" 2>/dev/null)" = arm64 ] || return 1
+  dependencies="$(/usr/bin/otool -L "$binary")" || return 1
+  if printf '%s\n' "$dependencies" | \
+      /usr/bin/grep -E '(/opt/homebrew|/usr/local|/Users/|libevent|utf8proc)' >/dev/null; then
+    return 1
+  fi
+}
+
 fetch_source() {
   local name="$1" url="$2" checksum="$3" destination="$4"
 
@@ -78,22 +90,20 @@ build_arch() {
   local cache="${DETACH_TMUX_SOURCE_CACHE:-$REPO_ROOT/app/.build/tmux-sources}"
   local root="${DETACH_TMUX_BUILD_ROOT:-$REPO_ROOT/app/.build/tmux-runtime}/$arch"
   local source_root="$root/sources" prefix="$root/prefix"
-  local sdk cc ar ranlib cmake jobs common_cflags common_ldflags
+  local product="$root/product/tmux" fingerprint_file="$root/product/fingerprint"
+  local sdk sdk_version cc ar ranlib cmake jobs common_cflags common_ldflags
+  local fingerprint header
 
   [ "$arch" = arm64 ] || die "unsupported architecture: $arch"
   [ -n "$output" ] || die "--output is required"
   case "$root" in "$REPO_ROOT"/app/.build/*|/tmp/*|/private/tmp/*) ;; *)
     die "unsafe tmux build root: $root" ;;
   esac
+  [ ! -L "$root" ] || die "tmux build root must not be a symlink: $root"
 
   prepare_sources "$cache"
-  rm -rf "$root"
-  mkdir -p "$source_root" "$prefix" "$(dirname "$output")"
-  extract_source "$cache/libevent-$LIBEVENT_VERSION.tar.gz" "$source_root/libevent"
-  extract_source "$cache/utf8proc-$UTF8PROC_VERSION.tar.gz" "$source_root/utf8proc"
-  extract_source "$cache/tmux-$TMUX_VERSION.tar.gz" "$source_root/tmux"
-
   sdk="$(/usr/bin/xcrun --sdk macosx --show-sdk-path)"
+  sdk_version="$(/usr/bin/xcrun --sdk macosx --show-sdk-version)"
   cc="$(/usr/bin/xcrun --sdk macosx --find clang)"
   ar="$(/usr/bin/xcrun --sdk macosx --find ar)"
   ranlib="$(/usr/bin/xcrun --sdk macosx --find ranlib)"
@@ -102,6 +112,34 @@ build_arch() {
   jobs="$(/usr/sbin/sysctl -n hw.logicalcpu 2>/dev/null || printf 4)"
   common_cflags="-arch $arch -isysroot $sdk -mmacosx-version-min=26.0 -O2"
   common_ldflags="-arch $arch -isysroot $sdk -mmacosx-version-min=26.0"
+  fingerprint="$({
+    printf '%s\n' \
+      'schema=1' \
+      "builder=$(sha256_file "$0")" \
+      "tmux=$TMUX_SHA256" \
+      "libevent=$LIBEVENT_SHA256" \
+      "utf8proc=$UTF8PROC_SHA256" \
+      "arch=$arch" \
+      'deployment=26.0' \
+      "sdk=$sdk_version"
+    "$cc" --version | /usr/bin/head -1
+  } | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
+
+  mkdir -p "$(dirname "$output")"
+  if [ -f "$fingerprint_file" ] && [ ! -L "$product" ] && \
+     [ "$(<"$fingerprint_file")" = "$fingerprint" ]; then
+    /usr/bin/install -m 0755 "$product" "$output"
+    if validate_tmux_binary "$output"; then
+      return 0
+    fi
+    rm -f "$output"
+  fi
+
+  rm -rf "$root"
+  mkdir -p "$source_root" "$prefix/include" "$prefix/lib" "$root/product"
+  extract_source "$cache/libevent-$LIBEVENT_VERSION.tar.gz" "$source_root/libevent"
+  extract_source "$cache/utf8proc-$UTF8PROC_VERSION.tar.gz" "$source_root/utf8proc"
+  extract_source "$cache/tmux-$TMUX_VERSION.tar.gz" "$source_root/tmux"
 
   (
     cd -P "$source_root/libevent"
@@ -117,12 +155,23 @@ build_arch() {
       -DCMAKE_INSTALL_PREFIX="$prefix" \
       -DEVENT__LIBRARY_TYPE=STATIC \
       -DEVENT__DISABLE_OPENSSL=ON \
+      -DEVENT__DISABLE_THREAD_SUPPORT=ON \
+      -DEVENT__DISABLE_BENCHMARK=ON \
       -DEVENT__DISABLE_SAMPLES=ON \
       -DEVENT__DISABLE_REGRESS=ON \
       -DEVENT__DISABLE_TESTS=ON
-    "$cmake" --build build --parallel "$jobs"
-    "$cmake" --install build
+    "$cmake" --build build --target event_core_static --parallel "$jobs"
   )
+  for header in "$source_root/libevent/include/"*.h; do
+    /usr/bin/install -m 0644 "$header" "$prefix/include/$(basename "$header")"
+  done
+  cp -R "$source_root/libevent/include/event2" "$prefix/include/event2"
+  /usr/bin/install -m 0644 \
+    "$source_root/libevent/build/include/event2/event-config.h" \
+    "$prefix/include/event2/event-config.h"
+  /usr/bin/install -m 0644 \
+    "$source_root/libevent/build/lib/libevent_core.a" \
+    "$prefix/lib/libevent_core.a"
 
   (
     cd -P "$source_root/utf8proc"
@@ -149,12 +198,10 @@ build_arch() {
   )
 
   /usr/bin/install -m 0755 "$source_root/tmux/tmux" "$output"
-  [ "$(/usr/bin/lipo -archs "$output")" = arm64 ] || \
-    die "tmux output is not arm64-only"
-  if /usr/bin/otool -L "$output" | \
-      /usr/bin/grep -E '(/opt/homebrew|/usr/local|/Users/|libevent|utf8proc)' >/dev/null; then
-    die "tmux retained a build-host or non-system dynamic dependency"
-  fi
+  validate_tmux_binary "$output" || \
+    die "tmux output has an invalid architecture or dynamic dependency"
+  /usr/bin/install -m 0755 "$output" "$product"
+  printf '%s\n' "$fingerprint" >"$fingerprint_file"
 }
 
 install_licenses() {

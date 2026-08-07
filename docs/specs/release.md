@@ -15,12 +15,16 @@ change real power state, upload assets, or claim publication.
   change together in one release commit.
 - The app, watchdog, bundled tmux, state helper, power client, root helper, and
   Sparkle executables contain only `arm64`. Intel Macs are unsupported.
+- The pinned tmux source build may reuse only an arm64 product keyed by the
+  builder, source checksums, SDK, compiler, and deployment target; every copied
+  cache product passes the normal architecture and linkage validation.
 - The immutable payload order is `detach`, `detach-core`,
   `detach-install`, `detach-state`, `detach-power`, `tmux`.
   Installation activates a content-addressed version atomically.
 - Developer ID signing, notarization, real signed power smoke, and supervised
   closed-lid testing are mandatory release gates and are never inferred from
-  unit tests.
+  unit tests. The protected lid probe must emit its first liveness sample within
+  a bounded ten-second launch window before owner confirmation is accepted.
 - Publication requires exact `owner/repository@tag` confirmation. After
   upload, every remote asset is downloaded and its digest independently
   matched. Missing, extra, changed, or mismatched assets fail closed.

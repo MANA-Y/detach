@@ -13,6 +13,10 @@ resume_id=""
 args_file="${FAKE_CODEX_ARGS_FILE:?}"
 codex_home="${CODEX_HOME:?}"
 
+sqlite() {
+  sqlite3 -cmd '.timeout 5000' "$@"
+}
+
 printf '%s\n' "$@" >"$args_file"
 
 while [ "$#" -gt 0 ]; do
@@ -35,7 +39,7 @@ done
 mkdir -p "$codex_home/sessions/2099/01/01"
 db="$codex_home/state_5.sqlite"
 now_ms="$(printf '%s000' "$(date '+%s')")"
-sqlite3 "$db" 'CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL, created_at_ms INTEGER, updated_at_ms INTEGER, source TEXT, thread_source TEXT, cwd TEXT);'
+sqlite "$db" 'CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL, created_at_ms INTEGER, updated_at_ms INTEGER, source TEXT, thread_source TEXT, cwd TEXT);'
 
 if [ "${FAKE_CODEX_FOREIGN_FIRST:-0}" = "1" ]; then
   foreign_id="ffffffff-ffff-4fff-8fff-ffffffffffff"
@@ -44,7 +48,7 @@ if [ "${FAKE_CODEX_FOREIGN_FIRST:-0}" = "1" ]; then
     "$foreign_id" "$cwd" >"$foreign_rollout"
   escaped_foreign_rollout="${foreign_rollout//\'/\'\'}"
   escaped_foreign_cwd="${cwd//\'/\'\'}"
-  sqlite3 "$db" "INSERT OR REPLACE INTO threads (id, rollout_path, created_at_ms, updated_at_ms, source, thread_source, cwd) VALUES ('$foreign_id', '$escaped_foreign_rollout', $now_ms, $now_ms, 'cli', 'user', '$escaped_foreign_cwd');"
+  sqlite "$db" "INSERT OR REPLACE INTO threads (id, rollout_path, created_at_ms, updated_at_ms, source, thread_source, cwd) VALUES ('$foreign_id', '$escaped_foreign_rollout', $now_ms, $now_ms, 'cli', 'user', '$escaped_foreign_cwd');"
 fi
 
 sleep "${FAKE_CODEX_INIT_DELAY:-0}"
@@ -64,7 +68,7 @@ printf '{"timestamp":"2099-01-01T00:00:01Z","type":"event_msg","payload":{"type"
 
 escaped_cwd="${cwd//\'/\'\'}"
 escaped_rollout="${rollout//\'/\'\'}"
-sqlite3 "$db" "INSERT OR REPLACE INTO threads (id, rollout_path, created_at_ms, updated_at_ms, source, thread_source, cwd) VALUES ('$id', '$escaped_rollout', $now_ms, $now_ms, 'cli', 'user', '$escaped_cwd');"
+sqlite "$db" "INSERT OR REPLACE INTO threads (id, rollout_path, created_at_ms, updated_at_ms, source, thread_source, cwd) VALUES ('$id', '$escaped_rollout', $now_ms, $now_ms, 'cli', 'user', '$escaped_cwd');"
 
 printf 'fake Codex started in %s\n' "$cwd"
 printf 'mode=%s id=%s\n' "$mode" "$id"

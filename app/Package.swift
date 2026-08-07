@@ -44,6 +44,7 @@ let package = Package(
             linkerSettings: appLinkerSettings),
         .executableTarget(
             name: "DetachWatchdog",
+            dependencies: ["DetachKit"],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",

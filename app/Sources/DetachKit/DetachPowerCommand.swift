@@ -502,6 +502,7 @@ private final class PowerRunThermalSafetyController: @unchecked Sendable {
     private var latch = PowerThermalSafetyLatch()
     private var lastState: PowerThermalState = .unknown
     private var leaseIdentity: PowerLeaseIdentity?
+    private var releaseFailure: Error?
 
     init(
         helperClient: any PowerHelperClient,
@@ -526,14 +527,26 @@ private final class PowerRunThermalSafetyController: @unchecked Sendable {
         defer { lock.unlock() }
         lastState = state
         _ = latch.observe(state, now: now(), cooldown: cooldown)
-        if latch.isActive { try? enforceReleaseLocked() }
+        if latch.isActive {
+            do {
+                try enforceReleaseLocked()
+            } catch {
+                if releaseFailure == nil { releaseFailure = error }
+            }
+        }
     }
 
     func attachLease(_ identity: PowerLeaseIdentity) {
         lock.lock()
         defer { lock.unlock() }
         leaseIdentity = identity
-        if latch.isActive { try? enforceReleaseLocked() }
+        if latch.isActive {
+            do {
+                try enforceReleaseLocked()
+            } catch {
+                if releaseFailure == nil { releaseFailure = error }
+            }
+        }
     }
 
     func detachLease() {
@@ -545,9 +558,16 @@ private final class PowerRunThermalSafetyController: @unchecked Sendable {
     func refresh() throws -> Bool {
         lock.lock()
         defer { lock.unlock() }
+        if let releaseFailure { throw releaseFailure }
         _ = latch.observe(lastState, now: now(), cooldown: cooldown)
         if latch.isActive { try enforceReleaseLocked() }
         return latch.isActive
+    }
+
+    func validateRelease() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        if let releaseFailure { throw releaseFailure }
     }
 
     private func enforceReleaseLocked() throws {
@@ -670,17 +690,25 @@ public struct DetachPowerCommand: Sendable {
             assertionController: assertionController,
             now: thermalNow,
             cooldown: thermalCooldown)
-        let childResult = try thermalWatcher.run(
-            onStateChange: { state in
-                thermalController.observe(state)
-            },
-            operation: {
-                try executeProtectedRun(
-                    identity: identity,
-                    command: command,
-                    readyFile: readyFile,
-                    thermalController: thermalController)
-            })
+        let childResult: ChildCommandResult
+        do {
+            childResult = try thermalWatcher.run(
+                onStateChange: { state in
+                    thermalController.observe(state)
+                },
+                operation: {
+                    try executeProtectedRun(
+                        identity: identity,
+                        command: command,
+                        readyFile: readyFile,
+                        thermalController: thermalController)
+                })
+        } catch {
+            let operationError = error
+            try thermalController.validateRelease()
+            throw operationError
+        }
+        try thermalController.validateRelease()
         return .child(childResult)
     }
 

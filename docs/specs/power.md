@@ -66,7 +66,9 @@ that setting remains active.
 Thermal safety uses only public `ProcessInfo.thermalState`. `serious` and
 `critical` latch safety immediately: the helper restores Detach-owned
 closed-lid sleep, the wrapper releases its IOKit assertion without waiting for
-a checkpoint, and initial acquisition is refused. `nominal` and `fair` must
+a checkpoint, and initial acquisition is refused. A notification-time release
+failure is retained and surfaced by the next heartbeat or protected-run result;
+it must never disappear behind best-effort cleanup. `nominal` and `fair` must
 remain stable for 30 seconds before protection can return; the helper persists
 this cooldown across restart, and an unknown reading cannot clear it. The raw
 `nominal|fair|serious|critical|unknown` value and latch cross helper status, CLI

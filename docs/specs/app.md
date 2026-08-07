@@ -86,6 +86,12 @@ toggles; the Mac Power block in Settings → System remains the single place for
 power status and approval controls. Temperature safety uses its own warning
 shape and the text **Mac can sleep: temperature**.
 
+Every app CLI invocation runs in a fresh process group with concurrent bounded
+stdout/stderr draining. Its deadline sends TERM and then KILL to the complete
+group, and a descendant that only inherits a pipe cannot hold the caller past
+the drain deadline. GUI PATH augmentation orders NVM and mise Node directories
+by semantic version, with valid versions ahead of non-version aliases.
+
 Helper replacement is a durable fail-closed transaction. One versioned JSON
 journal records `preparing`, `unregisterSubmitted`, `removed`, or `registering`,
 the install/remove goal, target digest, boot UUID, and lifetime-barrier contract.
@@ -141,7 +147,8 @@ power state unavailable; repeated polls never duplicate the warning.
 
 The watchdog is a signed per-user LaunchAgent with its own embedded
 `__TEXT,__info_plist`. It resolves `~/.local/bin/detach` at runtime, calls
-`detach power status --json`, and writes private health state. The privileged
+`detach power status --json` through the same process-group runner with a
+five-second deadline, and writes private health state. The privileged
 daemon is a distinct demand-launched LaunchDaemon. Neither plist may contain a
 user-specific path. Native power protection requires no Apple Events or
 Automation entitlement.

@@ -125,6 +125,20 @@ for component in tmux libevent utf8proc; do
   [[ "$source_url" =~ ^https:// ]]
 done
 
+# The packaged app seeds a verified, fingerprinted build cache. A second build
+# must copy that exact arm64 product without replacing the cached artifact.
+TMUX_CACHE_PRODUCT="$ROOT/app/.build/tmux-runtime/arm64/product/tmux"
+TMUX_CACHE_FINGERPRINT="$ROOT/app/.build/tmux-runtime/arm64/product/fingerprint"
+[ -x "$TMUX_CACHE_PRODUCT" ]
+[[ "$(<"$TMUX_CACHE_FINGERPRINT")" =~ ^[0-9a-f]{64}$ ]]
+cache_mtime="$(stat -f '%m' "$TMUX_CACHE_PRODUCT")"
+cached_copy="$TMP_ROOT/cached-tmux"
+"$BUILDER" build --arch arm64 --output "$cached_copy"
+[ "$(stat -f '%m' "$TMUX_CACHE_PRODUCT")" = "$cache_mtime" ]
+cmp "$TMUX_CACHE_PRODUCT" "$cached_copy"
+[ "$(lipo -archs "$cached_copy")" = arm64 ]
+"$cached_copy" -V | grep -qx 'tmux 3.7b'
+
 # The app package supports Apple Silicon only. Both public build entry points
 # must reject Intel explicitly before downloading or compiling anything.
 if "$BUILDER" build --arch x86_64 --output "$TMP_ROOT/intel-tmux" \

@@ -699,7 +699,7 @@ run_lid_test() {
   done
   [ -f "$ready" ] || die 'closed-lid probe did not acquire both protection layers'
   attempts=0
-  while [ ! -s "$ticks" ] && [ "$attempts" -lt 20 ]; do
+  while [ ! -s "$ticks" ] && [ "$attempts" -lt 100 ]; do
     sleep 0.1
     attempts=$((attempts + 1))
   done

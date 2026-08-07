@@ -215,7 +215,8 @@ detach cleanup --dry-run --json
 The reconcile preview reports only declarative repairs supported by current
 evidence, such as removing a dead managed pane and marking a session
 recoverable or orphaned. The cleanup preview includes only stopped or orphaned
-sessions that pass the storage and ownership checks.
+sessions whose typed health result explicitly authorizes cleanup and that pass
+the storage and ownership checks.
 
 ## Attach, Resume, and Recover are different on purpose
 
@@ -274,6 +275,7 @@ directory in Finder.
 Cleanup is deliberately narrow:
 
 - only fully measured `stopped` or `orphaned` sessions are eligible;
+- a missing cleanup authorization is never inferred from the displayed status;
 - live, recoverable, corrupt, foreign, or ownership-ambiguous state is not;
 - provider storage under `~/.codex` and `~/.claude` is excluded;
 - symlinks are measured as links and never followed;
@@ -458,6 +460,8 @@ Choose **My tmux theme** in Settings → Terminal, or run
   worktree.
 - tmux ownership and run tokens are checked before Attach, Stop, Recover, or
   Delete; foreign sessions are left untouched.
+- Provider credentials are passed to tmux in memory and are never written as
+  session startup scratch files.
 - Cleanup never follows symlinks into another tree and never treats provider
   storage as Detach-owned state.
 

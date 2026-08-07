@@ -1,4 +1,5 @@
 import Darwin
+import DetachKit
 import Foundation
 
 @_silgen_name("flock")
@@ -148,29 +149,36 @@ do {
         exit(0)
     }
 
-    let process = Process()
-    process.executableURL = detachURL
-    process.arguments = ["power", "status", "--json"]
     var childEnvironment = environment
     let commonPath = [
         "\(home)/.local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin",
     ].joined(separator: ":")
     childEnvironment["PATH"] = commonPath
     childEnvironment["DETACH_POWER_STATE_ROOT"] = stateRoot
-    process.environment = childEnvironment
-    process.standardInput = FileHandle.nullDevice
-    let output = Pipe()
-    process.standardOutput = output
-    process.standardError = log
-    try process.run()
-    let statusData = try output.fileHandleForReading.readToEnd() ?? Data()
-    process.waitUntilExit()
+    let statusResult = try BoundedProcessRunner().run(BoundedProcessRequest(
+        executableURL: detachURL,
+        arguments: ["power", "status", "--json"],
+        environment: childEnvironment,
+        timeout: 5,
+        terminationGrace: 1,
+        maximumOutputBytes: 65_536))
+    if !statusResult.standardError.isEmpty {
+        try log.write(contentsOf: statusResult.standardError)
+    }
+    let statusData = statusResult.standardOutput
 
-    guard process.terminationStatus == 0 else {
+    if statusResult.timedOut {
+        let message = "DetachWatchdog: power status timed out\n"
+        try log.write(contentsOf: Data(message.utf8))
+        recordHeartbeat(state: "status_timed_out", exitStatus: 1)
+        exit(1)
+    }
+
+    guard statusResult.exitCode == 0 else {
         recordHeartbeat(
             state: "status_failed",
-            exitStatus: process.terminationStatus)
-        exit(process.terminationStatus)
+            exitStatus: statusResult.exitCode)
+        exit(statusResult.exitCode)
     }
 
     struct PowerStatus: Decodable {

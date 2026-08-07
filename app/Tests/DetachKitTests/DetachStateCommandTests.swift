@@ -196,6 +196,8 @@ final class DetachStateCommandTests: XCTestCase {
             ["emit", "session", "codex", "session", "running", "--model", "a", "--model", "b"],
             ["emit", "session", "codex", "session", "running", "--unknown", "value"],
             ["meta", "get", "only-path"],
+            ["meta", "snapshot", "only-path"],
+            ["health", "session", "--"],
             ["meta", "usable", "only-path"],
             ["meta", "create"],
             ["meta", "patch"],
@@ -296,6 +298,52 @@ final class DetachStateCommandTests: XCTestCase {
         ]).isEmpty)
         XCTAssertThrowsError(try DetachStateCommand.run(arguments: [
             "meta", "usable", invalid.path, "session",
+        ])) { error in
+            XCTAssertEqual(error as? DetachStateCommandError, .unusableMetadata)
+        }
+    }
+
+    func testMetaSnapshotReadsListFieldsOnceWithNULSafeFallbacks() throws {
+        let file = temporaryDirectory.appendingPathComponent("snapshot-meta.json")
+        let project = "/tmp/project\twith\ncontrols"
+        let data = try JSONSerialization.data(withJSONObject: [
+            "schema": 1,
+            "session_name": "detach-codex-project",
+            "project_dir": project,
+            "status": "stopped",
+            "agent_session_id": NSNull(),
+            "codex_session_id": "legacy-id",
+            "transcript_path": NSNull(),
+            "rollout_path": "/tmp/rollout.jsonl",
+            "exit_status": 143,
+            "health_schema": 1,
+        ])
+        try data.write(to: file)
+
+        let output = try DetachStateCommand.run(arguments: [
+            "meta", "snapshot", file.path, "detach-codex-project",
+        ])
+        let components = output.split(
+            separator: 0,
+            omittingEmptySubsequences: false)
+        XCTAssertEqual(components.last, Data.SubSequence())
+        let values = stride(from: 0, to: components.count - 1, by: 2).reduce(
+            into: [String: String]()) { result, index in
+                result[String(decoding: components[index], as: UTF8.self)] =
+                    String(decoding: components[index + 1], as: UTF8.self)
+            }
+
+        XCTAssertEqual(values["status"], "stopped")
+        XCTAssertEqual(values["project_dir"], project)
+        XCTAssertEqual(values["agent_session_id"], "legacy-id")
+        XCTAssertEqual(values["transcript_path"], "/tmp/rollout.jsonl")
+        XCTAssertEqual(values["exit_status"], "143")
+        XCTAssertEqual(values["health_schema"], "1")
+        XCTAssertEqual(values["display_name"], "")
+        XCTAssertEqual(values["snapshot_complete"], "true")
+
+        XCTAssertThrowsError(try DetachStateCommand.run(arguments: [
+            "meta", "snapshot", file.path, "detach-codex-other",
         ])) { error in
             XCTAssertEqual(error as? DetachStateCommandError, .unusableMetadata)
         }
@@ -566,6 +614,61 @@ final class DetachStateCommandTests: XCTestCase {
         )) { error in
             XCTAssertEqual(error as? DetachStateCommandError, .invalidBoolean("yes"))
         }
+    }
+
+    func testHealthEvaluateEnvelopeCarriesStatusAndTypedJSONTogether() throws {
+        let output = try DetachStateCommand.run(arguments: [
+            "health", "evaluate",
+            "--metadata-valid", "true",
+            "--runtime-identity-expected", "true",
+            "--meta-status", "running",
+            "--tmux", "live",
+            "--run-token", "match",
+            "--worker", "alive",
+            "--provider-process", "alive",
+            "--heartbeat", "fresh",
+            "--checkpoint", "fresh",
+            "--checkpoint-recoverable", "true",
+            "--agent-session-known", "true",
+            "--envelope",
+        ])
+        let newline = try XCTUnwrap(output.firstIndex(of: 0x0A))
+        XCTAssertEqual(String(decoding: output[..<newline], as: UTF8.self), "running")
+        let assessment = try JSONDecoder().decode(
+            SessionHealthAssessment.self,
+            from: output[output.index(after: newline)...])
+        XCTAssertEqual(assessment.effectiveStatus, .running)
+        XCTAssertEqual(assessment.reason, .healthy)
+    }
+
+    func testHealthSessionEmitsTypedPublicJSONAndHidesCollisionIdentity() throws {
+        let output = try DetachStateCommand.run(arguments: [
+            "health", "session",
+            "--metadata-valid", "true",
+            "--runtime-identity-expected", "true",
+            "--meta-status", "running",
+            "--tmux", "foreign",
+            "--run-token", "missing",
+            "--worker", "unknown",
+            "--provider-process", "unknown",
+            "--heartbeat", "missing",
+            "--checkpoint", "missing",
+            "--checkpoint-recoverable", "false",
+            "--agent-session-known", "true",
+            "--", "codex", "detach-codex-session",
+            "--project-dir", "/tmp/project",
+            "--session-color", "#123456",
+        ])
+        let newline = try XCTUnwrap(output.firstIndex(of: 0x0A))
+        XCTAssertEqual(
+            String(decoding: output[..<newline], as: UTF8.self),
+            "collision")
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: output[output.index(after: newline)...]) as? [String: Any])
+        XCTAssertEqual(object["effective_status"] as? String, "collision")
+        XCTAssertEqual(object["health_reason"] as? String, "foreign_tmux")
+        XCTAssertEqual(object["cleanup_eligible"] as? Bool, false)
+        XCTAssertTrue(object["session_color"] is NSNull)
     }
 
     func testMaintenanceReconcileDispatchesAndRejectsInvalidInventory() throws {
@@ -905,6 +1008,7 @@ final class DetachStateCommandTests: XCTestCase {
             "session_name": name,
             "name": name,
             "effective_status": status.rawValue,
+            "cleanup_eligible": status == .stopped || status == .orphaned,
         ]
         let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         return String(decoding: data, as: UTF8.self)

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
-POLICY_VERSION=10
+POLICY_VERSION=11
 MODE=change
 BASE_REF=""
 PLAN_ONLY=0
@@ -16,6 +16,7 @@ RESUME_LATEST=0
 WITHOUT_RELEASE_BUDGET=0
 TEST_MODE="${DETACH_QUALITY_GATE_TEST_MODE:-0}"
 TEST_REAL_STATIC="${DETACH_QUALITY_GATE_TEST_REAL_STATIC:-0}"
+TEST_DIRECT="${DETACH_QUALITY_GATE_TEST_DIRECT:-0}"
 RELEASE_TIMING_OVERRIDE="${DETACH_RELEASE_TIMING_OVERRIDE:-}"
 RELEASE_TIMING_OVERRIDE_ACTIVE=0
 RESULT_ROOT="${DETACH_QUALITY_GATE_RESULT_ROOT:-$ROOT/app/build/quality-gates}"
@@ -149,7 +150,9 @@ done
 
 case "$TEST_MODE" in 0|1) ;; *) die 'DETACH_QUALITY_GATE_TEST_MODE must be 0 or 1' ;; esac
 case "$TEST_REAL_STATIC" in 0|1) ;; *) die 'DETACH_QUALITY_GATE_TEST_REAL_STATIC must be 0 or 1' ;; esac
+case "$TEST_DIRECT" in 0|1) ;; *) die 'DETACH_QUALITY_GATE_TEST_DIRECT must be 0 or 1' ;; esac
 [ "$TEST_MODE" = 1 ] || [ "$TEST_REAL_STATIC" = 0 ] || die 'real static fixture mode is test-only'
+[ "$TEST_MODE" = 1 ] || [ "$TEST_DIRECT" = 0 ] || die 'direct fixture mode is test-only'
 case "$MODE" in change|repository|release) ;; *) die "invalid mode: $MODE" ;; esac
 if [ -n "$RELEASE_TIMING_OVERRIDE" ]; then
   [[ "$RELEASE_TIMING_OVERRIDE" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@v[0-9A-Za-z._+-]+$ ]] || \
@@ -835,9 +838,19 @@ run_stage_command() {
       ) >"$contract_root/orchestrator-failures.log" 2>&1 &
       contract_pids+=("$!")
       (
-        DETACH_QUALITY_GATE_CONTRACT_SHARD=evidence "$ROOT/tests/quality-gate.sh" |
-          grep -Fx 'Quality gate evidence tests passed'
-      ) >"$contract_root/orchestrator-evidence.log" 2>&1 &
+        DETACH_QUALITY_GATE_CONTRACT_SHARD=evidence-resume-a "$ROOT/tests/quality-gate.sh" |
+          grep -Fx 'Quality gate resume provenance tests passed'
+      ) >"$contract_root/orchestrator-evidence-resume-a.log" 2>&1 &
+      contract_pids+=("$!")
+      (
+        DETACH_QUALITY_GATE_CONTRACT_SHARD=evidence-resume-b "$ROOT/tests/quality-gate.sh" |
+          grep -Fx 'Quality gate resume integrity tests passed'
+      ) >"$contract_root/orchestrator-evidence-resume-b.log" 2>&1 &
+      contract_pids+=("$!")
+      (
+        DETACH_QUALITY_GATE_CONTRACT_SHARD=evidence-runtime "$ROOT/tests/quality-gate.sh" |
+          grep -Fx 'Quality gate runtime evidence tests passed'
+      ) >"$contract_root/orchestrator-evidence-runtime.log" 2>&1 &
       contract_pids+=("$!")
       (
         "$ROOT/tests/quality-ratchet-contract.sh" |
@@ -914,7 +927,7 @@ run_stage_command() {
   esac
 }
 
-export ROOT BASE_REF RESOLVED_BASE MODE DIAGNOSTIC_STAGE TEST_MODE TEST_REAL_STATIC RUN_DIR
+export ROOT BASE_REF RESOLVED_BASE MODE DIAGNOSTIC_STAGE TEST_MODE TEST_REAL_STATIC TEST_DIRECT RUN_DIR
 export -f die changed_entries static_shell_files run_static run_tmux_socket_preflight run_stage_command
 
 stage_result_file() {
@@ -985,13 +998,18 @@ launch_stage() {
 execute_stage() {
   local stage="$1" timeout="$2" log="$3" started="$4" bounded_pid status duration result interrupted=0
   set +e
-  run_bounded "$timeout" /bin/bash -c 'set -euo pipefail; run_stage_command "$1"' _ "$stage" \
-    >"$log" 2>&1 &
-  bounded_pid=$!
-  trap 'interrupted=1; kill -TERM "$bounded_pid" 2>/dev/null || true' INT TERM HUP
-  wait "$bounded_pid"
-  status=$?
-  trap - INT TERM HUP
+  if [ "$TEST_MODE" = 1 ] && [ "$TEST_DIRECT" = 1 ]; then
+    run_stage_command "$stage" >"$log" 2>&1
+    status=$?
+  else
+    run_bounded "$timeout" /bin/bash -c 'set -euo pipefail; run_stage_command "$1"' _ "$stage" \
+      >"$log" 2>&1 &
+    bounded_pid=$!
+    trap 'interrupted=1; kill -TERM "$bounded_pid" 2>/dev/null || true' INT TERM HUP
+    wait "$bounded_pid"
+    status=$?
+    trap - INT TERM HUP
+  fi
   duration=$(($(date +%s) - started))
   result=passed
   if [ "$interrupted" -eq 1 ]; then
@@ -1182,24 +1200,35 @@ assemble_summary() {
   rm -f "$digest_file"
 }
 
-# Keep SwiftPM's shared build directory exclusive. Cheap hermetic release and
-# distribution contracts run beside it. Once the app is verified, the two
-# provider suites use private state/socket roots and the bundled state helper,
-# so they can run concurrently with each other and the orchestrator contract.
-for stage in "${SELECTED[@]}"; do
-  case "$stage" in app|quality-contracts|ui-e2e|codex|claude|tmux-runtime|gate-contract|release-budget) ;;
-    *) launch_stage "$stage" ;;
-  esac
-done
+# Give coverage compilation and the packaged app exclusive access to the
+# reference machine's build resources. Their locked stage ceilings assume
+# they are not competing with distribution Git fixtures or release workflow
+# simulations. Static validation is intentionally cheap enough to overlap.
+launch_stage static
+launch_stage swift
 wait_stage swift
 launch_stage quality-contracts
 launch_stage app
 wait_stage app
+
+# Run the provider/orchestrator wave against the freshly packaged payload.
+# Every release fixture waits for this wave to drain: its locked individual
+# ceiling measures the fixture itself, not contention with Codex or gate tests.
 launch_stage ui-e2e
 launch_stage codex
 launch_stage claude
 launch_stage tmux-runtime
 launch_stage gate-contract
+for stage in static quality-contracts ui-e2e codex claude tmux-runtime gate-contract; do
+  wait_stage "$stage"
+done
+
+# Independent release lanes overlap after the first wave releases process and
+# disk capacity.
+launch_stage distribution
+launch_stage release-preflight
+launch_stage publish-preflight
+launch_stage release-workflow
 for stage in "${SELECTED[@]}"; do
   [ "$stage" = release-budget ] && continue
   wait_stage "$stage"
