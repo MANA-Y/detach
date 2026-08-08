@@ -275,6 +275,18 @@ SH
 set -eu
 case "${1:-} ${2:-}" in
   'auth status') exit 0 ;;
+  'run list') printf '%s\n' 4242 ;;
+  'run watch')
+    if [ "${FAKE_RELEASE_CI_ADVANCE_MAIN:-0}" = 1 ]; then
+      source_commit="$(git rev-parse HEAD^)"
+      source_tree="$(git rev-parse "$source_commit^{tree}")"
+      raced_commit="$(printf '%s\n' 'concurrent main update' | \
+        git commit-tree "$source_tree" -p "$source_commit")"
+      git push -q origin "$raced_commit:refs/heads/main"
+    fi
+    [ "${FAKE_RELEASE_CI_FAIL:-0}" != 1 ] || exit 23
+    ;;
+  'run view') printf '%s\n' 1 ;;
   'release view')
     [ -f "${FAKE_RELEASE_EXISTS:?}" ] || exit 1
     case " $* " in
@@ -395,7 +407,41 @@ expect_failure() {
 
 run_resume_case() {
   setup_fixture resume
-  for stage in preflight prepared pushed artifacts installed power-smoke lid published verified; do
+  for stage in preflight prepared; do
+    expect_failure "resume-$stage" "injected safe failure after $stage" \
+      run_workflow "$stage"
+  done
+  release_ci_source="$(git -C "$REPO" rev-parse HEAD^)"
+
+  git -C "$REPO" push -q origin \
+    "$release_ci_source:refs/heads/detach-release/$TARGET_TAG"
+  expect_failure release-ci-collision \
+    "remote release CI branch already points to a different commit: detach-release/$TARGET_TAG" \
+    run_workflow
+  git -C "$REPO" push -q origin ":refs/heads/detach-release/$TARGET_TAG"
+
+  export FAKE_RELEASE_CI_FAIL=1
+  expect_failure release-ci-failure \
+    'release CI did not pass; main and the release tag were not updated' \
+    run_workflow
+  unset FAKE_RELEASE_CI_FAIL
+  [ "$(git -C "$REPO" ls-remote origin refs/heads/main | awk '{print $1}')" = \
+    "$release_ci_source" ]
+  [ -z "$(git -C "$REPO" ls-remote origin "refs/tags/$TARGET_TAG")" ]
+  [ -n "$(git -C "$REPO" ls-remote origin "refs/heads/detach-release/$TARGET_TAG")" ]
+  [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-ci-approved" ]
+
+  export FAKE_RELEASE_CI_ADVANCE_MAIN=1
+  expect_failure release-ci-main-race 'remote main changed while release CI was running' \
+    run_workflow
+  unset FAKE_RELEASE_CI_ADVANCE_MAIN
+  [ -z "$(git -C "$REPO" ls-remote origin "refs/tags/$TARGET_TAG")" ]
+  [ -n "$(git -C "$REPO" ls-remote origin "refs/heads/detach-release/$TARGET_TAG")" ]
+  [ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-ci-approved" ]
+
+  git -C "$REPO" push -q --force origin "$release_ci_source:refs/heads/main"
+
+  for stage in pushed artifacts installed power-smoke lid published verified; do
     expect_failure "resume-$stage" "injected safe failure after $stage" \
       run_workflow "$stage"
   done
@@ -409,11 +455,12 @@ run_resume_case() {
   [ "$(grep -c '^power-smoke$' "$ACTION_LOG")" = 1 ]
   [ "$(grep -c '^release-preflight.sh$' "$ACTION_LOG")" = 2 ]
   [ "$(grep -c '^publish-preflight.sh$' "$ACTION_LOG")" = 2 ]
+  [ -z "$(git -C "$REPO" ls-remote origin "refs/heads/detach-release/$TARGET_TAG")" ]
 }
 
-# The resumability matrix and the independent rejection cases own disjoint
-# repositories below TMP_ROOT. Run those two lanes together so the release
-# contract does not serialize unrelated Git and fake-publication work.
+# The resumability matrix and the remaining rejection cases own disjoint
+# repositories below TMP_ROOT. Run the two independent lanes together so
+# the release contract does not serialize unrelated Git and fake-publication work.
 run_resume_case &
 resume_case_pid=$!
 

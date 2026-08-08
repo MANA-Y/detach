@@ -193,6 +193,8 @@ validate_configuration() {
     die 'DETACH_GITHUB_REPOSITORY must be owner/repository'
   TAG="v$VERSION"
   [[ "$TAG" =~ ^v[0-9A-Za-z._+-]+$ ]] || die 'invalid release tag'
+  RELEASE_CI_BRANCH="detach-release/$TAG"
+  RELEASE_CI_REF="refs/heads/$RELEASE_CI_BRANCH"
   BUILD=""
   SOURCE_COMMIT=""
   RELEASE_COMMIT=""
@@ -535,24 +537,97 @@ exact_confirmation() {
   [ "$confirmation" = "$expected" ] || die "$purpose confirmation must exactly equal $expected"
 }
 
+release_ci_run_id() {
+  gh run list \
+    --repo "$REPOSITORY" \
+    --workflow quality-gates.yml \
+    --branch "$RELEASE_CI_BRANCH" \
+    --commit "$RELEASE_COMMIT" \
+    --event push \
+    --limit 10 \
+    --json databaseId,headSha \
+    --jq "map(select(.headSha == \"$RELEASE_COMMIT\")) | first | .databaseId // empty"
+}
+
+wait_for_release_ci() {
+  local run_id="" approval attempts=0
+
+  while [ "$attempts" -lt 60 ]; do
+    run_id="$(release_ci_run_id)"
+    [ -z "$run_id" ] || break
+    attempts=$((attempts + 1))
+    sleep 5
+  done
+  [[ "$run_id" =~ ^[1-9][0-9]*$ ]] || \
+    die "GitHub Actions did not start for $RELEASE_CI_BRANCH"
+  write_state_value release-ci-run-id "$run_id"
+  note "waiting for required quality-gates run $run_id on $RELEASE_CI_BRANCH"
+  gh run watch "$run_id" --repo "$REPOSITORY" --exit-status --interval 10 || \
+    die 'release CI did not pass; main and the release tag were not updated'
+  approval="$(gh run view "$run_id" \
+    --repo "$REPOSITORY" \
+    --json conclusion,event,headSha,jobs \
+    --jq "select(.conclusion == \"success\" and .event == \"push\" and .headSha == \"$RELEASE_COMMIT\") | [.jobs[] | select(.name == \"quality-gates\" and .conclusion == \"success\")] | length")"
+  [ "$approval" = 1 ] || \
+    die 'release CI result does not contain the successful required quality-gates job'
+  has_stage ci-approved || record_stage ci-approved
+}
+
+approve_release_source() {
+  local remote_ci
+
+  if has_stage ci-approved; then
+    return
+  fi
+  remote_ci="$(remote_ref_commit "$RELEASE_CI_REF")"
+  if [ -z "$remote_ci" ]; then
+    git -C "$ROOT" push origin "$RELEASE_COMMIT:$RELEASE_CI_REF"
+  else
+    [ "$remote_ci" = "$RELEASE_COMMIT" ] || \
+      die "remote release CI branch already points to a different commit: $RELEASE_CI_BRANCH"
+  fi
+  [ "$(remote_ref_commit "$RELEASE_CI_REF")" = "$RELEASE_COMMIT" ] || \
+    die 'remote release CI branch verification failed after push'
+  wait_for_release_ci
+}
+
+remove_release_ci_branch() {
+  local remote_ci
+
+  remote_ci="$(remote_ref_commit "$RELEASE_CI_REF")"
+  [ -n "$remote_ci" ] || return 0
+  [ "$remote_ci" = "$RELEASE_COMMIT" ] || \
+    die "refusing to remove changed release CI branch: $RELEASE_CI_BRANCH"
+  git -C "$ROOT" push origin ":$RELEASE_CI_REF"
+  [ -z "$(remote_ref_commit "$RELEASE_CI_REF")" ] || \
+    die 'remote release CI branch still exists after cleanup'
+}
+
 push_release_source() {
   local remote_main remote_tag
   remote_main="$(remote_ref_commit refs/heads/main)"
   remote_tag="$(remote_ref_commit "refs/tags/$TAG")"
   if [ "$remote_main" = "$RELEASE_COMMIT" ] && [ "$remote_tag" = "$RELEASE_COMMIT" ]; then
+    remove_release_ci_branch
     has_stage pushed || record_stage pushed
     return
   fi
   [ "$remote_main" = "$SOURCE_COMMIT" ] || die 'remote main changed before release push'
   [ -z "$remote_tag" ] || die 'remote release tag appeared with an unexpected state'
   exact_confirmation DETACH_CONFIRM_RELEASE \
-    "Release commit and annotated tag are ready; the next step pushes and later publishes $REPOSITORY@$TAG."
+    "Release commit and annotated tag are ready; the next step validates the commit in GitHub Actions, pushes it, and later publishes $REPOSITORY@$TAG."
+  approve_release_source
+  remote_main="$(remote_ref_commit refs/heads/main)"
+  remote_tag="$(remote_ref_commit "refs/tags/$TAG")"
+  [ "$remote_main" = "$SOURCE_COMMIT" ] || die 'remote main changed while release CI was running'
+  [ -z "$remote_tag" ] || die 'remote release tag appeared while release CI was running'
   git -C "$ROOT" push --atomic origin \
     "$RELEASE_COMMIT:refs/heads/main" "refs/tags/$TAG:refs/tags/$TAG"
   remote_main="$(remote_ref_commit refs/heads/main)"
   remote_tag="$(remote_ref_commit "refs/tags/$TAG")"
   [ "$remote_main" = "$RELEASE_COMMIT" ] && [ "$remote_tag" = "$RELEASE_COMMIT" ] || \
     die 'remote main/tag verification failed after push'
+  remove_release_ci_branch
   record_stage pushed
 }
 

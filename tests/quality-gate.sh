@@ -15,6 +15,8 @@ grep -F 'run: scripts/quality-gate --base "$BASE_SHA" --without-release-budget' 
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'run: scripts/quality-gate --mode repository --keep-going --without-release-budget' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F -- '- "detach-release/**"' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 
 prepare_template() {
   local stage

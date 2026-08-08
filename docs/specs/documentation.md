@@ -35,9 +35,14 @@ against the same deterministic quality gate.
   only for an evidenced unrelated external transient whose cause is recorded.
 - Hosted CI runs every selected functional check and timing-policy ratchet but
   does not enforce reference-machine wall or per-stage timing ceilings.
-- Ready task-scoped changes are committed and pushed to the current branch by
+- The active GitHub ruleset for `main` has no bypass actors and requires the
+  GitHub Actions `quality-gates` job. An unchecked administrator push is not a
+  substitute for CI; release commits first earn the same check on their
+  temporary release ref.
+- Ready task-scoped changes use a topic branch and are committed and pushed by
   default after staged public-diff review; an owner request to keep work local
-  is the explicit exception, and successful delivery includes upstream parity.
+  is the explicit exception. Successful delivery merges only after the
+  required PR check passes and includes final `main` upstream parity.
 - `tests/docs-contract.sh` enforces this structure and runs inside the
   static quality stage.
 
