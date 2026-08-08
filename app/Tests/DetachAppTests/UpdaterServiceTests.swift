@@ -25,19 +25,65 @@ final class UpdaterServiceTests: XCTestCase {
         for code in [1001, 4007, 4008] {
             let error = NSError(domain: SUSparkleErrorDomain, code: code)
             XCTAssertNil(UpdaterService.fallbackMessage(for: error))
+            XCTAssertNil(UpdaterService.recovery(for: error))
         }
         XCTAssertNil(UpdaterService.fallbackMessage(for: nil))
+        XCTAssertNil(UpdaterService.recovery(for: nil))
     }
 
-    func testUpdateErrorOffersFallbackWithUsefulMessage() {
+    func testDownloadErrorKeepsTheActiveCLIAndOffersRetry() {
         let error = NSError(
             domain: SUSparkleErrorDomain,
             code: 2001,
             userInfo: [NSLocalizedDescriptionKey: "Download failed"])
 
+        XCTAssertEqual(UpdaterService.recovery(for: error), .retryDownload)
         XCTAssertEqual(
             UpdaterService.fallbackMessage(for: error),
-            L10n.format("Sparkle couldn't complete the update: %@", "Download failed"))
+            L10n.format(
+                "Detach could not prepare or download the update: %@. The active CLI did not change. Check the network connection and free disk space. Then try again.",
+                "Download failed"))
+    }
+
+    func testFailureMatrixSelectsARecoveryAndDoesNotClaimCurrentVersion() throws {
+        let cases: [(label: String, code: Int, recovery: UpdaterService.UpdateRecovery)] = [
+            ("read-only DMG", 1003, .moveToApplications),
+            ("App Translocation", 1005, .moveToApplications),
+            ("temporary directory", 2000, .retryDownload),
+            ("offline download", 2001, .retryDownload),
+            ("bad archive", 3000, .reinstallAndRepair),
+            ("bad signature", 3001, .reinstallAndRepair),
+            ("failed validation", 3002, .reinstallAndRepair),
+            ("file copy", 4000, .reinstallAndRepair),
+            ("installation", 4005, .reinstallAndRepair),
+            ("invalid update", 4009, .reinstallAndRepair),
+            ("read-only destination", 4012, .reinstallAndRepair),
+        ]
+
+        for item in cases {
+            let error = NSError(
+                domain: SUSparkleErrorDomain,
+                code: item.code,
+                userInfo: [NSLocalizedDescriptionKey: item.label])
+            let message = try XCTUnwrap(
+                UpdaterService.fallbackMessage(for: error),
+                "Missing recovery message for \(item.label)")
+
+            XCTAssertEqual(UpdaterService.recovery(for: error), item.recovery, item.label)
+            XCTAssertTrue(message.contains("The active CLI did not change."), item.label)
+            XCTAssertFalse(UpdaterService.provesApplicationIsCurrent(error), item.label)
+        }
+    }
+
+    func testUnknownErrorUsesReinstallAndRepairRecovery() {
+        let error = NSError(
+            domain: NSCocoaErrorDomain,
+            code: NSFileWriteUnknownError,
+            userInfo: [NSLocalizedDescriptionKey: "Write failed"])
+
+        XCTAssertEqual(UpdaterService.recovery(for: error), .reinstallAndRepair)
+        XCTAssertTrue(
+            UpdaterService.fallbackMessage(for: error)?.contains("run Repair") == true)
     }
 
     func testOnlyOnLatestVersionReasonsProveTheApplicationIsCurrent() {

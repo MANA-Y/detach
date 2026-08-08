@@ -31,6 +31,12 @@ change real power state, upload assets, or claim publication.
   closed-lid testing are mandatory release gates and are never inferred from
   unit tests. The protected lid probe must emit its first liveness sample within
   a bounded ten-second launch window before owner confirmation is accepted.
+- Automated release tests cover failed install and update paths. After the
+  signed artifacts exist, the owner must complete the short clean-account or VM
+  checklist in `docs/testing.md`. The workflow requires exact
+  `owner/repository@tag` confirmation before it installs the local candidate or
+  starts the signed power and lid gates. This checklist does not repeat those
+  hardware gates.
 - Publication requires exact `owner/repository@tag` confirmation. After
   upload, every remote asset is downloaded and its digest independently
   matched. Missing, extra, changed, or mismatched assets fail closed.
@@ -48,7 +54,10 @@ change real power state, upload assets, or claim publication.
   arm64 hardware requirement.
 - Distribution bootstrap runs only from `/Applications`, never a DMG or
   App Translocation path. A Sparkle update replaces the app; bootstrap switches
-  the CLI payload without rewriting binaries used by live sessions.
+  the CLI payload without rewriting binaries used by live sessions. A failed
+  download, archive, signature, app installation, CLI synchronization, or
+  helper replacement keeps the prior app or CLI control path usable and
+  provides a Repair path.
 
 ## Owned paths
 

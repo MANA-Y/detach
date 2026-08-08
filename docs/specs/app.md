@@ -175,4 +175,12 @@ in `/Applications` with a valid HTTPS feed URL and 32-byte Ed25519 public key.
 A generated or published appcast must contain exactly one arm64 hardware
 requirement so Intel clients are never offered the unsupported update.
 A Sparkle update replaces only the app; bootstrap atomically activates its new
-immutable CLI payload without rewriting live-session binaries.
+immutable CLI payload without rewriting live-session binaries. Sparkle errors
+for a disk image or App Translocation tell the user to move Detach to
+`/Applications`. Temporary-directory and download errors tell the user to
+check the network and free disk space, then try again. Archive, signature,
+validation, and installation errors provide the manual DMG path and the
+Settings > System Repair path. These errors state that the active CLI did not
+change. If app
+replacement completes but CLI or helper synchronization fails, the prior CLI
+stays active and Repair remains available.
