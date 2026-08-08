@@ -2,11 +2,9 @@
 
 ## Installed distribution
 
-The repository copies are not what runs on the machine. Detach.app installs an
-immutable payload under
-`~/.local/libexec/detach/versions/<semver>-<hash>/` and atomically switches
-`~/.local/bin/detach`. The installed payload contains, in fixed manifest and
-hash order:
+Detach.app installs an immutable payload under
+`~/.local/libexec/detach/versions/<semver>-<hash>/`. It switches
+`~/.local/bin/detach` atomically. Order:
 
 1. `detach`
 2. `detach-core`
@@ -15,24 +13,26 @@ hash order:
 5. `detach-power`
 6. `tmux`
 
-Installation owns one idempotent PATH entry for login and interactive shells.
-Uninstall restores an unchanged profile byte-for-byte, or removes only the
-exact Detach-owned entry if the user changed other content. Edits to `bin/` or
-the native helpers take effect only after app synchronization or Repair.
+Install and Repair validate a complete payload before CLI activation. Failure
+keeps the active payload. A live or retained managed session blocks
+replacement; retry can succeed later. One PATH entry supports login
+and interactive modes. `--keep-state` preserves checkpoints across reinstall.
+`--purge-state` removes Detach state, not `~/.codex` or `~/.claude`. Uninstall
+restores an unchanged profile, or removes only the Detach entry from a changed
+profile. Source edits require app sync or Repair.
 
-App installation additionally registers the bundled power LaunchDaemon and
-signed per-user watchdog through `SMAppService`. The root helper needs one-time
-administrator approval. Do not recreate the removed portable CLI LaunchAgent.
+The app registers its power LaunchDaemon and per-user watchdog with
+`SMAppService`. The root helper needs one administrator approval. The portable
+CLI LaunchAgent stays removed.
 
 ## Runtime architecture
 
 ### Shell entry points
 
-- **`bin/detach`** is the only command exposed on PATH. It resolves all owned
-  executables as immutable siblings, selects `codex` or `claude`, owns the
-  cross-provider `list`, UUID-aware `resume`, storage and reconcile previews,
-  `power status`, configuration, doctor, repair, and uninstall surfaces, then
-  invokes the core.
+- **`bin/detach`** is the only command on PATH. It resolves owned executables as
+  immutable siblings and selects `codex` or `claude`. It owns cross-provider
+  `list`, UUID-aware `resume`, storage and reconcile previews, `power status`,
+  config, doctor, repair, and uninstall. Then it invokes the core.
 - **`bin/detach-core`** owns the provider-neutral session lifecycle, inline
   provider adaptations, checkpoint/recovery policy, tmux status, and internal
   self-reinvocation commands. It rejects direct invocation unless the frontend

@@ -530,6 +530,14 @@ does not roll source code back and does not replace version control or backups.
 Updates are handled in Detach.app. Settings also exposes installation health,
 CLI repair, helper status, and removal of Detach-owned components.
 
+Detach changes the active CLI only after it validates a complete payload. If
+an update fails, the active CLI does not change. Move Detach to `/Applications`
+before you try an update. For a download failure, check the network connection
+and try again. For an archive, signature, or installation failure, download
+the latest DMG. If the CLI does not match the app, open Detach settings, select
+System, and run Repair. A live managed session can block the CLI change. End
+the session and try the update again.
+
 From a terminal:
 
 ```bash

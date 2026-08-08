@@ -133,7 +133,8 @@ refs and removes the matching temporary ref. It then reuses the
 strict `app/scripts/release.sh` and `app/scripts/publish-release.sh`, installs
 the signed candidate, runs the real power smoke, measures a supervised
 closed-lid probe, publishes, and independently downloads and hashes every
-remote asset. Its private resume state lives under ignored `app/build/`.
+remote asset. Before local installation, it stops for the clean-install
+checklist below. Its private resume state lives under ignored `app/build/`.
 Set `DETACH_RELEASE_IGNORE_TIMING=1` only when the owner explicitly accepts
 busy-machine timing for that single release; the script requires the same exact
 release-target confirmation before it omits reference-machine timing checks.
@@ -141,3 +142,30 @@ Interrupted draft uploads may resume only after every existing asset digest is
 matched; an unexpected or changed asset fails closed. Do not run the two
 low-level scripts manually during a normal release. Do not run, tag, notarize,
 upload, or publish as part of ordinary implementation or verification.
+
+## Clean installation and system UI release checklist
+
+Run this checklist once for each signed release candidate. Automated tests
+cover Repair, keep/purge Uninstall, reinstall, failed updates, CLI
+synchronization, and helper replacement. This checklist covers only Finder and
+real macOS approval UI.
+
+1. Start a clean macOS 26 or later Apple Silicon account or VM in English.
+   Open the signed DMG. Confirm that Detach blocks setup from the DMG and tells
+   you to move the app. Use Finder to copy Detach to `/Applications`.
+2. Complete onboarding. Approve the background item and power helper. Allow
+   notifications. Confirm that Detach detects an authenticated provider. Start
+   the first managed session. Close the terminal and Detach, then reopen Detach
+   and confirm that the session is still live.
+3. In a second clean user account, select Russian. Deny notification access.
+   Confirm that the retry action opens System Settings. Confirm that the
+   background-item approval text and action are in Russian.
+4. Record the candidate tag and the result in private release notes. Do not run
+   the signed power smoke or closed-lid test as part of this checklist. Those
+   tests are separate release gates.
+
+After the checklist passes, resume the workflow with the exact release target:
+
+```bash
+DETACH_CONFIRM_INSTALL_MATRIX=owner/repository@vX.Y.Z scripts/release-version X.Y.Z
+```

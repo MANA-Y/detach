@@ -381,6 +381,14 @@ grep -Fx 'core target sentinel' "$core_symlink_target/sentinel" >/dev/null
 [ ! -e "$core_safe_locks" ]
 [ "$(readlink "$DETACH_INSTALL_BIN_DIR/detach")" = "$old_target" ]
 
+# The same update succeeds after the managed session is gone. Activation uses
+# the complete new payload and leaves the prior immutable payload available.
+"$payload_guard/detach-install" install --source app \
+  --payload-dir "$payload_guard" --version-file "$payload_guard/VERSION"
+[ "$("$DETACH_INSTALL_BIN_DIR/detach" __version)" = 0.1.1 ]
+[ "$(readlink "$DETACH_INSTALL_BIN_DIR/detach")" != "$old_target" ]
+[ -d "$(dirname "$old_target")" ]
+
 # An unmanaged session on the same default server does not block the upgrade.
 # The upgrade also removes the obsolete portable Amphetamine watchdog only
 # after proving no legacy managed session remains.
@@ -648,6 +656,9 @@ rm -f "$DETACH_CONFIG_ROOT/config"
 "$payload_v2/detach-install" install --source install.sh --payload-dir "$payload_v2" \
   --version-file "$payload_v2/VERSION"
 ! grep -F 'AMPHETAMINE=' "$DETACH_CONFIG_ROOT/config" >/dev/null
+grep -Fx sentinel "$DETACH_CODEX_STATE_ROOT/sessions/kept/value" >/dev/null
+[ "$("$DETACH_INSTALL_BIN_DIR/detach" __version)" = 0.2.0 ]
+[ -x "$DETACH_INSTALL_BIN_DIR/detach" ]
 mkdir -p "$HOME/.codex"
 printf '%s\n' provider-sentinel >"$HOME/.codex/must-survive"
 DETACH_CODEX_STATE_ROOT="$HOME/.local/state/../../.codex" \

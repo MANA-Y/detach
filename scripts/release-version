@@ -670,6 +670,16 @@ build_release_artifacts() {
   has_stage artifacts || record_stage artifacts
 }
 
+confirm_install_update_matrix() {
+  has_stage install-matrix && return
+  release_artifacts_valid || die 'release artifacts changed before install-matrix review'
+  printf '%s\n' \
+    'Complete the clean installation and update checklist in docs/testing.md with the signed Detach.dmg. Use a clean macOS account or VM. Do not reuse the signed power or lid tests as evidence.'
+  exact_confirmation DETACH_CONFIRM_INSTALL_MATRIX \
+    'clean installation and update matrix'
+  record_stage install-matrix
+}
+
 installed_candidate_valid() {
   [ -d "$INSTALLED_APP" ] && [ ! -L "$INSTALLED_APP" ] || return 1
   [ "$(file_line "$INSTALLED_APP/Contents/Resources/DetachCLI/VERSION" 2>/dev/null || true)" = "$VERSION" ] || return 1
@@ -911,6 +921,7 @@ run_locked() {
   prepare_release_commit
   push_release_source
   build_release_artifacts
+  confirm_install_update_matrix
   install_release_candidate
   run_power_smoke
   run_lid_test

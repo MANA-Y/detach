@@ -29,6 +29,12 @@ final class UpdaterService: ObservableObject {
         case unavailable(reason: String)
     }
 
+    enum UpdateRecovery: Equatable {
+        case moveToApplications
+        case retryDownload
+        case reinstallAndRepair
+    }
+
     let availability: Availability
     let updaterController: SPUStandardUpdaterController
     let manualDownloadURL: URL?
@@ -168,18 +174,45 @@ final class UpdaterService: ObservableObject {
     }
 
     static func fallbackMessage(for error: Error?) -> String? {
+        guard let error, let recovery = recovery(for: error) else { return nil }
+
+        let nsError = error as NSError
+        switch recovery {
+        case .moveToApplications:
+            return L10n.string(
+                "Detach cannot update from this app location. Move Detach to /Applications. The active CLI did not change. Then try again.")
+        case .retryDownload:
+            return L10n.format(
+                "Detach could not prepare or download the update: %@. The active CLI did not change. Check the network connection and free disk space. Then try again.",
+                nsError.localizedDescription)
+        case .reinstallAndRepair:
+            return L10n.format(
+                "Detach rejected or could not install the update: %@. The active CLI did not change. Download the latest DMG. If the CLI does not match the app, open Detach settings, select System, and run Repair.",
+                nsError.localizedDescription)
+        }
+    }
+
+    static func recovery(for error: Error?) -> UpdateRecovery? {
         guard let error else { return nil }
 
         let nsError = error as NSError
-        // A normal "no update" result and explicit user cancellation are not
-        // failures that warrant sending the user to a manual download.
-        let nonActionableSparkleErrorCodes = [1001, 4007, 4008]
-        guard nsError.domain != SUSparkleErrorDomain
-                || !nonActionableSparkleErrorCodes.contains(nsError.code) else {
-            return nil
+        guard nsError.domain == SUSparkleErrorDomain else {
+            return .reinstallAndRepair
         }
-        return L10n.format(
-            "Sparkle couldn't complete the update: %@", nsError.localizedDescription)
+        switch nsError.code {
+        case 1001, 4007, 4008:
+            // No update, user cancellation, and deferred authorization do not
+            // need a recovery action.
+            return nil
+        case 1003, 1005:
+            // The app is on a disk image or in App Translocation.
+            return .moveToApplications
+        case 2000, 2001:
+            // Sparkle could not create its temporary directory or download.
+            return .retryDownload
+        default:
+            return .reinstallAndRepair
+        }
     }
 
 }
