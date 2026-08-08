@@ -18,13 +18,21 @@ the providers separately.
    `--resume latest` after a compatible interrupted or failed run.
 5. Review the final diff and evidence. Update the user contract or durable spec
    in the same change whenever behavior or an invariant changes.
-6. Unless the owner explicitly asks to keep work local, stage only task-scoped
-   files, inspect the staged public diff, commit after readiness passes, push
-   the current branch, and verify it is synchronized with its upstream.
+6. Unless the owner explicitly asks to keep work local, ordinary changes use a
+   topic branch: stage only task-scoped files, inspect the staged public diff,
+   commit after readiness passes, push, and merge only through a PR whose
+   required `quality-gates` job passed. Verify final `main` upstream parity.
+   `scripts/release-version` is the sole direct-`main` path.
 
 `README.md` is the user-facing contract. `docs/specs/` contains durable
 current-state engineering contracts. Tests and gates are executable evidence;
 they do not make stale prose correct.
+
+Use [ASD-STE100 Issue 9](https://www.asd-ste100.org/) for new or changed
+English text in `README.md` and `docs/`. Use short, direct sentences and one
+term for each meaning. Treat product names, paths, commands, and identifiers as
+project technical terms. Do not claim verified STE compliance without a review
+against the official standard.
 
 ## Context and specification policy
 

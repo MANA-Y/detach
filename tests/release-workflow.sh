@@ -275,6 +275,18 @@ SH
 set -eu
 case "${1:-} ${2:-}" in
   'auth status') exit 0 ;;
+  'run list') printf '%s\n' 4242 ;;
+  'run watch')
+    if [ "${FAKE_RELEASE_CI_ADVANCE_MAIN:-0}" = 1 ]; then
+      source_commit="$(git rev-parse HEAD^)"
+      source_tree="$(git rev-parse "$source_commit^{tree}")"
+      raced_commit="$(printf '%s\n' 'concurrent main update' | \
+        git commit-tree "$source_tree" -p "$source_commit")"
+      git push -q origin "$raced_commit:refs/heads/main"
+    fi
+    [ "${FAKE_RELEASE_CI_FAIL:-0}" != 1 ] || exit 23
+    ;;
+  'run view') printf '%s\n' 1 ;;
   'release view')
     [ -f "${FAKE_RELEASE_EXISTS:?}" ] || exit 1
     case " $* " in
@@ -395,7 +407,41 @@ expect_failure() {
 
 run_resume_case() {
   setup_fixture resume
-  for stage in preflight prepared pushed artifacts installed power-smoke lid published verified; do
+  for stage in preflight prepared; do
+    expect_failure "resume-$stage" "injected safe failure after $stage" \
+      run_workflow "$stage"
+  done
+  release_ci_source="$(git -C "$REPO" rev-parse HEAD^)"
+
+  git -C "$REPO" push -q origin \
+    "$release_ci_source:refs/heads/detach-release/$TARGET_TAG"
+  expect_failure release-ci-collision \
+    "remote release CI branch already points to a different commit: detach-release/$TARGET_TAG" \
+    run_workflow
+  git -C "$REPO" push -q origin ":refs/heads/detach-release/$TARGET_TAG"
+
+  export FAKE_RELEASE_CI_FAIL=1
+  expect_failure release-ci-failure \
+    'release CI did not pass; main and the release tag were not updated' \
+    run_workflow
+  unset FAKE_RELEASE_CI_FAIL
+  [ "$(git -C "$REPO" ls-remote origin refs/heads/main | awk '{print $1}')" = \
+    "$release_ci_source" ]
+  [ -z "$(git -C "$REPO" ls-remote origin "refs/tags/$TARGET_TAG")" ]
+  [ -n "$(git -C "$REPO" ls-remote origin "refs/heads/detach-release/$TARGET_TAG")" ]
+  [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-ci-approved" ]
+
+  export FAKE_RELEASE_CI_ADVANCE_MAIN=1
+  expect_failure release-ci-main-race 'remote main changed while release CI was running' \
+    run_workflow
+  unset FAKE_RELEASE_CI_ADVANCE_MAIN
+  [ -z "$(git -C "$REPO" ls-remote origin "refs/tags/$TARGET_TAG")" ]
+  [ -n "$(git -C "$REPO" ls-remote origin "refs/heads/detach-release/$TARGET_TAG")" ]
+  [ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-ci-approved" ]
+
+  git -C "$REPO" push -q --force origin "$release_ci_source:refs/heads/main"
+
+  for stage in pushed artifacts installed power-smoke lid published verified; do
     expect_failure "resume-$stage" "injected safe failure after $stage" \
       run_workflow "$stage"
   done
@@ -409,83 +455,104 @@ run_resume_case() {
   [ "$(grep -c '^power-smoke$' "$ACTION_LOG")" = 1 ]
   [ "$(grep -c '^release-preflight.sh$' "$ACTION_LOG")" = 2 ]
   [ "$(grep -c '^publish-preflight.sh$' "$ACTION_LOG")" = 2 ]
+  [ -z "$(git -C "$REPO" ls-remote origin "refs/heads/detach-release/$TARGET_TAG")" ]
 }
 
-# The resumability matrix and the independent rejection cases own disjoint
-# repositories below TMP_ROOT. Run those two lanes together so the release
-# contract does not serialize unrelated Git and fake-publication work.
-run_resume_case &
-resume_case_pid=$!
+run_timing_override_cases() {
+  setup_fixture timing-override-confirmation
+  expect_failure timing-override-confirmation \
+    "confirmation must exactly equal example/detach@$TARGET_TAG" \
+    run_workflow '' "example/detach@$TARGET_TAG" wrong-confirmation 1
+  [ ! -s "$ACTION_LOG" ]
 
-setup_fixture timing-override-confirmation
-expect_failure timing-override-confirmation \
-  "confirmation must exactly equal example/detach@$TARGET_TAG" \
-  run_workflow '' "example/detach@$TARGET_TAG" wrong-confirmation 1
-[ ! -s "$ACTION_LOG" ]
+  setup_fixture timing-override-invalid
+  expect_failure timing-override-invalid 'DETACH_RELEASE_IGNORE_TIMING must be 0 or 1' \
+    run_workflow '' "example/detach@$TARGET_TAG" "example/detach@$TARGET_TAG" invalid
+  [ ! -s "$ACTION_LOG" ]
 
-setup_fixture timing-override-invalid
-expect_failure timing-override-invalid 'DETACH_RELEASE_IGNORE_TIMING must be 0 or 1' \
-  run_workflow '' "example/detach@$TARGET_TAG" "example/detach@$TARGET_TAG" invalid
-[ ! -s "$ACTION_LOG" ]
-
-setup_fixture timing-override
-expect_failure timing-override 'injected safe failure after preflight' \
-  run_workflow preflight "example/detach@$TARGET_TAG" "example/detach@$TARGET_TAG" 1
-[ "$(<"$REPO/app/build/release-workflow/$TARGET_VERSION/timing-budget-enforced")" = false ]
-grep -F $'release_timing_override\t1' \
-  "$REPO"/app/build/quality-gates/*/environment.tsv >/dev/null
-! grep -F $'\trelease-budget\t' \
-  "$REPO"/app/build/quality-gates/*/summary.tsv >/dev/null
-run_workflow
-[ "$(<"$REPO/VERSION")" = "$TARGET_VERSION" ]
-[ "$(grep -c '^release$' "$ACTION_LOG")" = 1 ]
-[ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-verified" ]
-
-setup_fixture dirty
-printf '%s\n' dirty >"$REPO/untracked-note.txt"
-expect_failure dirty 'release workflow requires a clean worktree' run_workflow
-[ ! -s "$ACTION_LOG" ]
-
-setup_fixture stale-build
-printf '%s\n' 12 >"$REPO/BUILD"
-git -C "$REPO" add BUILD
-git -C "$REPO" commit -qm 'stale tracked build'
-git -C "$REPO" push -q origin main
-expect_failure stale-build 'tracked BUILD 12 does not match published build 13' run_workflow
-
-setup_fixture diverged
-printf '%s\n' local >>"$REPO/README.md"
-git -C "$REPO" add README.md
-git -C "$REPO" commit -qm 'local divergence'
-expect_failure diverged 'main must be synchronized with origin/main' run_workflow
-
-setup_fixture duplicate-tag
-git -C "$REPO" tag -a "$TARGET_TAG" -m duplicate
-expect_failure duplicate-tag "local tag already exists: $TARGET_TAG" run_workflow
-
-setup_fixture duplicate-release
-: >"$RELEASE_EXISTS"
-expect_failure duplicate-release "GitHub release already exists: $TARGET_TAG" run_workflow
-
-setup_fixture hardware-gate
-expect_failure hardware-gate \
-  "closed-lid hardware test confirmation must exactly equal example/detach@$TARGET_TAG" \
-  run_workflow '' wrong-confirmation
-[ ! -f "$RELEASE_EXISTS" ]
-! grep -q '^publish$' "$ACTION_LOG"
-
-setup_fixture remote-hash
-export FAKE_PUBLISH_CORRUPT=1
-expect_failure remote-hash 'published asset hash mismatch: Detach.dmg' run_workflow
-unset FAKE_PUBLISH_CORRUPT
-[ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-published" ]
-[ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-verified" ]
-
-resume_case_status=0
-wait "$resume_case_pid" || resume_case_status=$?
-[ "$resume_case_status" -eq 0 ] || {
-  printf 'release workflow resumability lane failed\n' >&2
-  exit "$resume_case_status"
+  setup_fixture timing-override
+  expect_failure timing-override 'injected safe failure after preflight' \
+    run_workflow preflight "example/detach@$TARGET_TAG" "example/detach@$TARGET_TAG" 1
+  [ "$(<"$REPO/app/build/release-workflow/$TARGET_VERSION/timing-budget-enforced")" = false ]
+  grep -F $'release_timing_override\t1' \
+    "$REPO"/app/build/quality-gates/*/environment.tsv >/dev/null
+  ! grep -F $'\trelease-budget\t' \
+    "$REPO"/app/build/quality-gates/*/summary.tsv >/dev/null
+  run_workflow
+  [ "$(<"$REPO/VERSION")" = "$TARGET_VERSION" ]
+  [ "$(grep -c '^release$' "$ACTION_LOG")" = 1 ]
+  [ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-verified" ]
 }
+
+run_preflight_rejection_cases() {
+  setup_fixture dirty
+  printf '%s\n' dirty >"$REPO/untracked-note.txt"
+  expect_failure dirty 'release workflow requires a clean worktree' run_workflow
+  [ ! -s "$ACTION_LOG" ]
+
+  setup_fixture stale-build
+  printf '%s\n' 12 >"$REPO/BUILD"
+  git -C "$REPO" add BUILD
+  git -C "$REPO" commit -qm 'stale tracked build'
+  git -C "$REPO" push -q origin main
+  expect_failure stale-build 'tracked BUILD 12 does not match published build 13' run_workflow
+
+  setup_fixture diverged
+  printf '%s\n' local >>"$REPO/README.md"
+  git -C "$REPO" add README.md
+  git -C "$REPO" commit -qm 'local divergence'
+  expect_failure diverged 'main must be synchronized with origin/main' run_workflow
+
+  setup_fixture duplicate-tag
+  git -C "$REPO" tag -a "$TARGET_TAG" -m duplicate
+  expect_failure duplicate-tag "local tag already exists: $TARGET_TAG" run_workflow
+
+  setup_fixture duplicate-release
+  : >"$RELEASE_EXISTS"
+  expect_failure duplicate-release "GitHub release already exists: $TARGET_TAG" run_workflow
+}
+
+run_hardware_rejection_case() {
+  setup_fixture hardware-gate
+  expect_failure hardware-gate \
+    "closed-lid hardware test confirmation must exactly equal example/detach@$TARGET_TAG" \
+    run_workflow '' wrong-confirmation
+  [ ! -f "$RELEASE_EXISTS" ]
+  ! grep -q '^publish$' "$ACTION_LOG"
+}
+
+run_remote_hash_case() {
+  setup_fixture remote-hash
+  export FAKE_PUBLISH_CORRUPT=1
+  expect_failure remote-hash 'published asset hash mismatch: Detach.dmg' run_workflow
+  unset FAKE_PUBLISH_CORRUPT
+  [ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-published" ]
+  [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-verified" ]
+}
+
+# Each lane owns a separate repository below TMP_ROOT. Run the lanes together.
+# This keeps independent Git and fake-publication work out of the critical path.
+release_case_pids=()
+release_case_names=()
+for release_case in \
+  run_resume_case \
+  run_timing_override_cases \
+  run_preflight_rejection_cases \
+  run_hardware_rejection_case \
+  run_remote_hash_case; do
+  "$release_case" &
+  release_case_pids+=("$!")
+  release_case_names+=("$release_case")
+done
+
+release_case_status=0
+for release_case_index in "${!release_case_pids[@]}"; do
+  if ! wait "${release_case_pids[$release_case_index]}"; then
+    printf 'release workflow lane failed: %s\n' \
+      "${release_case_names[$release_case_index]}" >&2
+    release_case_status=1
+  fi
+done
+[ "$release_case_status" -eq 0 ] || exit 1
 
 printf 'Detach release workflow tests passed\n'

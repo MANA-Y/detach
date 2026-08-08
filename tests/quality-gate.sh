@@ -15,6 +15,8 @@ grep -F 'run: scripts/quality-gate --base "$BASE_SHA" --without-release-budget' 
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'run: scripts/quality-gate --mode repository --keep-going --without-release-budget' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F -- '- "detach-release/**"' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 
 prepare_template() {
   local stage
@@ -75,6 +77,7 @@ production_plan() {
   local release_confirmation="${DETACH_TEST_RELEASE_CONFIRMATION:-$release_override}"
   (
     cd -P "$REPO"
+    GITHUB_ACTIONS= \
     DETACH_RELEASE_TIMING_OVERRIDE="$release_override" \
       DETACH_CONFIRM_RELEASE="$release_confirmation" \
       "$REPO/scripts/quality-gate" "$@"

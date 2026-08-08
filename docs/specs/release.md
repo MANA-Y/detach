@@ -13,6 +13,12 @@ change real power state, upload assets, or claim publication.
 - Release starts from clean, synchronized `main`. The tracked `BUILD`
   must match the latest published manifest; `VERSION` and `BUILD`
   change together in one release commit.
+- After exact owner confirmation, push the release commit to its unique
+  `detach-release/vX.Y.Z` ref. The commit must pass the official GitHub Actions
+  `quality-gates` job. Then make sure that remote `main` did not change.
+  Atomically push the approved commit and annotated tag. Verify both refs and
+  remove only the matching temporary ref. No actor has a general `main`
+  ruleset bypass.
 - The app, watchdog, bundled tmux, state helper, power client, root helper, and
   Sparkle executables contain only `arm64`. Intel Macs are unsupported.
 - The pinned tmux source build may reuse only an arm64 product keyed by the

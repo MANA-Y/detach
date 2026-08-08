@@ -29,6 +29,11 @@ agent_bytes="$(wc -c <"$ROOT/AGENTS.md" | tr -d ' ')"
 ! grep -F '@docs/' "$ROOT/AGENTS.md" >/dev/null ||
   fail 'detailed specs must not be eagerly imported'
 
+for file in AGENTS.md docs/specs/documentation.md; do
+  grep -F '[ASD-STE100 Issue 9](https://www.asd-ste100.org/)' "$ROOT/$file" >/dev/null ||
+    fail "$file must define ASD-STE100 Issue 9 as the documentation standard"
+done
+
 required=(
   docs/specs/README.md
   docs/specs/runtime.md
