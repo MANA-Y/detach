@@ -1,4 +1,5 @@
 import XCTest
+import DetachKit
 @testable import DetachApp
 
 final class SessionIdentityTests: XCTestCase {
@@ -13,5 +14,25 @@ final class SessionIdentityTests: XCTestCase {
         XCTAssertLessThan(SessionIdentity.emphasis(for: .completed), 1)
         XCTAssertLessThan(SessionIdentity.emphasis(for: .stopped), 1)
         XCTAssertLessThan(SessionIdentity.emphasis(for: .interrupted), 1)
+    }
+}
+
+final class SessionActionPresentationTests: XCTestCase {
+    func testTerminalActionTitlesNameTheSelectedApplication() {
+        XCTAssertEqual(
+            SessionActionPresentation.terminalTitle(
+                for: .attach,
+                terminalDisplayName: "iTerm"),
+            "Open in iTerm")
+        XCTAssertEqual(
+            SessionActionPresentation.terminalTitle(
+                for: .resume,
+                terminalDisplayName: "Warp"),
+            "Resume in Warp")
+        XCTAssertEqual(
+            SessionActionPresentation.terminalTitle(
+                for: .recover,
+                terminalDisplayName: "Ghostty"),
+            "Recover in Ghostty")
     }
 }

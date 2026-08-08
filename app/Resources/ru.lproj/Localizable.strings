@@ -142,6 +142,7 @@
 "Open a new Terminal window. Repair will configure the detach command for your shell again." = "Откройте новое окно Terminal. Repair повторно настроит команду detach для вашего shell.";
 "Open commands in" = "Открывать команды в";
 "Open download page…" = "Открыть страницу загрузки…";
+"Open in %@" = "Открыть в %@";
 "Open in Terminal" = "Открыть в терминале";
 "Open macOS Settings" = "Открыть настройки macOS";
 "Open the session to continue" = "Откройте сессию, чтобы продолжить";
@@ -154,6 +155,7 @@
 "Ready — we'll notify you about ready responses, completed sessions, or session problems." = "Готово — сообщим о готовом ответе, завершении или проблеме сессии.";
 "Recover in Terminal" = "Восстановить в терминале";
 "Recovery from the latest checkpoint is available" = "Доступно восстановление из последнего чекпойнта";
+"Recover in %@" = "Восстановить в %@";
 "Refresh interval" = "Интервал обновления";
 "Refresh terminal list" = "Обновить список терминалов";
 "Reinstall command-line tools" = "Переустановить командные инструменты";
@@ -163,6 +165,7 @@
 "Remove permanently" = "Удалить безвозвратно";
 "Remove the CLI and all saved sessions?" = "Удалить CLI и все сохранённые сессии?";
 "Remove, keeping checkpoints" = "Удалить, сохранив чекпойнты";
+"Resume in %@" = "Продолжить в %@";
 "Resume in Terminal" = "Продолжить в терминале";
 "Retry Setup" = "Повторить настройку";
 "Running from a DMG or temporary copy is unreliable." = "Запуск из DMG или временной копии ненадёжен.";

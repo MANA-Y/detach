@@ -155,8 +155,11 @@ Automation entitlement.
 
 Distribution bootstrap is allowed only from `/Applications`, not a DMG or App
 Translocation path. Terminal actions use a private self-deleting `.command`
-file and `NSWorkspace`; they do not use Apple Events. Before opening Terminal,
-the new-session sheet accepts an optional human-readable display name of up to
+file and `NSWorkspace`; they do not use Apple Events. Session Open, Resume, and
+Recover actions name the application resolved from the currently selected
+terminal bundle identifier, with Terminal as the fallback when the selected
+application cannot be resolved. Before opening a new session, the new-session
+sheet accepts an optional human-readable display name of up to
 100 UTF-8 bytes, rejects control characters, blocks invalid launches, and
 explains the constraint inline. It passes the label as one shell-quoted
 `--name` argument. The app renders typed `display_name` as the primary session

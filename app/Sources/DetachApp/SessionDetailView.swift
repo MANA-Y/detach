@@ -289,11 +289,18 @@ struct SessionDetailView: View {
         }
     }
 
+    private var selectedTerminalDisplayName: String {
+        TerminalCatalog.application(bundleIdentifier: terminalBundleIdentifier)?.displayName
+            ?? "Terminal"
+    }
+
     @ViewBuilder
     private func actionButton(_ action: SessionAction) -> some View {
         switch action {
         case .attach:
-            Button(L10n.string("Open in Terminal")) {
+            Button(SessionActionPresentation.terminalTitle(
+                for: action,
+                terminalDisplayName: selectedTerminalDisplayName)) {
                 openInTerminal(TerminalCommand.attach(detachPath: detachPath, session: session))
             }
                 .keyboardShortcut(.return, modifiers: .command)
@@ -301,7 +308,9 @@ struct SessionDetailView: View {
                 .tint(Brand.indigo)
                 .disabled(isLaunchingTerminal)
         case .resume:
-            Button(L10n.string("Resume in Terminal")) {
+            Button(SessionActionPresentation.terminalTitle(
+                for: action,
+                terminalDisplayName: selectedTerminalDisplayName)) {
                 if let command = TerminalCommand.resume(detachPath: detachPath, session: session) {
                     openInTerminal(command)
                 }
@@ -310,7 +319,9 @@ struct SessionDetailView: View {
             .tint(Brand.indigo)
             .disabled(isLaunchingTerminal)
         case .recover:
-            Button(L10n.string("Recover in Terminal")) {
+            Button(SessionActionPresentation.terminalTitle(
+                for: action,
+                terminalDisplayName: selectedTerminalDisplayName)) {
                 openInTerminal(TerminalCommand.recover(detachPath: detachPath, session: session))
             }
                 .buttonStyle(.borderedProminent)
@@ -344,6 +355,24 @@ struct SessionDetailView: View {
             if let message = await store.perform(action, on: session) {
                 actionError = message
             }
+        }
+    }
+}
+
+enum SessionActionPresentation {
+    static func terminalTitle(
+        for action: SessionAction,
+        terminalDisplayName: String
+    ) -> String {
+        switch action {
+        case .attach:
+            L10n.format("Open in %@", terminalDisplayName)
+        case .resume:
+            L10n.format("Resume in %@", terminalDisplayName)
+        case .recover:
+            L10n.format("Recover in %@", terminalDisplayName)
+        case .stop, .delete:
+            preconditionFailure("A non-terminal action has no terminal title")
         }
     }
 }

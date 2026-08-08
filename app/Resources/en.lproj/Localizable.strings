@@ -142,6 +142,7 @@
 "Open a new Terminal window. Repair will configure the detach command for your shell again." = "Open a new Terminal window. Repair will configure the detach command for your shell again.";
 "Open commands in" = "Open commands in";
 "Open download page…" = "Open download page…";
+"Open in %@" = "Open in %@";
 "Open in Terminal" = "Open in Terminal";
 "Open macOS Settings" = "Open macOS Settings";
 "Open the session to continue" = "Open the session to continue";
@@ -154,6 +155,7 @@
 "Ready — we'll notify you about ready responses, completed sessions, or session problems." = "Ready — we'll notify you about ready responses, completed sessions, or session problems.";
 "Recover in Terminal" = "Recover in Terminal";
 "Recovery from the latest checkpoint is available" = "Recovery from the latest checkpoint is available";
+"Recover in %@" = "Recover in %@";
 "Refresh interval" = "Refresh interval";
 "Refresh terminal list" = "Refresh terminal list";
 "Reinstall command-line tools" = "Reinstall command-line tools";
@@ -163,6 +165,7 @@
 "Remove permanently" = "Remove permanently";
 "Remove the CLI and all saved sessions?" = "Remove the CLI and all saved sessions?";
 "Remove, keeping checkpoints" = "Remove, keeping checkpoints";
+"Resume in %@" = "Resume in %@";
 "Resume in Terminal" = "Resume in Terminal";
 "Retry Setup" = "Retry Setup";
 "Running from a DMG or temporary copy is unreliable." = "Running from a DMG or temporary copy is unreliable.";

@@ -101,7 +101,8 @@ the app-launched command stays queued until that prompt is answered.
 
 Detach.app owns the session lifecycle while interactive work stays in a real
 terminal. It detects Terminal, iTerm2, Warp, and apps that register as
-shell-script runners; Settings can point to another terminal manually.
+shell-script runners; Settings can point to another terminal manually. Attach,
+Resume, and Recover buttons name the terminal currently selected in Settings.
 
 The dashboard gives every managed session:
 
