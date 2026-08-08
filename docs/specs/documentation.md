@@ -17,6 +17,11 @@ against the same deterministic quality gate.
   crosses real subsystem boundaries.
 - `AGENTS.md` contains one small human-readable context map. There is no second
   routing DSL or tool for an agent to learn.
+- New or changed English text in `README.md` and `docs/` uses
+  [ASD-STE100 Issue 9](https://www.asd-ste100.org/). Product names, paths,
+  commands, and identifiers are project technical terms. A document does not
+  claim verified STE compliance unless a reviewer checks it against the
+  official standard.
 - Durable specs describe current contracts. Ignored `docs/work/` contains
   temporary executable plans. Imports are not used for detailed specs because
   Claude expands imports eagerly.
@@ -35,14 +40,14 @@ against the same deterministic quality gate.
   only for an evidenced unrelated external transient whose cause is recorded.
 - Hosted CI runs every selected functional check and timing-policy ratchet but
   does not enforce reference-machine wall or per-stage timing ceilings.
-- The active GitHub ruleset for `main` has no bypass actors and requires the
-  GitHub Actions `quality-gates` job. An unchecked administrator push is not a
-  substitute for CI; release commits first earn the same check on their
-  temporary release ref.
-- Ready task-scoped changes use a topic branch and are committed and pushed by
-  default after staged public-diff review; an owner request to keep work local
-  is the explicit exception. Successful delivery merges only after the
-  required PR check passes and includes final `main` upstream parity.
+- The active GitHub ruleset for `main` has no bypass actors. It requires the
+  GitHub Actions `quality-gates` job. An administrator cannot use an unchecked
+  push as a substitute for CI. A release commit first gets the same check on
+  its temporary release ref.
+- By default, put a ready task-scoped change on a topic branch. Review the
+  staged public diff, commit it, and push it. Merge it only after the required
+  PR check passes. Then verify that local `main` and upstream `main` are equal.
+  The owner can ask to keep the change local.
 - `tests/docs-contract.sh` enforces this structure and runs inside the
   static quality stage.
 

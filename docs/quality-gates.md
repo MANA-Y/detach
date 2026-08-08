@@ -386,15 +386,16 @@ local and release readiness still require both. CI publishes its manifest,
 TSV, JUnit report, and logs for 14 days even when the gate passes, and also
 exposes the summary in the workflow UI. It does not copy a separate test matrix.
 
-The repository's active `main` ruleset has no bypass actors and requires the
-`quality-gates` job from the GitHub Actions integration. Pull requests and
-administrator pushes therefore cannot update `main` while that check is
-missing, pending, or failed. Release commits use the same policy rather than a
-bypass: the workflow pushes the exact version commit to
-`detach-release/vX.Y.Z`, waits for the push-triggered repository gate, rechecks
-that remote `main` did not move, and only then atomically advances `main` and
-the annotated tag. A failed run leaves the temporary ref for diagnosis and
-resume; a verified main/tag push removes only that matching ref.
+The active `main` ruleset has no bypass actors. It requires the `quality-gates`
+job from GitHub Actions. A pull request or an administrator push cannot update
+`main` when the check is missing, pending, or failed.
+
+A release commit uses the same policy. The release workflow pushes the exact
+version commit to `detach-release/vX.Y.Z`. It waits for the repository gate on
+that ref. Then it makes sure that remote `main` did not move. It atomically
+updates `main` and the annotated tag only after these checks pass. A failed run
+keeps the temporary ref for diagnosis and resume. A verified push removes only
+the matching temporary ref.
 
 ## Manual release-only gates
 

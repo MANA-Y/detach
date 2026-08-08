@@ -77,6 +77,7 @@ production_plan() {
   local release_confirmation="${DETACH_TEST_RELEASE_CONFIRMATION:-$release_override}"
   (
     cd -P "$REPO"
+    GITHUB_ACTIONS= \
     DETACH_RELEASE_TIMING_OVERRIDE="$release_override" \
       DETACH_CONFIRM_RELEASE="$release_confirmation" \
       "$REPO/scripts/quality-gate" "$@"

@@ -126,10 +126,10 @@ requires the tracked root `BUILD` to match the latest published manifest,
 increments it together with `VERSION` in one release commit, creates one
 annotated tag, and requires an exact
 `owner/repository@tag` confirmation before pushing the commit to a unique
-`detach-release/vX.Y.Z` ref. The official GitHub Actions `quality-gates` job
-must pass for that exact SHA; the workflow rechecks unchanged remote `main`,
-atomically pushes the approved commit and tag, verifies both, and removes the
-matching temporary ref. It then reuses the
+`detach-release/vX.Y.Z` ref. The exact commit must pass the official GitHub
+Actions `quality-gates` job. The workflow makes sure that remote `main` did not
+change. Then it atomically pushes the approved commit and tag. It verifies both
+refs and removes the matching temporary ref. It then reuses the
 strict `app/scripts/release.sh` and `app/scripts/publish-release.sh`, installs
 the signed candidate, runs the real power smoke, measures a supervised
 closed-lid probe, publishes, and independently downloads and hashes every

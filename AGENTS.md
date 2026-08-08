@@ -28,6 +28,12 @@ the providers separately.
 current-state engineering contracts. Tests and gates are executable evidence;
 they do not make stale prose correct.
 
+Use [ASD-STE100 Issue 9](https://www.asd-ste100.org/) for new or changed
+English text in `README.md` and `docs/`. Use short, direct sentences and one
+term for each meaning. Treat product names, paths, commands, and identifiers as
+project technical terms. Do not claim verified STE compliance without a review
+against the official standard.
+
 ## Context and specification policy
 
 - Keep this file under 200 lines and limited to rules needed on most tasks.
