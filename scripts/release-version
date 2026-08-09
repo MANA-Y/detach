@@ -15,6 +15,7 @@ LOCKED=0
 LID_WRAPPER_PID=""
 INSTALL_TEMP=""
 INSTALL_BACKUP=""
+ARTIFACT_CREDENTIALS_VERIFIED=0
 
 die() {
   printf 'release-version: %s\n' "$*" >&2
@@ -378,7 +379,12 @@ release_api_status() {
   esac
 }
 
-verify_credentials() {
+verify_github_credentials() {
+  command -v gh >/dev/null 2>&1 || die 'GitHub CLI (gh) is required'
+  gh auth status >/dev/null
+}
+
+verify_artifact_credentials() {
   local identity="${DETACH_CODESIGN_IDENTITY:-}"
   local notary_profile="${DETACH_NOTARY_PROFILE:-}"
   local public_key="${DETACH_SPARKLE_PUBLIC_ED_KEY:-}"
@@ -386,12 +392,12 @@ verify_credentials() {
   local key_account="${DETACH_SPARKLE_KEY_ACCOUNT:-dev.tsarev.detach}"
   local sparkle_tools signing_key identities key_mode key_mode_value
 
+  [ "$ARTIFACT_CREDENTIALS_VERIFIED" = 0 ] || return 0
+
   case "$identity" in 'Developer ID Application: '*) ;; *) die 'a Developer ID Application identity is required' ;; esac
   [ -n "$notary_profile" ] || die 'DETACH_NOTARY_PROFILE is required'
   [[ "$public_key" =~ ^[A-Za-z0-9+/]{43}=$ ]] || \
     die 'DETACH_SPARKLE_PUBLIC_ED_KEY must be a base64 Ed25519 public key'
-  command -v gh >/dev/null 2>&1 || die 'GitHub CLI (gh) is required'
-  gh auth status >/dev/null
   identities="$(security find-identity -v -p codesigning)"
   grep -F "\"$identity\"" <<<"$identities" >/dev/null || \
     die 'configured Developer ID signing identity is not installed or valid'
@@ -418,6 +424,12 @@ verify_credentials() {
   fi
   [ "$signing_key" = "$public_key" ] || \
     die 'configured Sparkle public key does not match the signing key'
+  ARTIFACT_CREDENTIALS_VERIFIED=1
+}
+
+verify_credentials() {
+  verify_github_credentials
+  verify_artifact_credentials
 }
 
 download_latest_manifest() {
@@ -751,6 +763,7 @@ release_artifacts_valid() {
 
 build_release_artifacts() {
   if ! release_artifacts_valid; then
+    verify_artifact_credentials
     note "building, signing and notarizing Detach $VERSION (build $BUILD)"
     DETACH_VERSION="$VERSION" \
       DETACH_BUILD_VERSION="$BUILD" \
@@ -1012,7 +1025,11 @@ run_locked() {
       note "Detach $VERSION is published, verified and GitHub Latest"
       return
     fi
-    verify_credentials
+    if has_stage artifacts; then
+      verify_github_credentials
+    else
+      verify_credentials
+    fi
   else
     initialize_workflow
   fi
