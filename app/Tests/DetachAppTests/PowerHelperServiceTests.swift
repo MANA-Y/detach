@@ -474,16 +474,21 @@ final class PowerHelperServiceTests: XCTestCase {
     }
 
     func testChangedDefinitionDefersWhileSessionsHoldPowerLeases() async throws {
-        let backend = FakePowerHelperBackend(status: .enabled, registrations: [])
+        let backend = FakePowerHelperBackend(
+            status: .enabled, registrations: [.success(.enabled)])
         let lifecycle = FakePowerHelperLifecycle(
-            preparations: [.success(.activeLeases)])
+            preparations: [
+                .success(.activeLeases),
+                .success(.prepared),
+            ])
         let fixture = makeFixture(backend: backend, lifecycle: lifecycle)
         defer { fixture.cleanup() }
         fixture.defaults.set(
             "digest-previous", forKey: "powerHelperDefinitionDigest")
 
-        try await fixture.service.reconcileAfterAppUpdate()
+        let outcome = try await fixture.service.reconcileAfterAppUpdate()
 
+        XCTAssertEqual(outcome, .deferredForActiveLeases)
         XCTAssertEqual(lifecycle.prepareCalls, 1)
         XCTAssertEqual(backend.unregisterCalls, 0)
         XCTAssertEqual(backend.registerCalls, 0)
@@ -495,6 +500,18 @@ final class PowerHelperServiceTests: XCTestCase {
         XCTAssertFalse(fixture.defaults.bool(
             forKey: "powerHelperUnregistrationPending"))
         XCTAssertEqual(fixture.service.status, .enabled)
+
+        let retryOutcome = try await fixture.service.reconcileAfterAppUpdate()
+
+        XCTAssertEqual(retryOutcome, .complete)
+        XCTAssertEqual(lifecycle.prepareCalls, 2)
+        XCTAssertEqual(backend.unregisterCalls, 1)
+        XCTAssertEqual(backend.registerCalls, 1)
+        XCTAssertEqual(
+            fixture.defaults.string(forKey: "powerHelperDefinitionDigest"),
+            "digest-current")
+        XCTAssertFalse(fixture.defaults.bool(
+            forKey: "powerHelperDefinitionReconcilePending"))
     }
 
     func testFailedUnregisterKeepsRootGateClosedAndSubmittedPhase() async {
@@ -583,7 +600,7 @@ final class PowerHelperServiceTests: XCTestCase {
             .unregisterSubmitted)
 
         backend.completeSuspendedUnregister()
-        try await reconciliation.value
+        _ = try await reconciliation.value
 
         XCTAssertEqual(backend.registerCalls, 1)
         XCTAssertEqual(fixture.lifecycle.cancelCalls, 1)
@@ -1050,7 +1067,7 @@ final class PowerHelperServiceTests: XCTestCase {
         XCTAssertEqual(secondBackend.registerCalls, 0)
 
         firstBackend.completeSuspendedUnregister()
-        try await firstReconciliation.value
+        _ = try await firstReconciliation.value
     }
 
     func testDifferentUserWithoutJournalReplaysInterruptedSystemUnregister() async throws {
@@ -1174,7 +1191,7 @@ final class PowerHelperServiceTests: XCTestCase {
         XCTAssertEqual(foreignUser.lifecycle.cancelCalls, 0)
 
         backend.completeSuspendedUnregister()
-        try await recovery.value
+        _ = try await recovery.value
         XCTAssertEqual(backend.registerCalls, 1)
         XCTAssertEqual(foreignUser.lifecycle.cancelCalls, 1)
     }
