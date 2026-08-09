@@ -179,6 +179,9 @@ SH
 set -euo pipefail
 root="$(cd -P "$(dirname "$0")/../.." && pwd)"
 version="${DETACH_VERSION:?}"
+manifest="$root/app/build/update-assets/release-manifest.json"
+[ "${DETACH_RELEASE_EXPECTED_COMMIT:-}" = \
+  "$(plutil -extract git_commit raw -o - "$manifest")" ]
 mkdir -p "${FAKE_REMOTE_ASSETS:?}"
 cp "$root/app/build/Detach.dmg" "$root/app/build/Detach.dmg.sha256" \
   "$root/app/build/update-assets/Detach-$version.zip" \
