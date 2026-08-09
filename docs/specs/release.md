@@ -54,6 +54,9 @@ change real power state, upload assets, or claim publication.
   gate and workflow evidence.
 - Resume state is private under `app/build/`. Resume is allowed only when
   source, durable stage evidence, and existing asset digests still match.
+- A resume after the artifact stage requires only credentials for the remaining
+  publication work. If artifact validation requires a rebuild, the workflow
+  requires the Developer ID, notarization, and Sparkle credentials again.
 - After the atomic main/tag push, a paused release can resume from a newer
   synchronized `main` only when the release commit remains an ancestor and all
   later paths are release tooling, release tests, or release documentation.

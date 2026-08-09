@@ -267,7 +267,13 @@ SH
 #!/bin/bash
 set -eu
 case " $* " in
-  *' notarytool history '*) printf '%s\n' '{}' ;;
+  *' notarytool history '*)
+    [ "${FAKE_NOTARY_UNAVAILABLE:-0}" != 1 ] || {
+      printf '%s\n' 'fake notary credential unavailable' >&2
+      exit 69
+    }
+    printf '%s\n' '{}'
+    ;;
   *) exit 64 ;;
 esac
 SH
@@ -450,6 +456,7 @@ run_resume_case() {
     expect_failure "resume-$stage" "injected safe failure after $stage" \
       run_workflow "$stage"
   done
+  export FAKE_NOTARY_UNAVAILABLE=1
   mkdir -p "$REPO/docs"
   printf '%s\n' 'release tooling follow-up' >"$REPO/docs/testing.md"
   git -C "$REPO" add docs/testing.md
@@ -460,6 +467,7 @@ run_resume_case() {
       run_workflow "$stage"
   done
   run_workflow
+  unset FAKE_NOTARY_UNAVAILABLE
   [ "$(<"$REPO/VERSION")" = "$TARGET_VERSION" ]
   [ "$(<"$REPO/BUILD")" = 14 ]
   [ "$(git -C "$REPO" log --format=%s | grep -c "^Prepare $TARGET_VERSION release$")" = 1 ]
@@ -474,6 +482,18 @@ run_resume_case() {
     "$REPO/app/build/release-workflow/$TARGET_VERSION/release-impact.tsv" >/dev/null
   grep -F $'lid_test_required\tfalse' \
     "$REPO/app/build/release-workflow/$TARGET_VERSION/release-impact.tsv" >/dev/null
+}
+
+run_invalid_resume_artifact_credentials_case() {
+  setup_fixture invalid-resume-artifact-credentials
+  expect_failure invalid-resume-artifact-preparation \
+    'injected safe failure after artifacts' run_workflow artifacts
+  printf '%s\n' 'changed after notarization' >"$REPO/app/build/Detach.dmg"
+  export FAKE_NOTARY_UNAVAILABLE=1
+  expect_failure invalid-resume-artifact-credentials \
+    'fake notary credential unavailable' run_workflow
+  unset FAKE_NOTARY_UNAVAILABLE
+  [ ! -f "$RELEASE_EXISTS" ]
 }
 
 run_timing_override_cases() {
@@ -586,7 +606,8 @@ for release_case in \
   run_preflight_rejection_cases \
   run_hardware_rejection_case \
   run_remote_hash_case \
-  run_post_push_main_rejection_case; do
+  run_post_push_main_rejection_case \
+  run_invalid_resume_artifact_credentials_case; do
   "$release_case" &
   release_case_pids+=("$!")
   release_case_names+=("$release_case")
