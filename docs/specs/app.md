@@ -153,19 +153,18 @@ daemon is a distinct demand-launched LaunchDaemon. Neither plist may contain a
 user-specific path. Native power protection requires no Apple Events or
 Automation entitlement.
 
-Distribution bootstrap is allowed only from `/Applications`, not a DMG or App
-Translocation path. Terminal actions use a private self-deleting `.command`
-file and `NSWorkspace`; they do not use Apple Events. Session Open, Resume, and
-Recover actions name the application resolved from the currently selected
-terminal bundle identifier, with Terminal as the fallback when the selected
-application cannot be resolved. Before opening a new session, the new-session
-sheet accepts an optional human-readable display name of up to
-100 UTF-8 bytes, rejects control characters, blocks invalid launches, and
-explains the constraint inline. It passes the label as one shell-quoted
-`--name` argument. The app renders typed `display_name` as the primary session
-title while retaining the project/internal-name fallback for older records.
-Notifications are opt-in and driven by one app-level poller with baseline and
-transition deduplication.
+Distribution bootstrap runs only from `/Applications`, never a DMG or App
+Translocation path. Terminal actions use `NSWorkspace`, not Apple Events, to
+open a private self-deleting `.command` file in a new terminal process. They set
+its directory as outer `ZDOTDIR`; the file clears it before user zsh startup so
+a prompt cannot consume its path. Open, Resume, and Recover use the selected
+terminal bundle identifier, with Terminal as fallback. The new-session sheet
+accepts an optional display name of at most 100 UTF-8 bytes. It rejects control
+characters, blocks invalid launches, explains the limit inline, and passes the
+label as one shell-quoted `--name` argument. The app uses typed `display_name`
+as the session title, with the project/internal name fallback for old records.
+Notifications are opt-in. One app poller provides baseline and transition
+deduplication.
 
 Sparkle 2 is pinned in `Package.resolved`, embedded with its symlink layout
 intact, and signed inside-out before the outer app. Ad-hoc development builds

@@ -92,9 +92,7 @@ public enum TerminalLauncher {
     ) async throws {
         try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<Void, Error>) in
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.activates = true
-            configuration.addsToRecentItems = false
+            let configuration = openConfiguration(commandURL: commandURL)
             NSWorkspace.shared.open(
                 [commandURL],
                 withApplicationAt: applicationURL,
@@ -106,6 +104,24 @@ public enum TerminalLauncher {
                     }
                 }
         }
+    }
+
+    @MainActor
+    static func openConfiguration(commandURL: URL) -> NSWorkspace.OpenConfiguration {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.addsToRecentItems = false
+
+        // Terminal runs a .command document by typing its path into a new
+        // interactive shell. A startup hook that reads one key, such as the
+        // oh-my-zsh update prompt, can otherwise consume the leading slash.
+        // A fresh application instance is required because NSWorkspace only
+        // applies launch environment variables to a new process.
+        configuration.createsNewApplicationInstance = true
+        configuration.environment = [
+            "ZDOTDIR": commandURL.deletingLastPathComponent().path
+        ]
+        return configuration
     }
 
     static func commandFileContents(command: String) throws -> Data {
@@ -120,7 +136,7 @@ public enum TerminalLauncher {
         /bin/rm -f -- "$command_file" || exit 125
         [[ ! -e "$command_file" ]] || exit 125
         /bin/rmdir -- "$command_dir" 2>/dev/null || true
-        unset command_file command_dir
+        unset command_file command_dir ZDOTDIR
         exec /bin/zsh -lic \(shellQuoted(command))
 
         """
