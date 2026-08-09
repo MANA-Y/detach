@@ -16,6 +16,9 @@ LID_WRAPPER_PID=""
 INSTALL_TEMP=""
 INSTALL_BACKUP=""
 ARTIFACT_CREDENTIALS_VERIFIED=0
+INSTALL_DMG_ROOT=""
+INSTALL_DMG_MOUNT=""
+INSTALL_DMG_ATTACHED=0
 
 die() {
   printf 'release-version: %s\n' "$*" >&2
@@ -26,7 +29,20 @@ note() {
   printf '==> %s\n' "$*"
 }
 
+cleanup_install_dmg() {
+  if [ "$INSTALL_DMG_ATTACHED" = 1 ] && [ -n "$INSTALL_DMG_MOUNT" ]; then
+    hdiutil detach "$INSTALL_DMG_MOUNT" >/dev/null 2>&1 || true
+  fi
+  INSTALL_DMG_ATTACHED=0
+  if [ -n "$INSTALL_DMG_ROOT" ]; then
+    rm -rf "$INSTALL_DMG_ROOT"
+  fi
+  INSTALL_DMG_ROOT=""
+  INSTALL_DMG_MOUNT=""
+}
+
 cleanup() {
+  cleanup_install_dmg
   if [ -n "$LID_WRAPPER_PID" ]; then
     kill -TERM "$LID_WRAPPER_PID" >/dev/null 2>&1 || true
     wait "$LID_WRAPPER_PID" >/dev/null 2>&1 || true
@@ -810,8 +826,35 @@ remove_install_scratch() {
   esac
 }
 
+copy_release_candidate_from_dmg() {
+  local destination="$1" dmg="$APP_ROOT/build/Detach.dmg" source_app
+
+  [ -f "$dmg" ] && [ ! -L "$dmg" ] || die 'release DMG is unavailable for installation'
+  INSTALL_DMG_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-release-install.XXXXXX")"
+  INSTALL_DMG_MOUNT="$INSTALL_DMG_ROOT/mount"
+  mkdir -m 0755 "$INSTALL_DMG_MOUNT"
+  if ! hdiutil attach -readonly -nobrowse -owners on \
+      -mountpoint "$INSTALL_DMG_MOUNT" "$dmg" \
+      >"$INSTALL_DMG_ROOT/attach.txt"; then
+    die 'could not mount the signed release DMG'
+  fi
+  INSTALL_DMG_ATTACHED=1
+  source_app="$INSTALL_DMG_MOUNT/Detach.app"
+  [ -d "$source_app" ] && [ ! -L "$source_app" ] || \
+    die 'signed release DMG has no real Detach.app'
+  DETACH_APP_PATH="$source_app" DETACH_VERSION="$VERSION" \
+    DETACH_REQUIRE_SPARKLE_CONFIG=1 DETACH_VERIFY_PRODUCTION=1 \
+    "$APP_ROOT/scripts/verify-app.sh" >/dev/null
+  ditto "$source_app" "$destination"
+  hdiutil detach "$INSTALL_DMG_MOUNT" >/dev/null || \
+    die 'could not detach the signed release DMG'
+  INSTALL_DMG_ATTACHED=0
+  rm -rf "$INSTALL_DMG_ROOT"
+  INSTALL_DMG_ROOT=""
+  INSTALL_DMG_MOUNT=""
+}
+
 install_release_candidate() {
-  local source_app="$APP_ROOT/build/Detach.app"
   local candidate="$APPLICATIONS_DIR/.Detach.release-$VERSION.app"
   local backup="$APPLICATIONS_DIR/.Detach.backup-$VERSION.app"
 
@@ -838,7 +881,7 @@ install_release_candidate() {
   fi
   [ ! -e "$candidate" ] || remove_install_scratch "$candidate"
   INSTALL_TEMP="$candidate"
-  ditto "$source_app" "$candidate"
+  copy_release_candidate_from_dmg "$candidate"
   [ -d "$candidate" ] && [ ! -L "$candidate" ] || die 'candidate copy is invalid'
   DETACH_APP_PATH="$candidate" DETACH_VERSION="$VERSION" \
     DETACH_REQUIRE_SPARKLE_CONFIG=1 DETACH_VERIFY_PRODUCTION=1 \
