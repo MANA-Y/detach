@@ -13,7 +13,8 @@ change real power state, upload assets, or claim publication.
 - Release starts from clean, synchronized `main`. The tracked `BUILD`
   must match the latest published manifest; `VERSION` and `BUILD`
   change together in one release commit.
-- After exact owner confirmation, push the release commit to its unique
+- Invoking `scripts/release-version X.Y.Z` authorizes its automated commit,
+  tag, and publication steps. Push the release commit first to its unique
   `detach-release/vX.Y.Z` ref. The commit must pass the official GitHub Actions
   `quality-gates` job. Then make sure that remote `main` did not change.
   Atomically push the approved commit and annotated tag. Verify both refs and
@@ -27,19 +28,23 @@ change real power state, upload assets, or claim publication.
 - The immutable payload order is `detach`, `detach-core`,
   `detach-install`, `detach-state`, `detach-power`, `tmux`.
   Installation activates a content-addressed version atomically.
-- Developer ID signing, notarization, real signed power smoke, and supervised
-  closed-lid testing are mandatory release gates and are never inferred from
-  unit tests. The protected lid probe must emit its first liveness sample within
-  a bounded ten-second launch window before owner confirmation is accepted.
-- Automated release tests cover failed install and update paths. After the
-  signed artifacts exist, the owner must complete the short clean-account or VM
-  checklist in `docs/testing.md`. The workflow requires exact
-  `owner/repository@tag` confirmation before it installs the local candidate or
-  starts the signed power and lid gates. This checklist does not repeat those
-  hardware gates.
-- Publication requires exact `owner/repository@tag` confirmation. After
-  upload, every remote asset is downloaded and its digest independently
-  matched. Missing, extra, changed, or mismatched assets fail closed.
+- Developer ID signing, notarization, and the real signed power smoke are
+  mandatory for every release. `scripts/release-impact` compares the last
+  published tag with the release source. It selects the clean-account/system UI
+  matrix only for install, onboarding, approval, update, entitlement, or
+  localization impact. It selects supervised closed-lid testing only for
+  power, helper, watchdog, lease, assertion, or lid-probe impact. An unknown
+  product path selects both manual gates. Test-only, documentation-only, and
+  known unrelated product paths do not select them.
+- A selected closed-lid probe must emit its first liveness sample within a
+  bounded ten-second launch window before owner confirmation is accepted.
+  Automated release tests cover failed install and update paths. A selected
+  clean-account/system UI matrix uses the short checklist in `docs/testing.md`
+  and does not repeat the signed power or lid gates.
+- The release entry point supplies the low-level publication confirmation after
+  all selected gates pass. After upload, every remote asset is downloaded and
+  its digest is independently matched. Missing, extra, changed, or mismatched
+  assets fail closed.
 - Reference-machine timing budgets are mandatory by default. When the release
   Mac is intentionally busy, the owner may set
   `DETACH_RELEASE_IGNORE_TIMING=1` for one `release-version` invocation and
@@ -49,6 +54,10 @@ change real power state, upload assets, or claim publication.
   gate and workflow evidence.
 - Resume state is private under `app/build/`. Resume is allowed only when
   source, durable stage evidence, and existing asset digests still match.
+- After the atomic main/tag push, a paused release can resume from a newer
+  synchronized `main` only when the release commit remains an ancestor and all
+  later paths are release tooling, release tests, or release documentation.
+  The annotated tag and artifact manifest stay bound to the release commit.
 - Sparkle remains pinned and signed inside-out. Production builds never carry
   the development library-validation exception. Appcasts contain exactly one
   arm64 hardware requirement.
