@@ -43,7 +43,22 @@ final class TerminalLauncherTests: XCTestCase {
             try XCTUnwrap(contents.range(of: "exec /bin/zsh -lic")?.lowerBound))
         XCTAssertTrue(contents.contains("[[ ! -e \"$command_file\" ]] || exit 125"))
         XCTAssertTrue(contents.contains("/bin/rmdir -- \"$command_dir\""))
+        XCTAssertTrue(contents.contains("unset command_file command_dir ZDOTDIR"))
         XCTAssertTrue(contents.contains("exec /bin/zsh -lic \(shellQuoted(command))"))
+    }
+
+    @MainActor
+    func testLaunchUsesPrivateOuterZshStartupDirectory() throws {
+        let url = try TerminalLauncher.writeCommandFile(
+            command: "exec /usr/bin/true",
+            temporaryDirectory: temporaryDirectory,
+            fileManager: .default)
+        let configuration = TerminalLauncher.openConfiguration(commandURL: url)
+
+        XCTAssertTrue(configuration.createsNewApplicationInstance)
+        XCTAssertEqual(
+            configuration.environment["ZDOTDIR"],
+            url.deletingLastPathComponent().path)
     }
 
     func testFailureReasonRequiresSelectionOnlyForMissingTerminal() {

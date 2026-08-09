@@ -94,8 +94,10 @@ detach claude --detach -- "run the test suite and fix failures"
 The app and CLI operate on the same sessions. Start in one and continue in the
 other.
 
-When a terminal shell pauses at a startup prompt, such as an oh-my-zsh update,
-the app-launched command stays queued until that prompt is answered.
+When the terminal uses zsh, Detach starts the temporary command before it loads
+the user's shell startup files. A startup prompt, such as an oh-my-zsh update,
+can pause the command but cannot consume its file path. Answer the prompt to
+continue.
 
 ## One command center for Codex and Claude Code
 
