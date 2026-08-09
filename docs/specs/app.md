@@ -27,18 +27,18 @@ dashboard action remains disabled until then, and after a long wait it offers
 an explicit monitor retry instead of a bypass. Completion is guarded again in
 the store and is recorded only by that explicit action, exactly once.
 
-After onboarding has ever completed, `.idle`, `.syncing`, and `.ready` all
-present `.mainApp`. This is a first-frame invariant: cold-launch bootstrap and
-scene-activation refresh must keep the existing dashboard mounted and must not
-flash onboarding. Only a completed `.actionRequired` or `.failed` result may
-surface setup again. A missing provider also shows the dashboard, not
-onboarding. Provider installation is offered only as the official command,
+After onboarding completes, `.idle`, `.syncing`, `.updateDeferred`, and
+`.ready` present `.mainApp`. Bootstrap, refresh, and an update held by active
+leases keep the dashboard mounted. Only a completed `.actionRequired` or
+`.failed` result can show setup again. A missing provider also shows the
+dashboard. Provider installation uses the official command,
 launched visibly in the user's own terminal through the private `.command`
 mechanism; never claim a guided install failed (there is no outcome channel),
 only that the CLI is not detected yet. When helper/plist bytes change after an
 app update, unregister, await completion, then use the bounded retry for the
 transient SMAppService Code=1 race. Do not replace a helper with active leases:
-defer the update.
+defer the update. Report a normal reconciliation outcome and retry on a later
+app activation.
 
 Every readiness build carries one unique `detach-app-build:<UUID>` value both
 in the main executable's `__TEXT,__detach_build` section and in the signed
@@ -182,4 +182,5 @@ validation, and installation errors provide the manual DMG path and the
 Settings > System Repair path. These errors state that the active CLI did not
 change. If app
 replacement completes but CLI or helper synchronization fails, the prior CLI
-stays active and Repair remains available.
+stays active and Repair remains available. Background synchronization keeps
+the dashboard. A later activation retries it.

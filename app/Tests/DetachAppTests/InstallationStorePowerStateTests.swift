@@ -124,6 +124,27 @@ final class InstallationStorePowerStateTests: XCTestCase {
         XCTAssertEqual(phase, .actionRequired)
     }
 
+    func testDeferredPowerHelperUpdateKeepsCompletedOnboardingOnDashboard() {
+        let fixture = makeCompletedOnboardingStore()
+        defer { fixture.cleanup() }
+
+        XCTAssertEqual(
+            InstallationStore.onboardingStep(
+                phase: .updateDeferred,
+                onboardingEverCompleted: true,
+                input: .init(
+                    isStableApplicationLocation: true,
+                    isBusy: false,
+                    failureMessage: nil,
+                    distributionMatchesBundle: true,
+                    powerHelperEnabled: true,
+                    watchdogEnabled: true,
+                    powerReadinessConfirmed: false,
+                    providerInstalled: true,
+                    onboardingEverCompleted: true)),
+            .mainApp)
+    }
+
     func testHealthyReadinessInputsStillProduceReadyPhase() {
         let phase = InstallationStore.phaseForReadiness(
             isStableApplicationLocation: true,

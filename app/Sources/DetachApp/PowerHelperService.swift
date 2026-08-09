@@ -19,6 +19,11 @@ enum PowerHelperUnregistrationPreparation: Equatable {
     case activeLeases
 }
 
+enum PowerHelperReconciliationOutcome: Equatable {
+    case complete
+    case deferredForActiveLeases
+}
+
 @MainActor
 protocol PowerHelperLifecycleRunning: AnyObject {
     func prepareForUnregistration() async throws
@@ -264,22 +269,27 @@ final class PowerHelperService {
 
     var status: PowerHelperRegistrationStatus { backend.status }
 
-    func reconcileAfterAppUpdate() async throws {
+    @discardableResult
+    func reconcileAfterAppUpdate() async throws
+        -> PowerHelperReconciliationOutcome
+    {
         guard let digest = digestProvider() else {
             throw PowerHelperServiceError.bundledDefinitionMissing
         }
+        var outcome = PowerHelperReconciliationOutcome.complete
         try await performExclusiveOperation {
-            try await drive(to: .install(digest))
+            outcome = try await drive(to: .install(digest))
         }
+        return outcome
     }
 
     func enable() async throws {
-        try await reconcileAfterAppUpdate()
+        _ = try await reconcileAfterAppUpdate()
     }
 
     func disable() async throws {
         try await performExclusiveOperation {
-            try await drive(to: .remove)
+            _ = try await drive(to: .remove)
         }
     }
 
@@ -317,14 +327,16 @@ final class PowerHelperService {
         try await operation()
     }
 
-    private func drive(to desired: DesiredGoal) async throws {
+    private func drive(to desired: DesiredGoal) async throws
+        -> PowerHelperReconciliationOutcome
+    {
         var transaction = try loadOrMigrateTransaction(desired: desired)
         if transaction == nil {
             transaction = try bootstrapTransaction(for: desired)
-            if transaction == nil { return }
+            if transaction == nil { return .complete }
         }
 
-        guard var transaction else { return }
+        guard var transaction else { return .complete }
         transaction = try align(transaction, with: desired)
 
         // Every iteration either returns, crosses one externally observable
@@ -344,7 +356,7 @@ final class PowerHelperService {
                             throw PowerHelperServiceError
                                 .activeLeasesPreventUnregistration
                         }
-                        return
+                        return .deferredForActiveLeases
                     }
                     guard try lifetimeBarrierStatus() == .busy else {
                         // A helper from this build holds the lifetime lock
@@ -433,7 +445,7 @@ final class PowerHelperService {
                     // Keep `.removed`: a later reinstall must register a helper
                     // and receive a fresh XPC reply before reopening the root
                     // gate persisted by the removed generation.
-                    return
+                    return .complete
                 }
                 defaults.set(true, forKey: pendingDigestKey)
                 transaction.phase = .registering
@@ -456,10 +468,10 @@ final class PowerHelperService {
                     rememberDefinition(digest)
                     try handoffStore.clear()
                     clearLegacyHandoffMarkers()
-                    return
+                    return .complete
                 case .requiresApproval:
                     defaults.set(true, forKey: pendingDigestKey)
-                    return
+                    return .complete
                 case .notRegistered, .unavailable:
                     defaults.set(true, forKey: pendingDigestKey)
                     try await registerWithRetry()
@@ -467,7 +479,7 @@ final class PowerHelperService {
                     case .enabled:
                         continue
                     case .requiresApproval:
-                        return
+                        return .complete
                     case .notRegistered, .unavailable:
                         throw PowerHelperServiceError
                             .registrationDidNotComplete

@@ -537,8 +537,11 @@ an update fails, the active CLI does not change. Move Detach to `/Applications`
 before you try an update. For a download failure, check the network connection
 and try again. For an archive, signature, or installation failure, download
 the latest DMG. If the CLI does not match the app, open Detach settings, select
-System, and run Repair. A live managed session can block the CLI change. End
-the session and try the update again.
+System, and run Repair. A normal app update does not interrupt live sessions.
+If active sessions hold power leases, Detach keeps the current helper and the
+session dashboard. It retries the helper update after the sessions finish and
+the app becomes active again. Repairing a damaged active payload can still
+require you to end the sessions that use it.
 
 From a terminal:
 

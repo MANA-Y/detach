@@ -18,6 +18,7 @@ final class InstallationStore {
     enum Phase: Equatable {
         case idle
         case syncing
+        case updateDeferred
         case actionRequired
         case ready
         case failed(String)
@@ -138,16 +139,12 @@ final class InstallationStore {
     /// The assistant card derived from current state; `.mainApp` means the
     /// dashboard is shown instead of onboarding.
     var onboardingStep: OnboardingStep {
-        // A returning user must never see a transient setup card while the
-        // app bootstraps or refreshes on activation. Keep the dashboard
-        // mounted until a completed check publishes a real actionable state.
-        if onboardingEverCompleted,
-           phase == .idle || phase == .syncing || phase == .ready {
-            return .mainApp
-        }
         var failureMessage: String?
         if case .failed(let message) = phase { failureMessage = message }
-        return SetupGuidance.step(for: OnboardingStepInput(
+        return Self.onboardingStep(
+            phase: phase,
+            onboardingEverCompleted: onboardingEverCompleted,
+            input: OnboardingStepInput(
             isStableApplicationLocation: isStableApplicationLocation,
             // `.idle` precedes the automatic bootstrap; both present as the
             // hands-off setting-up card.
@@ -159,6 +156,26 @@ final class InstallationStore {
             powerReadinessConfirmed: powerHelperReadinessConfirmed,
             providerInstalled: providerCheckPassed,
             onboardingEverCompleted: onboardingEverCompleted))
+    }
+
+    static func onboardingStep(
+        phase: Phase,
+        onboardingEverCompleted: Bool,
+        input: OnboardingStepInput
+    ) -> OnboardingStep {
+        // A returning user must never see a transient setup card while the
+        // app bootstraps, refreshes, or waits for active power leases to end.
+        // Keep the dashboard mounted until a completed check publishes a real
+        // actionable state.
+        if onboardingEverCompleted {
+            switch phase {
+            case .idle, .syncing, .updateDeferred, .ready:
+                return .mainApp
+            case .actionRequired, .failed:
+                break
+            }
+        }
+        return SetupGuidance.step(for: input)
     }
 
     func bootstrap() async {
@@ -399,12 +416,18 @@ final class InstallationStore {
             await bootstrap()
             return
         }
+        if phase == .updateDeferred && !distributionMatchesBundle {
+            await synchronize(repair: false)
+            return
+        }
         let wasReady = phase == .ready
         if !wasReady { phase = .syncing }
         powerHelperStatus = powerHelper.status
+        var powerHelperUpdateDeferred = false
         if distributionMatchesBundle {
             do {
-                try await powerHelper.reconcileAfterAppUpdate()
+                powerHelperUpdateDeferred = try await powerHelper
+                    .reconcileAfterAppUpdate() == .deferredForActiveLeases
                 powerHelperError = nil
             } catch {
                 powerHelperError = error.localizedDescription
@@ -440,7 +463,10 @@ final class InstallationStore {
             return
         }
         if report != nil {
-            await refreshDoctor()
+            await refreshDoctor(
+                powerHelperUpdateDeferred: powerHelperUpdateDeferred)
+        } else if powerHelperUpdateDeferred && onboardingEverCompleted {
+            phase = .updateDeferred
         } else {
             updatePhase()
         }
@@ -527,15 +553,18 @@ final class InstallationStore {
             }
             distributionMatchesBundle = true
         } catch {
-            phase = .failed(error.localizedDescription)
+            phase = !repair && onboardingEverCompleted
+                ? .updateDeferred : .failed(error.localizedDescription)
             return
         }
 
         // The privileged daemon owns only the narrow closed-lid setting. Its
         // renewable leases and timer remain effective when Detach.app closes.
         powerHelperError = nil
+        var powerHelperUpdateDeferred = false
         do {
-            try await powerHelper.reconcileAfterAppUpdate()
+            powerHelperUpdateDeferred = try await powerHelper
+                .reconcileAfterAppUpdate() == .deferredForActiveLeases
         } catch {
             powerHelperError = error.localizedDescription
         }
@@ -566,7 +595,8 @@ final class InstallationStore {
         do {
             report = try await client.doctor()
         } catch {
-            phase = .failed(error.localizedDescription)
+            phase = powerHelperUpdateDeferred && onboardingEverCompleted
+                ? .updateDeferred : .failed(error.localizedDescription)
             return
         }
         powerHelperReadinessConfirmed = Self.powerHelperReadiness(
@@ -574,10 +604,16 @@ final class InstallationStore {
             powerHelperStatus: powerHelperStatus,
             powerHelperError: powerHelperError,
             report: report)
-        updatePhase()
+        if powerHelperUpdateDeferred && onboardingEverCompleted {
+            phase = .updateDeferred
+        } else {
+            updatePhase()
+        }
     }
 
-    private func refreshDoctor() async {
+    private func refreshDoctor(
+        powerHelperUpdateDeferred: Bool = false
+    ) async {
         guard let payloadDirectory else { phase = .ready; return }
         let client = DistributionClient(
             installer: ProcessDetachCLI(executable: payloadDirectory.appendingPathComponent("detach-install")),
@@ -603,9 +639,14 @@ final class InstallationStore {
                 powerHelperStatus: powerHelperStatus,
                 powerHelperError: powerHelperError,
                 report: report)
-            updatePhase()
+            if powerHelperUpdateDeferred && onboardingEverCompleted {
+                phase = .updateDeferred
+            } else {
+                updatePhase()
+            }
         } catch {
-            phase = .failed(error.localizedDescription)
+            phase = powerHelperUpdateDeferred && onboardingEverCompleted
+                ? .updateDeferred : .failed(error.localizedDescription)
         }
     }
 
