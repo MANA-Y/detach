@@ -141,6 +141,9 @@ done
 exec "$@"
 POWER
 chmod 0755 "$app/Contents/MacOS/detach-power"
+rm -rf "$root/app/build/fake-dmg"
+mkdir -p "$root/app/build/fake-dmg"
+cp -R "$app" "$root/app/build/fake-dmg/Detach.app"
 printf '%s\n' 'signed dmg fixture' >"$root/app/build/Detach.dmg"
 printf '%s\n' 'signed update fixture' >"$assets/Detach-$version.zip"
 cat >"$assets/appcast.xml" <<XML
@@ -277,6 +280,28 @@ case " $* " in
   *) exit 64 ;;
 esac
 SH
+  write_executable "$BIN/hdiutil" <<'SH'
+#!/bin/bash
+set -eu
+case "${1:-}" in
+  attach)
+    mount=""
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -mountpoint) mount="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    [ -n "$mount" ]
+    cp -R "${FAKE_DMG_APP:?}" "$mount/Detach.app"
+    ;;
+  detach)
+    rm -rf "${2:?}/Detach.app"
+    ;;
+  *) exit 64 ;;
+esac
+SH
   write_executable "$BIN/gh" <<'SH'
 #!/bin/bash
 set -eu
@@ -389,6 +414,7 @@ run_workflow() {
       FAKE_RELEASE_EXISTS="$RELEASE_EXISTS" \
       FAKE_PUBLISHED_MANIFEST="$PUBLISHED_MANIFEST" \
       FAKE_TARGET_TAG="$TARGET_TAG" \
+      FAKE_DMG_APP="$REPO/app/build/fake-dmg/Detach.app" \
       DETACH_RELEASE_TEST_MODE=1 \
       DETACH_QUALITY_GATE_TEST_MODE=1 \
       DETACH_RELEASE_TEST_APPLICATIONS_DIR="$APPS" \
@@ -456,6 +482,8 @@ run_resume_case() {
     expect_failure "resume-$stage" "injected safe failure after $stage" \
       run_workflow "$stage"
   done
+  printf '%s\n' development \
+    >"$REPO/app/build/Detach.app/Contents/Resources/DetachCLI/VERSION"
   export FAKE_NOTARY_UNAVAILABLE=1
   mkdir -p "$REPO/docs"
   printf '%s\n' 'release tooling follow-up' >"$REPO/docs/testing.md"

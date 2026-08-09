@@ -28,6 +28,8 @@ change real power state, upload assets, or claim publication.
 - The immutable payload order is `detach`, `detach-core`,
   `detach-install`, `detach-state`, `detach-power`, `tmux`.
   Installation activates a content-addressed version atomically.
+- The locally installed release candidate is copied from the validated signed
+  DMG. The workflow never installs a mutable intermediate app build.
 - Developer ID signing, notarization, and the real signed power smoke are
   mandatory for every release. `scripts/release-impact` compares the last
   published tag with the release source. It selects the clean-account/system UI
