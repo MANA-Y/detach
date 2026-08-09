@@ -1,0 +1,202 @@
+#!/bin/bash
+
+set -euo pipefail
+set +x
+export LC_ALL=C
+
+ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
+
+die() {
+  printf 'release-impact: %s\n' "$*" >&2
+  exit 1
+}
+
+[ "$#" -eq 2 ] || die 'usage: scripts/release-impact BASE HEAD'
+BASE="$1"
+HEAD="$2"
+BASE_COMMIT="$(git -C "$ROOT" rev-parse --verify "$BASE^{commit}" 2>/dev/null)" || \
+  die "base is not a commit: $BASE"
+HEAD_COMMIT="$(git -C "$ROOT" rev-parse --verify "$HEAD^{commit}" 2>/dev/null)" || \
+  die "head is not a commit: $HEAD"
+git -C "$ROOT" merge-base --is-ancestor "$BASE_COMMIT" "$HEAD_COMMIT" || \
+  die 'base must be an ancestor of head'
+
+INSTALL_MATRIX_REQUIRED=false
+LID_TEST_REQUIRED=false
+UNKNOWN_IMPACT=false
+INSTALL_REASONS=()
+LID_REASONS=()
+UNKNOWN_REASONS=()
+
+add_unique() {
+  local array_name="$1" value="$2" existing
+  case "$array_name" in
+    INSTALL_REASONS)
+      for existing in "${INSTALL_REASONS[@]-}"; do
+        [ "$existing" != "$value" ] || return 0
+      done
+      INSTALL_REASONS+=( "$value" )
+      ;;
+    LID_REASONS)
+      for existing in "${LID_REASONS[@]-}"; do
+        [ "$existing" != "$value" ] || return 0
+      done
+      LID_REASONS+=( "$value" )
+      ;;
+    UNKNOWN_REASONS)
+      for existing in "${UNKNOWN_REASONS[@]-}"; do
+        [ "$existing" != "$value" ] || return 0
+      done
+      UNKNOWN_REASONS+=( "$value" )
+      ;;
+    *) die "unknown reason collection: $array_name" ;;
+  esac
+}
+
+require_install_matrix() {
+  INSTALL_MATRIX_REQUIRED=true
+  add_unique INSTALL_REASONS "$1"
+}
+
+require_lid_test() {
+  LID_TEST_REQUIRED=true
+  add_unique LID_REASONS "$1"
+}
+
+require_both_unknown() {
+  UNKNOWN_IMPACT=true
+  add_unique UNKNOWN_REASONS "$1"
+  require_install_matrix "$1"
+  require_lid_test "$1"
+}
+
+classify_path() {
+  local path="$1"
+  case "$path" in
+    README.md|AGENTS.md|CLAUDE.md|VERSION|BUILD|.gitignore|.gitattributes|\
+    .github/*|docs/*|app/Tests/*|tests/*)
+      ;;
+
+    app/Sources/DetachPower/*|app/Sources/DetachPowerHelper/*|\
+    app/Sources/DetachWatchdog/*|app/Sources/DetachKit/ClamshellLockRunner.swift|\
+    app/Sources/DetachKit/BoundedProcessRunner.swift|\
+    app/Sources/DetachKit/DetachPower*.swift|app/Sources/DetachKit/Power*.swift|\
+    app/Sources/DetachApp/InstallationStore.swift|\
+    app/Sources/DetachApp/PowerHelper*.swift|app/Sources/DetachApp/Watchdog*.swift)
+      require_install_matrix "$path"
+      require_lid_test "$path"
+      ;;
+
+    bin/detach|bin/detach-core)
+      require_lid_test "$path"
+      ;;
+
+    app/Sources/DetachApp/DetachApp.swift|\
+    app/Sources/DetachApp/Onboarding*.swift|\
+    app/Sources/DetachApp/RootView.swift|\
+    app/Sources/DetachApp/SetupGuidance.swift|\
+    app/Sources/DetachApp/Settings*.swift|\
+    app/Sources/DetachApp/UpdaterService.swift|\
+    app/Sources/DetachKit/DetachCLI.swift|\
+    app/Sources/DetachKit/DoctorReport.swift|\
+    app/Sources/DetachKit/Localization.swift|\
+    app/Sources/DetachKit/UpdateConfiguration.swift)
+      require_install_matrix "$path"
+      ;;
+
+    app/Sources/DetachApp/EmptySessionsView.swift|\
+    app/Sources/DetachApp/LogTextView.swift|\
+    app/Sources/DetachApp/MenuBar*.swift|\
+    app/Sources/DetachApp/NewSessionSheet.swift|\
+    app/Sources/DetachApp/Session*.swift|\
+    app/Sources/DetachApp/SidebarView.swift|\
+    app/Sources/DetachApp/TextSize.swift|\
+    app/Sources/DetachApp/Theme.swift|\
+    app/Sources/DetachApp/TipsBar.swift|\
+    app/Sources/DetachApp/TmuxExtendedKeysSettingsController.swift|\
+    app/Sources/DetachApp/UIE2E*.swift|\
+    app/Sources/DetachKit/ANSIText.swift|\
+    app/Sources/DetachKit/DetachState*.swift|\
+    app/Sources/DetachKit/LogPoller.swift|\
+    app/Sources/DetachKit/Session*.swift|\
+    app/Sources/DetachKit/Storage*.swift|\
+    app/Sources/DetachKit/Terminal*.swift|\
+    app/Sources/DetachKit/Tip.swift|\
+    app/Sources/DetachKit/Tmux*.swift|\
+    app/Sources/DetachState/main.swift|scripts/build-tmux.sh)
+      ;;
+
+    app/Sources/DetachKit/*|app/Sources/*)
+      require_both_unknown "$path"
+      ;;
+
+    app/Resources/en.lproj/*|app/Resources/ru.lproj/*|\
+    app/Resources/Info.plist|app/Resources/Detach.entitlements|\
+    app/Resources/DetachDevelopment.entitlements)
+      require_install_matrix "$path"
+      ;;
+
+    app/Resources/DetachWatchdog*|app/Resources/dev.tsarev.detach.power-*)
+      require_install_matrix "$path"
+      require_lid_test "$path"
+      ;;
+
+    app/Resources/Detach.icns|app/Resources/ThirdParty/*)
+      ;;
+
+    app/Resources/*|app/Package.swift|app/Package.resolved|\
+    app/scripts/make-app.sh|app/scripts/release.sh|app/scripts/bundle-modes.sh)
+      require_both_unknown "$path"
+      ;;
+
+    install.sh|scripts/install.sh)
+      require_install_matrix "$path"
+      ;;
+
+    scripts/release-lid-probe)
+      require_lid_test "$path"
+      ;;
+
+    app/scripts/make-dmg.sh)
+      require_install_matrix "$path"
+      ;;
+
+    scripts/release-version|scripts/release-impact|scripts/quality-gate|\
+    scripts/quality-history|scripts/test|\
+    app/scripts/make-icon.sh|\
+    app/scripts/publish-release.sh|app/scripts/render-icon.swift|\
+    app/scripts/sparkle-public-key.sh|app/scripts/verify-app.sh|\
+    app/scripts/verify-appcast.sh)
+      ;;
+
+    *)
+      require_both_unknown "$path"
+      ;;
+  esac
+}
+
+while IFS= read -r -d '' status && IFS= read -r -d '' path; do
+  classify_path "$path"
+  case "$status" in
+    R*|C*)
+      IFS= read -r -d '' path || die 'malformed rename/copy entry from Git'
+      classify_path "$path"
+      ;;
+  esac
+done < <(git -C "$ROOT" diff --name-status -z --find-renames "$BASE_COMMIT" "$HEAD_COMMIT")
+
+printf 'schema\t1\n'
+printf 'base_commit\t%s\n' "$BASE_COMMIT"
+printf 'head_commit\t%s\n' "$HEAD_COMMIT"
+printf 'install_matrix_required\t%s\n' "$INSTALL_MATRIX_REQUIRED"
+printf 'lid_test_required\t%s\n' "$LID_TEST_REQUIRED"
+printf 'unknown_impact\t%s\n' "$UNKNOWN_IMPACT"
+for path in "${INSTALL_REASONS[@]-}"; do
+  [ -z "$path" ] || printf 'install_matrix_reason\t%s\n' "$path"
+done
+for path in "${LID_REASONS[@]-}"; do
+  [ -z "$path" ] || printf 'lid_test_reason\t%s\n' "$path"
+done
+for path in "${UNKNOWN_REASONS[@]-}"; do
+  [ -z "$path" ] || printf 'unknown_reason\t%s\n' "$path"
+done

@@ -41,6 +41,7 @@ setup_fixture() {
     "$REMOTE_ASSETS"
 
   install -m 0755 "$ROOT/scripts/release-version" "$REPO/scripts/release-version"
+  install -m 0755 "$ROOT/scripts/release-impact" "$REPO/scripts/release-impact"
   install -m 0755 "$ROOT/scripts/release-lid-probe" "$REPO/scripts/release-lid-probe"
   install -m 0755 "$ROOT/scripts/quality-gate" "$REPO/scripts/quality-gate"
   install -m 0755 "$ROOT/app/scripts/verify-appcast.sh" \
@@ -361,14 +362,16 @@ SH
   git -C "$REPO" config user.email 'detach-tests@example.invalid'
   git -C "$REPO" add .
   git -C "$REPO" commit -qm 'release workflow fixture'
+  git -C "$REPO" tag -a v1.2.3 -m 'published fixture'
   git init -q --bare "$ORIGIN"
   git -C "$REPO" remote add origin "$ORIGIN"
   git -C "$REPO" push -q -u origin main
+  git -C "$REPO" push -q origin v1.2.3
 }
 
 run_workflow() {
   local fail_after="${1:-}" lid_confirmation="${2:-example/detach@$TARGET_TAG}"
-  local release_confirmation="${3:-example/detach@$TARGET_TAG}" ignore_timing="${4:-0}"
+  local release_confirmation="${3:-}" ignore_timing="${4:-0}"
   local install_confirmation="${5:-example/detach@$TARGET_TAG}"
   (
     cd -P "$REPO"
@@ -443,7 +446,16 @@ run_resume_case() {
 
   git -C "$REPO" push -q --force origin "$release_ci_source:refs/heads/main"
 
-  for stage in pushed artifacts install-matrix installed power-smoke lid published verified; do
+  for stage in pushed artifacts; do
+    expect_failure "resume-$stage" "injected safe failure after $stage" \
+      run_workflow "$stage"
+  done
+  mkdir -p "$REPO/docs"
+  printf '%s\n' 'release tooling follow-up' >"$REPO/docs/testing.md"
+  git -C "$REPO" add docs/testing.md
+  git -C "$REPO" commit -qm 'adjust release tooling guidance'
+  git -C "$REPO" push -q origin main
+  for stage in install-matrix installed power-smoke lid published verified; do
     expect_failure "resume-$stage" "injected safe failure after $stage" \
       run_workflow "$stage"
   done
@@ -458,6 +470,10 @@ run_resume_case() {
   [ "$(grep -c '^release-preflight.sh$' "$ACTION_LOG")" = 2 ]
   [ "$(grep -c '^publish-preflight.sh$' "$ACTION_LOG")" = 2 ]
   [ -z "$(git -C "$REPO" ls-remote origin "refs/heads/detach-release/$TARGET_TAG")" ]
+  grep -F $'install_matrix_required\tfalse' \
+    "$REPO/app/build/release-workflow/$TARGET_VERSION/release-impact.tsv" >/dev/null
+  grep -F $'lid_test_required\tfalse' \
+    "$REPO/app/build/release-workflow/$TARGET_VERSION/release-impact.tsv" >/dev/null
 }
 
 run_timing_override_cases() {
@@ -516,6 +532,11 @@ run_preflight_rejection_cases() {
 
 run_hardware_rejection_case() {
   setup_fixture hardware-gate
+  mkdir -p "$REPO/app/Sources/DetachPower"
+  printf '%s\n' 'power impact' >"$REPO/app/Sources/DetachPower/main.swift"
+  git -C "$REPO" add app/Sources/DetachPower/main.swift
+  git -C "$REPO" commit -qm 'change power runtime'
+  git -C "$REPO" push -q origin main
   expect_failure install-matrix-gate \
     "clean installation and update matrix confirmation must exactly equal example/detach@$TARGET_TAG" \
     run_workflow '' "example/detach@$TARGET_TAG" \
@@ -541,6 +562,20 @@ run_remote_hash_case() {
   [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-verified" ]
 }
 
+run_post_push_main_rejection_case() {
+  setup_fixture post-push-main
+  expect_failure post-push-artifacts 'injected safe failure after artifacts' \
+    run_workflow artifacts
+  mkdir -p "$REPO/app/Sources/DetachKit"
+  printf '%s\n' 'product change' >"$REPO/app/Sources/DetachKit/TerminalLauncher.swift"
+  git -C "$REPO" add app/Sources/DetachKit/TerminalLauncher.swift
+  git -C "$REPO" commit -qm 'advance product source after tag'
+  git -C "$REPO" push -q origin main
+  expect_failure post-push-main \
+    'main advanced after the release with non-tooling changes' run_workflow
+  [ ! -f "$RELEASE_EXISTS" ]
+}
+
 # Each lane owns a separate repository below TMP_ROOT. Run the lanes together.
 # This keeps independent Git and fake-publication work out of the critical path.
 release_case_pids=()
@@ -550,7 +585,8 @@ for release_case in \
   run_timing_override_cases \
   run_preflight_rejection_cases \
   run_hardware_rejection_case \
-  run_remote_hash_case; do
+  run_remote_hash_case \
+  run_post_push_main_rejection_case; do
   "$release_case" &
   release_case_pids+=("$!")
   release_case_names+=("$release_case")

@@ -8,6 +8,7 @@ export LC_ALL=C
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
 APP_ROOT="$ROOT/app"
 ENV_FILE="$ROOT/.env.release"
+IMPACT_SCRIPT="$ROOT/scripts/release-impact"
 TEST_MODE="${DETACH_RELEASE_TEST_MODE:-0}"
 IGNORE_TIMING="${DETACH_RELEASE_IGNORE_TIMING:-0}"
 LOCKED=0
@@ -203,6 +204,7 @@ validate_configuration() {
     APPLICATIONS_DIR="${DETACH_RELEASE_TEST_APPLICATIONS_DIR:-$APPLICATIONS_DIR}"
   fi
   [[ "$APPLICATIONS_DIR" = /* ]] || die 'release candidate application directory must be absolute'
+  [ -x "$IMPACT_SCRIPT" ] || die 'release impact classifier is unavailable'
   INSTALLED_APP="$APPLICATIONS_DIR/Detach.app"
   STATE_DIR="$APP_ROOT/build/release-workflow/$VERSION"
   mkdir -p "$STATE_DIR"
@@ -225,6 +227,46 @@ read_state_value() {
   [ -f "$STATE_DIR/$name" ] && [ ! -L "$STATE_DIR/$name" ] || return 1
   IFS= read -r value <"$STATE_DIR/$name" || [ -n "$value" ]
   printf '%s\n' "$value"
+}
+
+impact_value() {
+  local file="$1" key="$2" count value
+  count="$(awk -F '\t' -v wanted="$key" '$1 == wanted {count++} END {print count+0}' "$file")"
+  [ "$count" -eq 1 ] || die "release impact has missing or duplicate key: $key"
+  value="$(awk -F '\t' -v wanted="$key" '$1 == wanted {print substr($0, index($0, "\t") + 1); exit}' "$file")"
+  printf '%s\n' "$value"
+}
+
+resolve_release_impact() {
+  local previous_version impact="$STATE_DIR/release-impact.tsv"
+  local temporary="$STATE_DIR/.release-impact.$$"
+  local schema base_commit head_commit unknown
+
+  previous_version="$(read_state_value previous-version)" || \
+    die 'release workflow state has no previous version'
+  "$IMPACT_SCRIPT" "refs/tags/v$previous_version" "$SOURCE_COMMIT" >"$temporary"
+  chmod 0600 "$temporary"
+  schema="$(impact_value "$temporary" schema)"
+  base_commit="$(impact_value "$temporary" base_commit)"
+  head_commit="$(impact_value "$temporary" head_commit)"
+  INSTALL_MATRIX_REQUIRED="$(impact_value "$temporary" install_matrix_required)"
+  LID_TEST_REQUIRED="$(impact_value "$temporary" lid_test_required)"
+  unknown="$(impact_value "$temporary" unknown_impact)"
+  [ "$schema" = 1 ] || die 'release impact schema is unsupported'
+  [[ "$base_commit" =~ ^[0-9a-f]{40}$ ]] || die 'release impact base commit is invalid'
+  [ "$head_commit" = "$SOURCE_COMMIT" ] || die 'release impact head commit does not match source'
+  case "$INSTALL_MATRIX_REQUIRED:$LID_TEST_REQUIRED:$unknown" in
+    true:true:true|true:true:false|true:false:false|false:true:false|false:false:false) ;;
+    *) die 'release impact booleans are invalid or fail-open' ;;
+  esac
+  if [ -f "$impact" ]; then
+    cmp -s "$impact" "$temporary" || \
+      die 'release impact selection changed since preflight'
+    rm -f "$temporary"
+  else
+    mv -f "$temporary" "$impact"
+  fi
+  note "manual release gates: install-matrix=$INSTALL_MATRIX_REQUIRED lid=$LID_TEST_REQUIRED"
 }
 
 has_stage() {
@@ -276,6 +318,52 @@ remote_ref_commit() {
     commit="$(printf '%s\n' "$output" | awk -v exact="$ref" '$2 == exact {print $1; exit}')"
   fi
   printf '%s\n' "$commit"
+}
+
+release_tooling_path_allowed() {
+  case "$1" in
+    scripts/release-version|scripts/release-impact|scripts/quality-gate|\
+    tests/quality-gate.sh|tests/release-impact.sh|tests/release-workflow.sh|\
+    tests/shell-safety.sh|tests/shell-safety-contract.sh|\
+    docs/quality-gates.md|docs/specs/release.md|docs/testing.md)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+release_tooling_descendant_valid() {
+  local descendant="$1" path
+  git -C "$ROOT" merge-base --is-ancestor "$RELEASE_COMMIT" "$descendant" || return 1
+  while IFS= read -r -d '' path; do
+    release_tooling_path_allowed "$path" || return 1
+  done < <(git -C "$ROOT" diff --name-only -z "$RELEASE_COMMIT" "$descendant")
+}
+
+verify_release_remote_refs() {
+  local remote_main remote_tag
+  remote_main="$(remote_ref_commit refs/heads/main)"
+  remote_tag="$(remote_ref_commit "refs/tags/$TAG")"
+  [ "$remote_tag" = "$RELEASE_COMMIT" ] || \
+    die 'remote release tag does not match the release commit'
+  if [ "$remote_main" != "$RELEASE_COMMIT" ]; then
+    release_tooling_descendant_valid "$remote_main" || \
+      die 'remote main advanced after the release with non-tooling changes'
+  fi
+}
+
+verify_resumable_release_head() {
+  local head remote_main
+  head="$(git -C "$ROOT" rev-parse --verify HEAD)"
+  [ "$head" != "$RELEASE_COMMIT" ] || return 0
+  has_stage pushed || die 'HEAD is no longer the unpushed release commit'
+  remote_main="$(git -C "$ROOT" rev-parse --verify refs/remotes/origin/main)"
+  [ "$head" = "$remote_main" ] || \
+    die 'resumed release tooling must use synchronized main'
+  release_tooling_descendant_valid "$head" || \
+    die 'main advanced after the release with non-tooling changes'
 }
 
 release_api_status() {
@@ -436,6 +524,7 @@ initialize_workflow() {
 
 load_workflow() {
   local saved_version saved_repository saved_tag saved_timing_budget
+  fetch_origin
   saved_version="$(read_state_value version)" || die 'incomplete release workflow state (version)'
   saved_repository="$(read_state_value repository)" || die 'incomplete release workflow state (repository)'
   saved_tag="$(read_state_value tag)" || die 'incomplete release workflow state (tag)'
@@ -505,8 +594,7 @@ prepare_release_commit() {
     write_state_value release-commit "$RELEASE_COMMIT"
   fi
 
-  [ "$(git -C "$ROOT" rev-parse --verify HEAD)" = "$RELEASE_COMMIT" ] || \
-    die 'release commit is no longer HEAD'
+  verify_resumable_release_head
   [ "$(git -C "$ROOT" rev-parse "$RELEASE_COMMIT^")" = "$SOURCE_COMMIT" ] || \
     die 'release commit does not directly follow the tested source'
   [ "$(<"$ROOT/VERSION")" = "$VERSION" ] || die 'VERSION does not match the release target'
@@ -605,6 +693,11 @@ remove_release_ci_branch() {
 
 push_release_source() {
   local remote_main remote_tag
+  if has_stage pushed; then
+    verify_release_remote_refs
+    remove_release_ci_branch
+    return
+  fi
   remote_main="$(remote_ref_commit refs/heads/main)"
   remote_tag="$(remote_ref_commit "refs/tags/$TAG")"
   if [ "$remote_main" = "$RELEASE_COMMIT" ] && [ "$remote_tag" = "$RELEASE_COMMIT" ]; then
@@ -614,8 +707,7 @@ push_release_source() {
   fi
   [ "$remote_main" = "$SOURCE_COMMIT" ] || die 'remote main changed before release push'
   [ -z "$remote_tag" ] || die 'remote release tag appeared with an unexpected state'
-  exact_confirmation DETACH_CONFIRM_RELEASE \
-    "Release commit and annotated tag are ready; the next step validates the commit in GitHub Actions, pushes it, and later publishes $REPOSITORY@$TAG."
+  note "release invocation authorized CI validation and atomic publication of $REPOSITORY@$TAG"
   approve_release_source
   remote_main="$(remote_ref_commit refs/heads/main)"
   remote_tag="$(remote_ref_commit "refs/tags/$TAG")"
@@ -673,6 +765,11 @@ build_release_artifacts() {
 confirm_install_update_matrix() {
   has_stage install-matrix && return
   release_artifacts_valid || die 'release artifacts changed before install-matrix review'
+  if [ "$INSTALL_MATRIX_REQUIRED" = false ]; then
+    note 'skipping clean installation and system UI matrix: release impact does not select it'
+    record_stage install-matrix
+    return
+  fi
   printf '%s\n' \
     'Complete the clean installation and update checklist in docs/testing.md with the signed Detach.dmg. Use a clean macOS account or VM. Do not reuse the signed power or lid tests as evidence.'
   exact_confirmation DETACH_CONFIRM_INSTALL_MATRIX \
@@ -773,6 +870,11 @@ run_lid_test() {
   local attempts=0 started finished elapsed minimum maximum_gap
 
   has_stage lid && return
+  if [ "$LID_TEST_REQUIRED" = false ]; then
+    note 'skipping closed-lid hardware test: release impact does not select it'
+    record_stage lid
+    return
+  fi
   [ -x "$power" ] || die 'installed release candidate has no signed power client'
   rm -f "$ready" "$ticks"
   "$power" run --session "$session" --run-token "$token" --ready-file "$ready" -- \
@@ -820,9 +922,7 @@ run_publish_preflight() {
   git -C "$ROOT" diff --check
   verify_clean_worktree
   release_artifacts_valid || die 'release artifacts changed before publication'
-  [ "$(remote_ref_commit refs/heads/main)" = "$RELEASE_COMMIT" ] && \
-    [ "$(remote_ref_commit "refs/tags/$TAG")" = "$RELEASE_COMMIT" ] || \
-    die 'remote main/tag changed before publication'
+  verify_release_remote_refs
 }
 
 publish_release() {
@@ -856,9 +956,7 @@ verify_published_release() {
   mkdir -m 0700 "$remote_root"
   latest_tag="$(gh release view --repo "$REPOSITORY" --json tagName --jq .tagName)"
   [ "$latest_tag" = "$TAG" ] || die 'published release is not GitHub Latest'
-  [ "$(remote_ref_commit refs/heads/main)" = "$RELEASE_COMMIT" ] && \
-    [ "$(remote_ref_commit "refs/tags/$TAG")" = "$RELEASE_COMMIT" ] || \
-    die 'published remote main/tag do not match the release commit'
+  verify_release_remote_refs
 
   assets=(
     "$APP_ROOT/build/Detach.dmg"
@@ -918,6 +1016,7 @@ run_locked() {
   else
     initialize_workflow
   fi
+  resolve_release_impact
   prepare_release_commit
   push_release_source
   build_release_artifacts

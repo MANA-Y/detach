@@ -149,8 +149,13 @@ printf '%s\n' '#!/bin/bash' >"$REPO/bin/detach"
 plan="$(gate --plan)"
 [[ "$plan" = *'stages=static,app,ui-e2e,codex,claude,distribution,tmux-runtime,release-budget' ]]
 
-setup_fixture release-impact
+setup_fixture release-files
 printf '%s\n' 999 >"$REPO/BUILD"
+plan="$(gate --plan)"
+[[ "$plan" = *'stages=static,app,ui-e2e,release-preflight,publish-preflight,release-workflow,release-budget' ]]
+
+setup_fixture release-impact
+printf '%s\n' '#!/bin/bash' >"$REPO/scripts/release-impact"
 plan="$(gate --plan)"
 [[ "$plan" = *'stages=static,app,ui-e2e,release-preflight,publish-preflight,release-workflow,release-budget' ]]
 
@@ -204,7 +209,7 @@ mkdir -p "$REPO/app/Sources/DetachKit"
 printf '%s\n' 'struct OddName {}' >"$REPO/app/Sources/DetachKit/line
 break.swift"
 plan="$(gate --plan --format json)"
-[[ "$plan" = '{"policy":11,"mode":"change","source_commit":"'* ]]
+[[ "$plan" = '{"policy":12,"mode":"change","source_commit":"'* ]]
 [[ "$plan" = *'"base_commit":"","input_fingerprint":"'* ]]
 [[ "$plan" = *'"stages":["static","swift","quality-contracts","app","ui-e2e","release-budget"]}' ]]
 

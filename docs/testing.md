@@ -123,18 +123,22 @@ specs, and the documentation workflow. It does not replace the selected gate.
 requires a clean synchronized `main`, reads literal release settings from the
 ignored owner-only `.env.release`, runs the complete suite before changing Git,
 requires the tracked root `BUILD` to match the latest published manifest,
-increments it together with `VERSION` in one release commit, creates one
-annotated tag, and requires an exact
-`owner/repository@tag` confirmation before pushing the commit to a unique
+increments it together with `VERSION` in one release commit, and creates one
+annotated tag. The invocation authorizes its automated commit, tag, and
+publication steps. It pushes the commit first to a unique
 `detach-release/vX.Y.Z` ref. The exact commit must pass the official GitHub
 Actions `quality-gates` job. The workflow makes sure that remote `main` did not
-change. Then it atomically pushes the approved commit and tag. It verifies both
-refs and removes the matching temporary ref. It then reuses the
+change. Then it atomically pushes the approved commit and tag, verifies both
+refs, and removes the matching temporary ref. It then reuses the
 strict `app/scripts/release.sh` and `app/scripts/publish-release.sh`, installs
-the signed candidate, runs the real power smoke, measures a supervised
-closed-lid probe, publishes, and independently downloads and hashes every
-remote asset. Before local installation, it stops for the clean-install
-checklist below. Its private resume state lives under ignored `app/build/`.
+the signed candidate, runs the real power smoke, publishes, and independently
+downloads and hashes every remote asset. `scripts/release-impact` compares the
+last published tag with the release source. It selects the clean-account/system
+UI matrix only for install, onboarding, approval, update, entitlement, or
+localization impact. It selects the supervised closed-lid probe only for power,
+helper, watchdog, lease, assertion, or lid-probe impact. Unknown product paths
+select both manual gates. Its private resume state and impact evidence live
+under ignored `app/build/`.
 Set `DETACH_RELEASE_IGNORE_TIMING=1` only when the owner explicitly accepts
 busy-machine timing for that single release; the script requires the same exact
 release-target confirmation before it omits reference-machine timing checks.
@@ -145,10 +149,10 @@ upload, or publish as part of ordinary implementation or verification.
 
 ## Clean installation and system UI release checklist
 
-Run this checklist once for each signed release candidate. Automated tests
-cover Repair, keep/purge Uninstall, reinstall, failed updates, CLI
-synchronization, and helper replacement. This checklist covers only Finder and
-real macOS approval UI.
+Run this checklist only when `scripts/release-impact` selects the system UI
+matrix for the signed candidate. Automated tests cover Repair, keep/purge
+Uninstall, reinstall, failed updates, CLI synchronization, and helper
+replacement. This checklist covers only Finder and real macOS approval UI.
 
 1. Start a clean macOS 26 or later Apple Silicon account or VM in English.
    Open the signed DMG. Confirm that Detach blocks setup from the DMG and tells

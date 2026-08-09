@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
-POLICY_VERSION=11
+POLICY_VERSION=12
 MODE=change
 BASE_REF=""
 PLAN_ONLY=0
@@ -252,7 +252,7 @@ select_for_path() {
     scripts/build-tmux.sh)
       add_stage app; add_stage codex; add_stage claude; add_stage tmux-runtime; add_stage release-budget
       ;;
-    app/scripts/release.sh|app/scripts/publish-release.sh|app/scripts/make-dmg.sh|app/scripts/verify-appcast.sh|scripts/release-version|scripts/release-lid-probe|VERSION|BUILD)
+    app/scripts/release.sh|app/scripts/publish-release.sh|app/scripts/make-dmg.sh|app/scripts/verify-appcast.sh|scripts/release-version|scripts/release-impact|scripts/release-lid-probe|VERSION|BUILD)
       add_stage app; add_stage release-preflight; add_stage publish-preflight; add_stage release-workflow; add_stage release-budget
       ;;
     app/scripts/*)
@@ -279,7 +279,7 @@ select_for_path() {
     tests/publish-preflight.sh)
       add_stage publish-preflight; add_stage release-budget
       ;;
-    tests/release-workflow.sh)
+    tests/release-impact.sh|tests/release-workflow.sh)
       add_stage release-workflow; add_stage release-budget
       ;;
     .gitignore|.gitattributes)
@@ -777,7 +777,7 @@ run_static() {
   while IFS= read -r -d '' file; do
     [ -f "$ROOT/$file" ] || continue
     case "$file" in
-      *.sh|bin/detach|bin/detach-core|scripts/quality-gate|scripts/release-version|scripts/release-lid-probe)
+      *.sh|bin/detach|bin/detach-core|scripts/quality-gate|scripts/release-version|scripts/release-impact|scripts/release-lid-probe)
         /bin/bash -n "$ROOT/$file"
         ;;
     esac
@@ -923,7 +923,10 @@ run_stage_command() {
     tmux-runtime) "$ROOT/tests/tmux-runtime.sh" ;;
     release-preflight) "$ROOT/tests/release-preflight.sh" ;;
     publish-preflight) "$ROOT/tests/publish-preflight.sh" ;;
-    release-workflow) "$ROOT/tests/release-workflow.sh" ;;
+    release-workflow)
+      "$ROOT/tests/release-impact.sh"
+      "$ROOT/tests/release-workflow.sh"
+      ;;
   esac
 }
 

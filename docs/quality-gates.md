@@ -1,7 +1,7 @@
 # Quality gates
 
 `scripts/quality-gate` is the tracked readiness contract for local agents, CI,
-and releases. Policy version 11 derives
+and releases. Policy version 12 derives
 the mandatory set from the Git diff, and selects the full repository gate for
 unknown paths or changes to this policy itself. Its resource-aware scheduler
 runs isolated work concurrently without allowing two SwiftPM operations to
@@ -54,9 +54,9 @@ share the same build directory.
 The stages are `static`, the gate orchestrator's own contract tests, `swift`,
 `quality-contracts`, development app build/verification, packaged-app
 `ui-e2e`, Codex and Claude integrations, distribution, bundled runtime,
-release and publish preflights, the hermetic release-workflow test, and the
-zero-work `release-budget` postflight. Every executable stage has a bounded
-timeout.
+release and publish preflights, the hermetic release-impact and
+release-workflow tests, and the zero-work `release-budget` postflight. Every
+executable stage has a bounded timeout.
 Logs, a versioned TSV summary, a provenance manifest, a safe execution-context
 record, a digest inventory of bounded fake-test diagnostics, and JUnit XML are
 written privately under `app/build/quality-gates/`. The schema-3 manifest binds
@@ -85,9 +85,20 @@ freshly bundled tmux and `detach-state`; none of these stages invokes SwiftPM.
 The gate therefore does not depend on writable user caches, ambient tmux,
 provider session state, or the installed Detach app.
 
-There are no quarantined tests in policy version 11. A future quarantine must be
+There are no quarantined tests in policy version 12. A future quarantine must be
 tracked here with an owner, expiry, and reason, and may not remove a release
 contract check.
+
+## Policy version 12: impact-selected manual release gates
+
+Policy 12 retains policy 11's functional stages, coverage floors, timing
+ceilings, and deterministic scheduling. It adds a fail-closed release impact
+classifier. The classifier selects the clean-account/system UI matrix only for
+related product changes. It selects the supervised closed-lid test only for
+related power changes. Unknown product paths select both manual gates. The
+`release-workflow` stage runs the classifier contract before the release
+orchestrator contract. This invalidates older resume evidence when the release
+gate selection changes.
 
 ## Policy version 11: deterministic reference-machine scheduling
 
