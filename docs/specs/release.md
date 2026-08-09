@@ -63,6 +63,9 @@ change real power state, upload assets, or claim publication.
   synchronized `main` only when the release commit remains an ancestor and all
   later paths are release tooling, release tests, or release documentation.
   The annotated tag and artifact manifest stay bound to the release commit.
+- The release orchestrator gives the lower-level publisher the exact manifest
+  commit. The publisher requires the tag to match it and the current `HEAD` to
+  contain it. The orchestrator separately rejects non-tooling descendants.
 - Sparkle remains pinned and signed inside-out. Production builds never carry
   the development library-validation exception. Appcasts contain exactly one
   arm64 hardware requirement.

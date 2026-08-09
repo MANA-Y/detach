@@ -377,6 +377,54 @@ grep -F 'hdiutil|attach -readonly -nobrowse -owners on -mountpoint ' \
 grep -F 'spctl|--assess --type open --context context:primary-signature --verbose=2' \
   "$TMP_ROOT/validation.log" >/dev/null
 
+# The release orchestrator can continue from a clean tooling descendant while
+# the tag and manifest stay bound to the built release commit. Direct use keeps
+# the stricter HEAD equality check.
+printf '%s\n' 'release tooling follow-up' >>"$TEST_REPO/README.md"
+git -C "$TEST_REPO" add README.md
+git -C "$TEST_REPO" commit -qm 'release tooling follow-up'
+rm -f "$GH_LOG"
+if PATH="$FAKE_BIN:/usr/bin:/bin" \
+    FAKE_GH_LOG="$GH_LOG" \
+    FAKE_VALIDATION_LOG="$TMP_ROOT/validation.log" \
+    DETACH_GITHUB_REPOSITORY="$REPOSITORY" \
+    DETACH_CONFIRM_PUBLISH="$EXPECTED_CONFIRMATION" \
+    "$TEST_APP/scripts/publish-release.sh" \
+    >"$TMP_ROOT/descendant-direct.stdout" \
+    2>"$TMP_ROOT/descendant-direct.stderr"; then
+  printf 'direct publish unexpectedly accepted a descendant HEAD\n' >&2
+  exit 1
+fi
+grep -F 'Current HEAD does not match the built release manifest' \
+  "$TMP_ROOT/descendant-direct.stderr" >/dev/null
+[ ! -e "$GH_LOG" ] || {
+  printf 'direct descendant rejection contacted GitHub\n' >&2
+  exit 1
+}
+
+: >"$TMP_ROOT/validation.log"
+PUBLISH_EXIT=0
+if PATH="$FAKE_BIN:/usr/bin:/bin" \
+    FAKE_GH_LOG="$GH_LOG" \
+    FAKE_VALIDATION_LOG="$TMP_ROOT/validation.log" \
+    DETACH_GITHUB_REPOSITORY="$REPOSITORY" \
+    DETACH_CONFIRM_PUBLISH="$EXPECTED_CONFIRMATION" \
+    DETACH_RELEASE_EXPECTED_COMMIT="$GIT_COMMIT" \
+    "$TEST_APP/scripts/publish-release.sh" \
+    >"$TMP_ROOT/descendant-orchestrated.stdout" \
+    2>"$TMP_ROOT/descendant-orchestrated.stderr"; then
+  printf 'orchestrated descendant unexpectedly passed fake gh\n' >&2
+  exit 1
+else
+  PUBLISH_EXIT=$?
+fi
+[ "$PUBLISH_EXIT" = 97 ] || {
+  printf 'orchestrated descendant did not reach gh (exit %s)\n' \
+    "$PUBLISH_EXIT" >&2
+  exit 1
+}
+grep -Fx 'auth status' "$GH_LOG" >/dev/null
+
 # A safe retry may encounter a draft created by a previous interrupted upload.
 # It must validate every existing digest, upload only missing allowlisted files,
 # and then publish the same draft instead of creating or replacing a release.
@@ -450,6 +498,7 @@ PATH="$FAKE_BIN:/usr/bin:/bin" \
   FAKE_DRAFT_PUBLISHED="$TMP_ROOT/draft-published" \
   DETACH_GITHUB_REPOSITORY="$REPOSITORY" \
   DETACH_CONFIRM_PUBLISH="$EXPECTED_CONFIRMATION" \
+  DETACH_RELEASE_EXPECTED_COMMIT="$GIT_COMMIT" \
   DETACH_RESUME_DRAFT=1 \
   "$TEST_APP/scripts/publish-release.sh" \
   >"$TMP_ROOT/resume-draft.stdout" 2>"$TMP_ROOT/resume-draft.stderr"
@@ -470,6 +519,7 @@ PATH="$FAKE_BIN:/usr/bin:/bin" \
   FAKE_DRAFT_PUBLISHED="$TMP_ROOT/draft-published" \
   DETACH_GITHUB_REPOSITORY="$REPOSITORY" \
   DETACH_CONFIRM_PUBLISH="$EXPECTED_CONFIRMATION" \
+  DETACH_RELEASE_EXPECTED_COMMIT="$GIT_COMMIT" \
   DETACH_RESUME_PUBLISHED=1 \
   "$TEST_APP/scripts/publish-release.sh" \
   >"$TMP_ROOT/resume-published.stdout" 2>"$TMP_ROOT/resume-published.stderr"

@@ -340,8 +340,9 @@ remote_ref_commit() {
 release_tooling_path_allowed() {
   case "$1" in
     scripts/release-version|scripts/release-impact|scripts/quality-gate|\
+    app/scripts/publish-release.sh|\
     tests/quality-gate.sh|tests/release-impact.sh|tests/release-workflow.sh|\
-    tests/shell-safety.sh|tests/shell-safety-contract.sh|\
+    tests/publish-preflight.sh|tests/shell-safety.sh|tests/shell-safety-contract.sh|\
     docs/quality-gates.md|docs/specs/release.md|docs/testing.md)
       return 0
       ;;
@@ -989,6 +990,7 @@ publish_release() {
       DETACH_RELEASE_TAG="$TAG" \
       DETACH_GITHUB_REPOSITORY="$REPOSITORY" \
       DETACH_CONFIRM_PUBLISH="$REPOSITORY@$TAG" \
+      DETACH_RELEASE_EXPECTED_COMMIT="$RELEASE_COMMIT" \
       DETACH_RESUME_DRAFT=1 \
       DETACH_RESUME_PUBLISHED=1 \
       "$APP_ROOT/scripts/publish-release.sh"

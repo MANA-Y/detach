@@ -19,6 +19,7 @@ FEED_URL="${DETACH_SPARKLE_FEED_URL:-https://github.com/$REPOSITORY/releases/lat
 RELEASE_TARGET="${DETACH_GITHUB_RELEASE_TARGET:-}"
 SEPARATE_RELEASE_REPOSITORY="${DETACH_SEPARATE_RELEASE_REPOSITORY:-0}"
 PUBLISH_CONFIRMATION="${DETACH_CONFIRM_PUBLISH:-}"
+ORCHESTRATED_COMMIT="${DETACH_RELEASE_EXPECTED_COMMIT:-}"
 RESUME_DRAFT="${DETACH_RESUME_DRAFT:-0}"
 RESUME_PUBLISHED="${DETACH_RESUME_PUBLISHED:-0}"
 APPCAST_VERIFIER="$APP_ROOT/scripts/verify-appcast.sh"
@@ -280,11 +281,29 @@ GIT_COMMIT="$(manifest_value git_commit)"
   printf 'Release manifest contains an invalid git commit\n' >&2
   exit 1
 }
-[ "$(git -C "$REPO_ROOT" rev-parse --verify HEAD)" = "$GIT_COMMIT" ] && \
-  [ "$(git -C "$REPO_ROOT" rev-list -n 1 "$TAG" 2>/dev/null || true)" = "$GIT_COMMIT" ] || {
-    printf 'Current HEAD/tag do not match the built release manifest\n' >&2
+[ "$(git -C "$REPO_ROOT" rev-list -n 1 "$TAG" 2>/dev/null || true)" = "$GIT_COMMIT" ] || {
+  printf 'Current tag does not match the built release manifest\n' >&2
+  exit 1
+}
+if [ -n "$ORCHESTRATED_COMMIT" ]; then
+  [[ "$ORCHESTRATED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
+    printf 'DETACH_RELEASE_EXPECTED_COMMIT must be a full Git commit\n' >&2
     exit 1
   }
+  [ "$ORCHESTRATED_COMMIT" = "$GIT_COMMIT" ] || {
+    printf 'Orchestrated commit does not match the built release manifest\n' >&2
+    exit 1
+  }
+  git -C "$REPO_ROOT" merge-base --is-ancestor "$GIT_COMMIT" HEAD || {
+    printf 'Current HEAD does not contain the built release commit\n' >&2
+    exit 1
+  }
+else
+  [ "$(git -C "$REPO_ROOT" rev-parse --verify HEAD)" = "$GIT_COMMIT" ] || {
+    printf 'Current HEAD does not match the built release manifest\n' >&2
+    exit 1
+  }
+fi
 
 for update_checksum in \
   "$UPDATE_ZIP.sha256" \
