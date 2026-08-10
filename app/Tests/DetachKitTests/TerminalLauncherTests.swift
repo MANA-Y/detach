@@ -23,7 +23,10 @@ final class TerminalLauncherTests: XCTestCase {
             temporaryDirectory: temporaryDirectory,
             fileManager: .default)
         let contents = try String(contentsOf: url, encoding: .utf8)
+        let startupURL = url.deletingLastPathComponent().appendingPathComponent(".zshenv")
+        let startupContents = try String(contentsOf: startupURL, encoding: .utf8)
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        let startupAttributes = try FileManager.default.attributesOfItem(atPath: startupURL.path)
         let directoryAttributes = try FileManager.default.attributesOfItem(
             atPath: url.deletingLastPathComponent().path)
 
@@ -31,6 +34,9 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(url.lastPathComponent, "run.command")
         XCTAssertEqual(url.pathExtension, "command")
         XCTAssertEqual(attributes[.posixPermissions] as? NSNumber, NSNumber(value: 0o700))
+        XCTAssertEqual(
+            startupAttributes[.posixPermissions] as? NSNumber,
+            NSNumber(value: 0o600))
         XCTAssertEqual(
             directoryAttributes[.posixPermissions] as? NSNumber,
             NSNumber(value: 0o700))
@@ -42,9 +48,11 @@ final class TerminalLauncherTests: XCTestCase {
             try XCTUnwrap(contents.range(of: "/bin/rm -f -- \"$command_file\" || exit 125")?.lowerBound),
             try XCTUnwrap(contents.range(of: "exec /bin/zsh -lic")?.lowerBound))
         XCTAssertTrue(contents.contains("[[ ! -e \"$command_file\" ]] || exit 125"))
-        XCTAssertTrue(contents.contains("/bin/rmdir -- \"$command_dir\""))
-        XCTAssertTrue(contents.contains("unset command_file command_dir ZDOTDIR"))
+        XCTAssertTrue(contents.contains("DETACH_TERMINAL_ORIGINAL_ZDOTDIR"))
+        XCTAssertFalse(contents.contains("/bin/rmdir -- \"$command_dir\""))
         XCTAssertTrue(contents.contains("exec /bin/zsh -lic \(shellQuoted(command))"))
+        XCTAssertTrue(startupContents.contains("! -e \"$detach_outer_zdotdir/run.command\""))
+        XCTAssertTrue(startupContents.contains("source \"$detach_user_zdotdir/.zshenv\""))
     }
 
     @MainActor
@@ -53,12 +61,17 @@ final class TerminalLauncherTests: XCTestCase {
             command: "exec /usr/bin/true",
             temporaryDirectory: temporaryDirectory,
             fileManager: .default)
-        let configuration = TerminalLauncher.openConfiguration(commandURL: url)
+        let configuration = TerminalLauncher.openConfiguration(
+            commandURL: url,
+            processEnvironment: ["ZDOTDIR": "/Users/test/custom-zdotdir"])
 
         XCTAssertTrue(configuration.createsNewApplicationInstance)
         XCTAssertEqual(
             configuration.environment["ZDOTDIR"],
             url.deletingLastPathComponent().path)
+        XCTAssertEqual(
+            configuration.environment["DETACH_TERMINAL_ORIGINAL_ZDOTDIR"],
+            "/Users/test/custom-zdotdir")
     }
 
     func testFailureReasonRequiresSelectionOnlyForMissingTerminal() {
@@ -118,11 +131,9 @@ final class TerminalLauncherTests: XCTestCase {
             }
     }
 
-    func testCommandFileLeavesItsDirectoryBeforeDeletingIt() throws {
+    func testCommandFileRemovesPayloadAndKeepsStartupGuard() throws {
         let safeHome = temporaryDirectory.appendingPathComponent("home", isDirectory: true)
-        let zdotdir = temporaryDirectory.appendingPathComponent("zdotdir", isDirectory: true)
         try FileManager.default.createDirectory(at: safeHome, withIntermediateDirectories: false)
-        try FileManager.default.createDirectory(at: zdotdir, withIntermediateDirectories: false)
         let url = try TerminalLauncher.writeCommandFile(
             command: "exec /bin/pwd",
             temporaryDirectory: temporaryDirectory,
@@ -138,7 +149,8 @@ final class TerminalLauncherTests: XCTestCase {
         process.standardError = errors
         var environment = ProcessInfo.processInfo.environment
         environment["HOME"] = safeHome.path
-        environment["ZDOTDIR"] = zdotdir.path
+        environment["ZDOTDIR"] = commandDirectory.path
+        environment.removeValue(forKey: "DETACH_TERMINAL_ORIGINAL_ZDOTDIR")
         process.environment = environment
 
         try process.run()
@@ -149,7 +161,41 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(process.terminationStatus, 0, stderr)
         XCTAssertEqual(stdout.trimmingCharacters(in: .whitespacesAndNewlines), safeHome.path)
         XCTAssertFalse(stderr.contains("getcwd"), stderr)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: commandDirectory.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: commandDirectory.appendingPathComponent(".zshenv").path))
+    }
+
+    func testStartupGuardRestoresUserStartupFilesInLaterShells() throws {
+        let safeHome = temporaryDirectory.appendingPathComponent("later-home", isDirectory: true)
+        try FileManager.default.createDirectory(at: safeHome, withIntermediateDirectories: false)
+        for (name, marker) in [
+            (".zshenv", "user-zshenv"),
+            (".zprofile", "user-zprofile"),
+            (".zshrc", "user-zshrc"),
+            (".zlogin", "user-zlogin")
+        ] {
+            try Data("print -r -- \(marker)\n".utf8).write(
+                to: safeHome.appendingPathComponent(name),
+                options: .withoutOverwriting)
+        }
+        let commandURL = try TerminalLauncher.writeCommandFile(
+            command: "exec /usr/bin/true",
+            temporaryDirectory: temporaryDirectory,
+            fileManager: .default)
+        let commandDirectory = commandURL.deletingLastPathComponent()
+
+        let initial = try runLoginZsh(home: safeHome, zdotdir: commandDirectory)
+        XCTAssertEqual(initial.status, 0, initial.stderr)
+        XCTAssertFalse(initial.stdout.contains("user-zsh"), initial.stdout)
+
+        try FileManager.default.removeItem(at: commandURL)
+        let later = try runLoginZsh(home: safeHome, zdotdir: commandDirectory)
+        XCTAssertEqual(later.status, 0, later.stderr)
+        XCTAssertTrue(later.stdout.contains("user-zshenv"), later.stdout)
+        XCTAssertTrue(later.stdout.contains("user-zprofile"), later.stdout)
+        XCTAssertTrue(later.stdout.contains("user-zshrc"), later.stdout)
+        XCTAssertTrue(later.stdout.contains("user-zlogin"), later.stdout)
     }
 
     @MainActor
@@ -174,6 +220,31 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertNil(failure)
         XCTAssertEqual(openedApplicationURL, terminal.applicationURL)
         XCTAssertTrue(FileManager.default.fileExists(atPath: commandURL?.path ?? ""))
+    }
+
+    private func runLoginZsh(home: URL, zdotdir: URL) throws -> (
+        status: Int32,
+        stdout: String,
+        stderr: String
+    ) {
+        let output = Pipe()
+        let errors = Pipe()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-lic", "exec /usr/bin/true"]
+        process.standardOutput = output
+        process.standardError = errors
+        var environment = ProcessInfo.processInfo.environment
+        environment["HOME"] = home.path
+        environment["ZDOTDIR"] = zdotdir.path
+        environment.removeValue(forKey: "DETACH_TERMINAL_ORIGINAL_ZDOTDIR")
+        process.environment = environment
+        try process.run()
+        process.waitUntilExit()
+        return (
+            process.terminationStatus,
+            String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self),
+            String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
     }
 
     @MainActor
