@@ -19,6 +19,7 @@ struct MacPowerSettingsPresentation: Equatable {
         case activeSessions(Int)
         case protectionActive
         case noActiveSessions
+        case waitingSessions(Int)
         case sessionsNotHolding(Int)
         case lowBattery
         case temperature
@@ -36,7 +37,8 @@ struct MacPowerSettingsPresentation: Equatable {
         helperStatus: PowerHelperRegistrationStatus,
         watchdogStatus: WatchdogStatus,
         distributionMatchesBundle: Bool,
-        activeSessionCount: Int? = nil
+        activeSessionCount: Int? = nil,
+        workingSessionCount: Int? = nil
     ) {
         self.state = state
         if helperStatus == .requiresApproval {
@@ -54,8 +56,9 @@ struct MacPowerSettingsPresentation: Equatable {
         }
         switch state {
         case .protected:
-            if let activeSessionCount, activeSessionCount > 0 {
-                reason = .activeSessions(activeSessionCount)
+            let protectedCount = workingSessionCount ?? activeSessionCount
+            if let protectedCount, protectedCount > 0 {
+                reason = .activeSessions(protectedCount)
             } else {
                 reason = .protectionActive
             }
@@ -63,7 +66,11 @@ struct MacPowerSettingsPresentation: Equatable {
             // The heartbeat wins, but never claim "no sessions" while the
             // session poller can see running ones.
             if let activeSessionCount, activeSessionCount > 0 {
-                reason = .sessionsNotHolding(activeSessionCount)
+                if workingSessionCount == 0 {
+                    reason = .waitingSessions(activeSessionCount)
+                } else {
+                    reason = .sessionsNotHolding(activeSessionCount)
+                }
             } else {
                 reason = .noActiveSessions
             }
@@ -901,14 +908,16 @@ struct SettingsView: View {
     }
 
     private var macPowerPresentation: MacPowerSettingsPresentation {
-        MacPowerSettingsPresentation(
+        let running = sessionStore.sessions.filter {
+            $0.effectiveStatus == .running
+        }
+        return MacPowerSettingsPresentation(
             state: installation.powerProtectionState,
             helperStatus: installation.powerHelperStatus,
             watchdogStatus: installation.watchdogStatus,
             distributionMatchesBundle: installation.distributionMatchesBundle,
-            activeSessionCount: sessionStore.sessions.filter {
-                $0.effectiveStatus == .running
-            }.count)
+            activeSessionCount: running.count,
+            workingSessionCount: running.filter { !$0.isWaitingForUser }.count)
     }
 
     private var macPowerHeroRow: some View {

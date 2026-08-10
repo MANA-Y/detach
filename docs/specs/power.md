@@ -5,11 +5,28 @@
 Power protection has two required layers and one observable combined state:
 
 1. `detach-power` is an unprivileged, signed wrapper. It holds the public IOKit
-   user-idle-system-sleep assertion, acquires a root-helper lease over XPC, runs
-   the provider with inherited cwd/environment/stdio, and returns its exit code.
+   user-idle-system-sleep assertion and a root-helper lease over XPC while its
+   provider is working. It runs the provider with inherited
+   cwd/environment/stdio and returns its exit code.
 2. `DetachPowerHelper` is a demand-launched root daemon registered from the app.
    It manages only the machine-wide closed-lid setting through absolute
    `/usr/bin/pmset` invocations and a renewable lease registry.
+
+The wrapper must acquire both layers before provider launch. It watches a
+private, run-token-scoped activity file. Before it accepts `waiting`, it also
+validates a recorded inode/mtime/size snapshot and starts an event watcher on the
+exact provider transcript. It then stages the helper lease as
+assertion-inactive, releases the IOKit assertion, and releases the helper lease.
+Any transcript change immediately means `working` and reacquires both layers;
+it does not wait for the idle runtime heartbeat. Missing, changed, or malformed
+handoff state stays `working`. Transition failures are surfaced and must not
+claim that sleep is safe. The provider continues while waiting.
+
+Each working session owns a separate helper lease. Outside the low-battery and
+thermal fail-safe states, the helper keeps the machine-wide closed-lid setting
+active while at least one working lease exists. Detach can permit normal sleep
+only after every live session is waiting or stopped. One waiting session must
+never release another working session's protection.
 
 The root helper installs a listener-level Foundation code-signing requirement
 before accepting XPC or reconciling power state. It accepts only valid code
@@ -39,10 +56,12 @@ reconciled, and implausibly future renewal timestamps expire rather than live
 forever. Do not manually change the same machine-wide boolean while Detach owns
 it.
 
-The client lease heartbeat remains every 30 seconds; the helper reconciles
-machine power state every 10 seconds. Leases expire after 120 seconds without
-renewal, with a maximum of 256. Transient renewal failures are retried; an
-active failure is surfaced rather than silently reporting protection. Read-only
+The client lease heartbeat remains every 30 seconds while protected; the helper
+reconciles machine power state every 10 seconds. Leases expire after 120 seconds
+without renewal, with a maximum of 256. The runtime health loop slows from ten
+to 30 seconds while waiting, below its 45-second stale limit. Transient renewal
+failures are retried; an active failure is surfaced rather than silently
+reporting protection. Read-only
 status returns a cached snapshot refreshed at startup, after mutations, and by
 the reconciler. It must never invoke `pmset` or wait behind the root mutation
 lock, so UI, watchdog, and tmux polling remain nonblocking.
@@ -54,7 +73,8 @@ reconciles the owned setting before returning failure. This prevents a timed-out
 caller from activating protection later. The outer XPC timeout remains 30
 seconds so rollback can finish. Root `pmset` invocations have bounded output and
 a two-second timeout. The readable tmux power label refreshes every ten seconds
-rather than spawning one root status request every two seconds per session.
+while working and every 30 seconds while waiting, rather than spawning one root
+status request every two seconds per session.
 
 The low-battery threshold is 10% while on battery power. The helper releases
 closed-lid protection it owns, the wrapper releases its IOKit assertion, and the

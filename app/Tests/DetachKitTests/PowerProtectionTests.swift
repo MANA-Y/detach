@@ -376,6 +376,47 @@ final class PowerProtectionTests: XCTestCase {
         XCTAssertFalse(coordinator.ownsClosedLidProtection)
     }
 
+    func testCoordinatorPermitsSleepOnlyAfterEveryWorkingSessionReleasesItsLease() {
+        let backend = FakeClosedLidBackend(enabled: false)
+        var coordinator = PowerProtectionCoordinator()
+        let now = Date(timeIntervalSince1970: 1_000)
+        let leases = ["one", "two"].map {
+            PowerLease(
+                id: $0,
+                sessionName: "session-\($0)",
+                runToken: "run-\($0)",
+                renewedAt: now,
+                assertionActive: true)
+        }
+
+        let bothWorking = coordinator.reconcile(
+            leases: leases,
+            now: now,
+            timeout: 60,
+            lowBattery: false,
+            backend: backend)
+        let oneWorking = coordinator.reconcile(
+            leases: [leases[1]],
+            now: now,
+            timeout: 60,
+            lowBattery: false,
+            backend: backend)
+        let allWaiting = coordinator.reconcile(
+            leases: [],
+            now: now,
+            timeout: 60,
+            lowBattery: false,
+            backend: backend)
+
+        XCTAssertEqual(bothWorking.state, .protected)
+        XCTAssertEqual(bothWorking.leaseCount, 2)
+        XCTAssertEqual(oneWorking.state, .protected)
+        XCTAssertEqual(oneWorking.leaseCount, 1)
+        XCTAssertEqual(allWaiting.state, .allowed)
+        XCTAssertEqual(allWaiting.leaseCount, 0)
+        XCTAssertEqual(backend.writes, [true, false])
+    }
+
     func testCoordinatorBorrowsPreexistingProtectionWithoutDisablingIt() {
         let backend = FakeClosedLidBackend(enabled: true)
         var coordinator = PowerProtectionCoordinator()

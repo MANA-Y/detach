@@ -127,6 +127,44 @@ process_group_exists() {
   ps -axo pgid= | awk -v pgid="$1" '$1 == pgid { found = 1 } END { exit(found ? 0 : 1) }'
 }
 
+signal_process_group_members() {
+  local signal="$1"
+  local pgid="$2"
+  local excluded_pid="${3:-}"
+  local pid
+  while IFS= read -r pid; do
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    /bin/kill "-$signal" "$pid" 2>/dev/null || true
+  done < <(ps -axo pid=,pgid= | \
+    awk -v pgid="$pgid" -v excluded="$excluded_pid" \
+      '$2 == pgid && $1 != excluded { print $1 }')
+}
+
+wait_for_process_group_stopped() {
+  local pgid="$1"
+  local excluded_pid="$2"
+  local attempts=0
+  while [ "$attempts" -lt 50 ]; do
+    signal_process_group_members STOP "$pgid" "$excluded_pid"
+    if ps -axo pid=,pgid=,stat= | \
+      awk -v pgid="$pgid" -v excluded="$excluded_pid" '
+      $2 == pgid && $1 != excluded {
+        found = 1
+        if ($3 !~ /^[TZ]/) active = 1
+      }
+      END { exit(found && !active ? 0 : 1) }
+    '; then
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.05
+  done
+  printf 'timed out waiting for process group %s to stop\n' "$pgid" >&2
+  ps -axo pid=,ppid=,pgid=,stat=,command= | \
+    awk -v pgid="$pgid" '$3 == pgid { print }' >&2
+  return 1
+}
+
 wait_for_process_group_exit() {
   local pgid="$1"
   local attempts=0
@@ -286,6 +324,9 @@ export DETACH_TMUX_SOCKET_PATH="$SOCKET_PATH"
 export DETACH_TMUX_CONFIG="$TMP_ROOT/tmux.conf"
 export DETACH_CODEX_BIN="$ROOT/tests/fake-codex"
 export DETACH_CODEX_CHECKPOINT_INTERVAL=1
+export DETACH_HEALTH_HEARTBEAT_INTERVAL=1
+export DETACH_IDLE_HEALTH_HEARTBEAT_INTERVAL=2
+export DETACH_HEALTH_HEARTBEAT_STALE=4
 export DETACH_CODEX_SYNC=0
 export DETACH_CODEX_REQUIREMENTS_FILE="$TMP_ROOT/requirements.toml"
 export CODEX_HOME="$TMP_ROOT/codex-home"
@@ -308,6 +349,10 @@ printf '%s\n' \
   'bind-key -T copy-mode a send-keys -X cursor-left' \
   >"$DETACH_TMUX_CONFIG"
 printf '%s\n' 'allowed_approval_policies = ["untrusted", "on-request"]' >"$DETACH_CODEX_REQUIREMENTS_FILE"
+
+test_sqlite() {
+  sqlite3 -cmd '.timeout 5000' "$@"
+}
 
 bash -n "$SCRIPT"
 bash -n "$ROOT/bin/detach-core"
@@ -640,13 +685,32 @@ process_group_exists "$first_worker_pgid"
 # A stale observer or checkpoint must not call a live long provider turn hung.
 health_meta="$DETACH_CODEX_STATE_ROOT/sessions/$SESSION/meta.json"
 run_token="$("$STATE_HELPER" meta get "$health_meta" run_token)"
+if ! wait_for_process_group_stopped "$first_worker_pgid" "$first_worker_pid"; then
+  signal_process_group_members CONT "$first_worker_pgid" "$first_worker_pid"
+  exit 1
+fi
+stale_snapshot_status=0
 "$STATE_HELPER" meta patch "$health_meta" --run-token "$run_token" \
   --integer worker_heartbeat_epoch 1 \
-  --string worker_heartbeat_at '1970-01-01T00:00:01Z'
-tmux -L "$SOCKET" set-option -q -t "=$SESSION:" @detach_heartbeat_epoch 1
-health_json="$(run_codex list --json | grep -F "\"session_name\":\"$SESSION\"")"
-[ "$(printf '%s' "$health_json" | "$STATE_HELPER" meta get /dev/stdin effective_status)" = running ]
-[ "$(printf '%s' "$health_json" | "$STATE_HELPER" meta get /dev/stdin health_reason)" = heartbeat_stale ]
+  --string worker_heartbeat_at '1970-01-01T00:00:01Z' || stale_snapshot_status=$?
+if [ "$stale_snapshot_status" -eq 0 ]; then
+  tmux -L "$SOCKET" set-option -q -t "=$SESSION:" @detach_heartbeat_epoch 1 || \
+    stale_snapshot_status=$?
+fi
+if [ "$stale_snapshot_status" -eq 0 ]; then
+  health_json="$(run_codex list --json | grep -F "\"session_name\":\"$SESSION\"")" || \
+    stale_snapshot_status=$?
+fi
+if [ "$stale_snapshot_status" -eq 0 ]; then
+  stale_effective_status="$(printf '%s' "$health_json" | \
+    "$STATE_HELPER" meta get /dev/stdin effective_status)" || stale_snapshot_status=$?
+  stale_health_reason="$(printf '%s' "$health_json" | \
+    "$STATE_HELPER" meta get /dev/stdin health_reason)" || stale_snapshot_status=$?
+fi
+signal_process_group_members CONT "$first_worker_pgid" "$first_worker_pid"
+[ "$stale_snapshot_status" -eq 0 ]
+[ "$stale_effective_status" = running ]
+[ "$stale_health_reason" = heartbeat_stale ]
 
 # A mismatched run-token blocks cleanup and PID assumptions, but never makes
 # Detach signal or delete the still managed pane.
@@ -878,7 +942,7 @@ run_codex stop integration
 # Explicit resume follows Codex semantics and accepts the exact thread UUID.
 export FAKE_CODEX_INIT_DELAY=0
 export FAKE_CODEX_SLEEP=1
-expected_rollout="$(sqlite3 "$CODEX_HOME/state_5.sqlite" "SELECT rollout_path FROM threads WHERE id = '$expected_id';")"
+expected_rollout="$(test_sqlite "$CODEX_HOME/state_5.sqlite" "SELECT rollout_path FROM threads WHERE id = '$expected_id';")"
 cp -p "$expected_rollout" "$checkpoint/rollout.jsonl"
 printf '{damaged rollout\n' >"$expected_rollout"
 uppercase_id="$(printf '%s' "$expected_id" | tr '[:lower:]' '[:upper:]')"
@@ -935,12 +999,28 @@ printf '%s' "$json_line" | grep -F '"model":' | grep -F '"context_used_tokens":'
 turn_rollout="$("$STATE_HELPER" meta get "$meta" transcript_path)"
 turn_id="$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_id)"
 [ -n "$turn_id" ]
+power_activity="$DETACH_CODEX_STATE_ROOT/sessions/$SESSION/power-activity-$("$STATE_HELPER" meta get "$meta" run_token)"
+power_activity_source="$DETACH_CODEX_STATE_ROOT/sessions/$SESSION/power-activity-source-$("$STATE_HELPER" meta get "$meta" run_token)"
+wait_for_file_text "$power_activity" working
+grep -Fx -- '--activity-file' "$FAKE_POWER_ARGS_FILE" >/dev/null
+grep -Fx -- "$power_activity" "$FAKE_POWER_ARGS_FILE" >/dev/null
+grep -Fx -- '--activity-source-file' "$FAKE_POWER_ARGS_FILE" >/dev/null
+grep -Fx -- "$power_activity_source" "$FAKE_POWER_ARGS_FILE" >/dev/null
 printf '{"timestamp":"2099-01-01T00:10:00Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"%s"}}\n' \
   "$turn_id" >>"$turn_rollout"
 json_line="$(run_codex list --json | grep -F "\"session_name\":\"$SESSION\"")"
 [ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin effective_status)" = "running" ]
 [ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_state)" = "waiting" ]
 [ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_id)" = "$turn_id" ]
+wait_for_file_text "$power_activity" waiting
+[ -s "$power_activity_source" ]
+printf '%s\n' \
+  '{"timestamp":"2099-01-01T00:10:01Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-after-idle"}}' \
+  >>"$turn_rollout"
+wait_for_file_text "$power_activity" working
+json_line="$(run_codex list --json | grep -F "\"session_name\":\"$SESSION\"")"
+[ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_state)" = "working" ]
+[ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_id)" = "turn-after-idle" ]
 
 # Codex /clear opens a successor thread inside the same provider process.
 # Discovery must rebind identity, turn state, and checkpoints to the newest
@@ -962,7 +1042,7 @@ switch_thread() {
     "$switch_id" "$switch_project_dir" "$switch_run_token" >"$switch_rollout"
   printf '{"timestamp":"2099-01-01T00:20:01Z","type":"event_msg","payload":{"type":"task_started","turn_id":"%s"}}\n' \
     "$switch_turn" >>"$switch_rollout"
-  sqlite3 "$CODEX_HOME/state_5.sqlite" \
+  test_sqlite "$CODEX_HOME/state_5.sqlite" \
     "INSERT OR REPLACE INTO threads (id, rollout_path, created_at_ms, updated_at_ms, source, thread_source, cwd) \
      VALUES ('$switch_id', '${switch_rollout//\'/\'\'}', $switch_ms, $switch_ms, 'cli', '$switch_source', '${switch_project_dir//\'/\'\'}');"
 }
@@ -977,7 +1057,7 @@ wait_for_file_text "$DETACH_CODEX_STATE_ROOT/sessions/$SESSION/checkpoint.log" \
 [ "$("$STATE_HELPER" meta get "$meta" codex_session_id)" = "$pre_switch_id" ]
 grep -F 'ambiguous Codex thread switch' \
   "$DETACH_CODEX_STATE_ROOT/sessions/$SESSION/checkpoint.log" >/dev/null
-sqlite3 "$CODEX_HOME/state_5.sqlite" "DELETE FROM threads WHERE id = '$switch_b';"
+test_sqlite "$CODEX_HOME/state_5.sqlite" "DELETE FROM threads WHERE id = '$switch_b';"
 rm -f "$CODEX_HOME/sessions/2099/01/01/rollout-test-$switch_b.jsonl"
 attempts=0
 while [ "$("$STATE_HELPER" meta get "$meta" codex_session_id)" != "$switch_a" ] && \

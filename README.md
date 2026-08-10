@@ -127,7 +127,7 @@ records, not guesses based on terminal text. Mid-turn permission prompts are
 not currently part of that signal.
 
 The optional menu bar companion shows whether the Mac can sleep, how fresh the
-background health report is, how many protected sessions are live, and which
+background health report is, how many sessions hold protection, and which
 sessions are waiting for an answer. While sessions are active, the dot in the
 menu bar glyph turns green; it turns orange when at least one session is
 waiting for your reply. Closing the main window keeps the menu bar and
@@ -170,9 +170,9 @@ run (for example with `/clear`), Detach follows the provider to that new
 conversation, so status and later checkpoints track the conversation you are
 actually in.
 
-The app window is not the runtime. A session, its power lease, and its
-checkpoint loop continue independently; the dashboard catches up when it is
-opened again.
+The app window is not the runtime. A session and its checkpoint loop continue
+independently. Its power protection follows whether the agent is working or
+waiting; the dashboard catches up when it is opened again.
 
 ## Health that distinguishes slow from broken
 
@@ -299,10 +299,16 @@ Deleting Detach state does not delete provider transcripts or conversations.
 
 ## Close the lid without abandoning the run
 
-Keep-awake protection starts automatically for each managed session. An
+Keep-awake protection starts automatically when a managed session starts. An
 unprivileged wrapper holds the normal IOKit idle-sleep assertion while a
 narrowly scoped signed helper manages closed-lid protection. The provider is
 started only after both protections are confirmed.
+
+When an agent finishes a turn and waits for your reply, that session releases
+both Detach protection layers. Its provider, tmux session, and checkpoints stay
+available. A new turn reacquires both layers. The Mac can sleep only when every
+live session is waiting. If at least one agent is working, that session keeps
+the Mac awake. Missing or invalid lifecycle state keeps protection active.
 
 The app, menu bar, CLI, and tmux status bar expose the same text-first state:
 **Mac stays awake**, **Mac can sleep**, **Low battery**, **Mac can sleep:
@@ -334,11 +340,11 @@ one warning per hot interval when session notifications are enabled.
 <details>
 <summary><strong>How the power safety boundary works</strong></summary>
 
-Each live session has a renewable root-helper lease. The runtime renews it
-every 30 seconds; a lease expires after 120 seconds without a heartbeat. The
-last live lease restores normal closed-lid sleep. An orderly stop releases the
-lease immediately, while the TTL bounds stale protection after an uncatchable
-crash or `SIGKILL`.
+Each working session has a renewable root-helper lease. The wrapper renews it
+every 30 seconds; a lease expires after 120 seconds without a heartbeat. A
+waiting session releases its lease immediately. The last working lease restores
+normal closed-lid sleep. An orderly stop also releases the lease immediately,
+while the TTL bounds stale protection after an uncatchable crash or `SIGKILL`.
 
 Ownership is persisted before power changes. If closed-lid protection was
 already active, Detach borrows it and never disables it. If Detach enabled the
@@ -538,9 +544,9 @@ before you try an update. For a download failure, check the network connection
 and try again. For an archive, signature, or installation failure, download
 the latest DMG. If the CLI does not match the app, open Detach settings, select
 System, and run Repair. A normal app update does not interrupt live sessions.
-If active sessions hold power leases, Detach keeps the current helper and the
-session dashboard. It retries the helper update after the sessions finish and
-the app becomes active again. Repairing a damaged active payload can still
+If working sessions hold power leases, Detach keeps the current helper and the
+session dashboard. It retries the helper update after the leases are released
+and the app becomes active again. Repairing a damaged active payload can still
 require you to end the sessions that use it.
 
 From a terminal:

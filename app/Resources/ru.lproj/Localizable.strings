@@ -349,9 +349,10 @@
 "Use ＋ to start Codex or Claude in any project." = "Нажмите ＋, чтобы запустить Codex или Claude в любом проекте.";
 
 /* Mac Power hero */
-"Held awake by active sessions: %d" = "Mac держат активные сессии: %d";
+"Held awake by working sessions: %d" = "Mac не спит из-за работающих сессий: %d";
 "Sleep protection is active" = "Защита от сна активна";
 "No active agent sessions" = "Нет активных сессий агентов";
+"Sessions waiting for replies: %d" = "Сессии ждут ответа: %d";
 "Active sessions without sleep protection: %d" = "Активные сессии без защиты от сна: %d";
 "Protection released until power is connected" = "Защита снята до подключения питания";
 "Confirming sleep protection…" = "Подтверждаем защиту от сна…";

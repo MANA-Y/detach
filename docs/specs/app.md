@@ -70,11 +70,10 @@ a session waits for a reply (answer-ready outranks working; the badge states
 suppress the tint so a power warning stays visible). The image stays template
 while monochrome; only the tinted states draw with real color, using
 label/system colors resolved at composite time, and VoiceOver names the
-session state in words. The first menu
-line is `state · reason · freshness`, reusing the Mac Power presentation words.
-An allowed heartbeat with visible running sessions must say they are not
-holding sleep protection, never claim there are no sessions. Both glyph and
-words derive from the shared `checked_at`-based heartbeat reader and the
+session state in words. The first menu line is `state · reason · freshness`.
+Protected state counts working sessions. Allowed state names all-waiting or an
+unprotected working session and never claims no sessions. The glyph and words
+derive from the shared `checked_at`-based heartbeat reader and the
 app-level shared session poller — never `pmset` or root XPC from UI, and
 freshness comes from the document timestamp, not file mtime. One
 `detach list --json` poller serves the window, notifications, and the menu

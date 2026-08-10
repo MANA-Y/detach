@@ -139,7 +139,7 @@ final class MenuBarPresentationTests: XCTestCase {
 
         XCTAssertEqual(
             presentation.headerText,
-            "Mac stays awake · Held awake by active sessions: 2 · checked 30 s ago")
+            "Mac stays awake · Held awake by working sessions: 2 · checked 30 s ago")
     }
 
     func testHeaderTextOmitsFreshnessWhenHeartbeatIsStale() {
@@ -181,9 +181,10 @@ final class MenuBarPresentationTests: XCTestCase {
 
     func testEveryPowerReasonHasUserFacingMenuText() {
         let cases: [(MacPowerSettingsPresentation.Reason, String)] = [
-            (.activeSessions(3), "Held awake by active sessions: 3"),
+            (.activeSessions(3), "Held awake by working sessions: 3"),
             (.protectionActive, "Sleep protection is active"),
             (.noActiveSessions, "No active agent sessions"),
+            (.waitingSessions(4), "Sessions waiting for replies: 4"),
             (.sessionsNotHolding(2), "Active sessions without sleep protection: 2"),
             (.lowBattery, "Protection released until power is connected"),
             (.confirming, "Confirming sleep protection…"),
@@ -243,6 +244,21 @@ final class MenuBarPresentationTests: XCTestCase {
                 runningSession(id: "b", waiting: true),
             ])
 
+        XCTAssertEqual(presentation.sessionDot, .answerReady)
+        XCTAssertEqual(presentation.icon, .active(sessionCount: 1))
+        XCTAssertEqual(presentation.power.reason, .activeSessions(1))
+    }
+
+    func testAllWaitingSessionsExplainWhyTheMacCanSleep() {
+        let presentation = makePresentation(
+            powerState: "allowed",
+            sessions: [
+                runningSession(id: "a", waiting: true),
+                runningSession(id: "b", waiting: true),
+            ])
+
+        XCTAssertEqual(presentation.icon, .canSleep)
+        XCTAssertEqual(presentation.power.reason, .waitingSessions(2))
         XCTAssertEqual(presentation.sessionDot, .answerReady)
     }
 
