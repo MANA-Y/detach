@@ -618,17 +618,11 @@ grep -Fx -- "$TMP_ROOT/extra-b" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 "$SCRIPT" claude stop "$human_label"
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
 
-# Recovery must also recreate the encoded project directory if it disappeared
-# together with the live transcript.
+# Universal resume must route a known Claude UUID back to Claude. It must also
+# recreate the encoded project directory and all companion artifacts from the
+# checkpoint before Claude starts.
 rm -rf "$CLAUDE_CONFIG_DIR/projects/fake"
-reset_fake_claude_ready
-"$SCRIPT" claude recover --detach "$human_label"
-wait_for_fake_claude_ready
-"$SCRIPT" claude stop "$human_label"
-
-# Cross-provider resume must route a known Claude UUID back to Claude.
 rm -f \
-  "$CLAUDE_CONFIG_DIR/projects/fake/$session_id/subagents/agent-fake.jsonl" \
   "$CLAUDE_CONFIG_DIR/file-history/$session_id/fake-file@v1" \
   "$CLAUDE_CONFIG_DIR/session-env/$session_id/environment" \
   "$CLAUDE_CONFIG_DIR/tasks/$session_id/task.json" \
@@ -665,6 +659,8 @@ reset_fake_claude_ready
 wait_for_fake_claude_ready
 "$SCRIPT" claude stop "$human_label"
 export FAKE_CLAUDE_EXPECT_RESTORED=0
+default_history_fixture="$TMP_ROOT/default-claude-history-fixture"
+cp -Rp "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" "$default_history_fixture"
 
 mkdir -p "$CLAUDE_CONFIG_DIR/projects/copy"
 cp -p "$CLAUDE_CONFIG_DIR/projects/fake/$second_id.jsonl" \
@@ -683,25 +679,6 @@ if "$SCRIPT" claude recover --detach "$human_label"; then
 fi
 grep -Fx 'outside sentinel' "$outside" >/dev/null
 
-# delete kills a retained pane and removes the session state.
-export FAKE_CLAUDE_SLEEP=1
-export FAKE_CLAUDE_EXIT=0
-reset_fake_claude_ready
-"$SCRIPT" claude --name "$human_label" --detach -- 'delete coverage'
-wait_for_fake_claude_ready
-tmux -L "$SOCKET" has-session -t "=$session"
-pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_pane_id)"
-attempts=0
-while [ "$(tmux -L "$SOCKET" display-message -p -t "$pane_id" '#{pane_dead}')" != "1" ]; do
-  attempts=$((attempts + 1))
-  [ "$attempts" -lt 100 ] || {
-    printf 'fake Claude pane did not exit within 5 seconds\n' >&2
-    exit 1
-  }
-  sleep 0.05
-done
-default_history_fixture="$TMP_ROOT/default-claude-history-fixture"
-cp -Rp "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" "$default_history_fixture"
 "$SCRIPT" claude delete --force "$human_label"
 [ ! -d "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" ]
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
@@ -732,9 +709,15 @@ first_default_token="$("$STATE_HELPER" meta get "$default_meta" run_token)"
 first_default_checkpoint_hash="$(shasum -a 256 \
   "$DETACH_CLAUDE_STATE_ROOT/sessions/$default_session/checkpoint/claude-session.tar" | awk '{print $1}')"
 
-export FAKE_CLAUDE_SLEEP=20
+# The successor exits only after an observable event. Its retained pane then
+# supplies delete coverage without a separate start/stop lifecycle.
+export FAKE_CLAUDE_EXIT_GATE="$TMP_ROOT/allow-default-claude-exit"
+export FAKE_CLAUDE_SLEEP=detach-test-live
+export FAKE_CLAUDE_EXIT=0
 reset_fake_claude_ready
 second_default_output="$("$SCRIPT" claude --detach -- 'second default history')"
+wait_for_fake_claude_ready
+: >"$FAKE_CLAUDE_EXIT_GATE"
 second_default_session="$(printf '%s\n' "$second_default_output" | \
   awk '/^Started / { print $2; exit }')"
 [ "$second_default_session" = "$default_session-r000000000001" ]
@@ -744,7 +727,18 @@ second_default_session="$(printf '%s\n' "$second_default_output" | \
 [ "$(shasum -a 256 \
   "$DETACH_CLAUDE_STATE_ROOT/sessions/$default_session/checkpoint/claude-session.tar" | awk '{print $1}')" = \
   "$first_default_checkpoint_hash" ]
-"$SCRIPT" claude stop
+second_default_pane="$(tmux -L "$SOCKET" show-options -qv \
+  -t "=$second_default_session:" @detach_pane_id)"
+attempts=0
+while [ "$(tmux -L "$SOCKET" display-message -p \
+    -t "$second_default_pane" '#{pane_dead}')" != "1" ]; do
+  attempts=$((attempts + 1))
+  [ "$attempts" -lt 100 ] || {
+    printf 'fake Claude pane did not exit within 5 seconds\n' >&2
+    exit 1
+  }
+  sleep 0.05
+done
 "$SCRIPT" claude delete --force "$default_session"
 "$SCRIPT" claude delete --force "$second_default_session"
 [ ! -e "$FAKE_GIT_MARKER" ]
