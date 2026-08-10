@@ -4033,12 +4033,19 @@ session_health_envelope() {
     --checkpoint-recoverable "$checkpoint_recoverable" \
     --agent-session-known "$agent_session_known"
   )
-  if [ "$output_mode" = session ]; then
-    "$STATE_BIN" health session "${health_args[@]}" -- "$@"
-  else
-    [ "$output_mode" = assessment ] || return 1
-    "$STATE_BIN" health evaluate "${health_args[@]}" --envelope
-  fi
+  case "$output_mode" in
+    session)
+      "$STATE_BIN" health session "${health_args[@]}" -- "$@"
+      ;;
+    request)
+      local request_args=( "${health_args[@]}" -- "$@" )
+      printf '%s\0' "${#request_args[@]}" "${request_args[@]}"
+      ;;
+    assessment)
+      "$STATE_BIN" health evaluate "${health_args[@]}" --envelope
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 refuse_runtime_without_managed_tmux() {
@@ -4108,10 +4115,29 @@ prepare_list_json_args() {
   LIST_JSON_ARGS=( "${session_args[@]}" )
 }
 
-list_sessions() {
-  local json_mode="${1:-0}"
+list_meta_snapshot_requests() {
   local dir
   local session
+
+  for dir in "$SESSIONS_ROOT"/*; do
+    [ -d "$dir" ] || continue
+    session="$(basename "$dir")"
+    printf '%s\0%s\0%s\0' \
+      "$session" "$dir/meta.json" "$dir/checkpoint/meta.json"
+  done
+  printf '\0true\0'
+}
+
+list_meta_snapshots() {
+  list_meta_snapshot_requests | "$STATE_BIN" meta snapshots /dev/stdin
+}
+
+list_session_records() {
+  local json_mode="${1:-0}"
+  local session
+  local metadata_valid
+  local snapshots_complete=0
+  local completion_marker
   local status
   local cwd
   local checkpoint
@@ -4150,10 +4176,33 @@ list_sessions() {
         'PROVIDER' 'SESSION' 'NAME' 'STATUS' 'AGENT_ID' 'CHECKPOINT' 'PROJECT'
     fi
   fi
-  for dir in "$SESSIONS_ROOT"/*; do
-    [ -d "$dir" ] || continue
-    session="$(basename "$dir")"
-    if ! load_usable_meta_snapshot "$session"; then
+  while IFS= read -r -d '' session; do
+    if [ -z "$session" ]; then
+      IFS= read -r -d '' completion_marker || \
+        die "could not decode metadata snapshot completion"
+      [ "$completion_marker" = true ] && snapshots_complete=1
+      break
+    fi
+    IFS= read -r -d '' metadata_valid && \
+      IFS= read -r -d '' META_STATUS && \
+      IFS= read -r -d '' META_DISPLAY_NAME && \
+      IFS= read -r -d '' META_PROJECT_DIR && \
+      IFS= read -r -d '' META_LAST_CHECKPOINT_AT && \
+      IFS= read -r -d '' META_AGENT_SESSION_ID && \
+      IFS= read -r -d '' META_CREATED_AT && \
+      IFS= read -r -d '' META_FINISHED_AT && \
+      IFS= read -r -d '' META_EXIT_STATUS && \
+      IFS= read -r -d '' META_WORKER_PID && \
+      IFS= read -r -d '' META_PROVIDER_PID && \
+      IFS= read -r -d '' META_WORKER_HEARTBEAT_AT && \
+      IFS= read -r -d '' META_SESSION_COLOR && \
+      IFS= read -r -d '' META_TRANSCRIPT_PATH && \
+      IFS= read -r -d '' META_RUN_TOKEN && \
+      IFS= read -r -d '' META_WORKER_HEARTBEAT_EPOCH && \
+      IFS= read -r -d '' META_LAST_CHECKPOINT_EPOCH && \
+      IFS= read -r -d '' META_HEALTH_SCHEMA || \
+        die "could not decode metadata snapshot for '$session'"
+    if [ "$metadata_valid" != true ]; then
       cwd="?"
       display_name=""
       session_color=""
@@ -4168,22 +4217,22 @@ list_sessions() {
           "$session" "" "-" "-" "${cwd:-?}" "" "null" "" \
           "" "null" "null" "" "" "$session_color" "$power_state" \
           "" "" "" ""
-        health_output="$(session_health_envelope \
+        session_health_envelope \
           "$session" false unknown "-" "" "" "" "" "" "" \
-          session "${LIST_JSON_ARGS[@]}")" || \
+          request "${LIST_JSON_ARGS[@]}" || \
           die "could not evaluate health for '$session'"
       else
         health_output="$(session_health_envelope \
           "$session" false unknown "-" "" "" "" "" "" "")" || \
           die "could not evaluate health for '$session'"
       fi
-      live="${health_output%%$'\n'*}"
-      health_payload="${health_output#*$'\n'}"
-      [ "$health_payload" != "$health_output" ] || \
-        die "could not decode health for '$session'"
       if [ "$json_mode" = "1" ]; then
-        printf '%s\n' "$health_payload"
+        continue
       else
+        live="${health_output%%$'\n'*}"
+        health_payload="${health_output#*$'\n'}"
+        [ "$health_payload" != "$health_output" ] || \
+          die "could not decode health for '$session'"
         printf '%-9s %-48s %-32s %-12s %-36s %-20s %s\n' \
           "$PROVIDER" "$session" '-' "$live" '-' '-' "${cwd:-?}"
       fi
@@ -4216,11 +4265,11 @@ list_sessions() {
         "$TRANSCRIPT_CTX_WINDOW" "$TRANSCRIPT_AGENT_TURN_STATE" \
         "$TRANSCRIPT_AGENT_TURN_ID" "$session_color" "$power_state" \
         "$worker_pid" "$provider_pid" "$worker_heartbeat_at" "$display_name"
-      health_output="$(session_health_envelope \
+      session_health_envelope \
         "$session" true "$status" "$id" "$META_RUN_TOKEN" \
         "$worker_pid" "$provider_pid" "$META_WORKER_HEARTBEAT_EPOCH" \
         "$META_LAST_CHECKPOINT_EPOCH" "$META_HEALTH_SCHEMA" \
-        session "${LIST_JSON_ARGS[@]}")" || \
+        request "${LIST_JSON_ARGS[@]}" || \
         die "could not evaluate health for '$session'"
     else
       health_output="$(session_health_envelope \
@@ -4229,17 +4278,30 @@ list_sessions() {
         "$META_LAST_CHECKPOINT_EPOCH" "$META_HEALTH_SCHEMA")" || \
         die "could not evaluate health for '$session'"
     fi
-    live="${health_output%%$'\n'*}"
-    health_payload="${health_output#*$'\n'}"
-    [ "$health_payload" != "$health_output" ] || \
-      die "could not decode health for '$session'"
     if [ "$json_mode" = "1" ]; then
-      printf '%s\n' "$health_payload"
+      continue
     else
+      live="${health_output%%$'\n'*}"
+      health_payload="${health_output#*$'\n'}"
+      [ "$health_payload" != "$health_output" ] || \
+        die "could not decode health for '$session'"
       printf '%-9s %-48s %-32s %-12s %-36s %-20s %s\n' \
         "$PROVIDER" "$session" "${display_name:--}" "$live" "$id" "$checkpoint" "$cwd"
     fi
-  done
+  done < <(list_meta_snapshots)
+  [ "$snapshots_complete" -eq 1 ] || \
+    die "metadata snapshot stream ended before completion"
+  [ "$json_mode" != "1" ] || printf '0\0'
+}
+
+list_sessions() {
+  local json_mode="${1:-0}"
+
+  if [ "$json_mode" = "1" ]; then
+    list_session_records 1 | "$STATE_BIN" health sessions /dev/stdin
+  else
+    list_session_records 0
+  fi
 }
 
 show_status() {

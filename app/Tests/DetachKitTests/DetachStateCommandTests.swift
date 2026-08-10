@@ -197,7 +197,9 @@ final class DetachStateCommandTests: XCTestCase {
             ["emit", "session", "codex", "session", "running", "--unknown", "value"],
             ["meta", "get", "only-path"],
             ["meta", "snapshot", "only-path"],
+            ["meta", "snapshots"],
             ["health", "session", "--"],
+            ["health", "sessions"],
             ["meta", "usable", "only-path"],
             ["meta", "create"],
             ["meta", "patch"],
@@ -346,6 +348,63 @@ final class DetachStateCommandTests: XCTestCase {
             "meta", "snapshot", file.path, "detach-codex-other",
         ])) { error in
             XCTAssertEqual(error as? DetachStateCommandError, .unusableMetadata)
+        }
+    }
+
+    func testMetaSnapshotsBatchesFallbacksAndRejectsIncompleteInput() throws {
+        let invalid = temporaryDirectory.appendingPathComponent("invalid-primary.json")
+        let checkpoint = temporaryDirectory.appendingPathComponent("checkpoint.json")
+        let missing = temporaryDirectory.appendingPathComponent("missing.json")
+        try Data("not-json".utf8).write(to: invalid)
+        let project = "/tmp/project\twith\ncontrols"
+        try JSONSerialization.data(withJSONObject: [
+            "schema": 1,
+            "session_name": "detach-codex-one",
+            "project_dir": project,
+            "status": "stopped",
+        ]).write(to: checkpoint)
+
+        var input = Data()
+        for value in [
+            "detach-codex-one", invalid.path, checkpoint.path,
+            "detach-codex-two", missing.path, missing.path,
+            "", "true",
+        ] {
+            input.append(Data(value.utf8))
+            input.append(0)
+        }
+        let output = try DetachStateCommand.run(
+            arguments: ["meta", "snapshots", "-"],
+            standardInput: input)
+        let values = output.split(separator: 0, omittingEmptySubsequences: false)
+            .dropLast()
+            .map { String(decoding: $0, as: UTF8.self) }
+        let recordSize = 19
+        XCTAssertEqual(values.count, recordSize * 2 + 2)
+        XCTAssertEqual(values[0], "detach-codex-one")
+        XCTAssertEqual(values[1], "true")
+        XCTAssertEqual(values[2], "stopped")
+        XCTAssertEqual(values[4], project)
+        XCTAssertEqual(values[recordSize], "detach-codex-two")
+        XCTAssertEqual(values[recordSize + 1], "false")
+        XCTAssertTrue(values[(recordSize + 2)..<(recordSize * 2)].allSatisfy(\.isEmpty))
+        XCTAssertEqual(Array(values.suffix(2)), ["", "true"])
+
+        let malformed = [
+            Data("record-without-nul".utf8),
+            Data([0xFF, 0x00]),
+            Data("\0false\0".utf8),
+            Data("session\0only-primary\0".utf8),
+            Data([0x73, 0x00, 0xFF, 0x00, 0x63, 0x00]),
+            Data("session\0primary\0checkpoint\0".utf8),
+        ]
+        for payload in malformed {
+            XCTAssertThrowsError(try DetachStateCommand.run(
+                arguments: ["meta", "snapshots", "-"],
+                standardInput: payload
+            )) { error in
+                XCTAssertEqual(error as? DetachStateCommandError, .invalidArguments)
+            }
         }
     }
 
@@ -669,6 +728,79 @@ final class DetachStateCommandTests: XCTestCase {
         XCTAssertEqual(object["health_reason"] as? String, "foreign_tmux")
         XCTAssertEqual(object["cleanup_eligible"] as? Bool, false)
         XCTAssertTrue(object["session_color"] is NSNull)
+    }
+
+    func testHealthSessionsBatchesNULSafeRequestsAndRequiresCompletion() throws {
+        let evidence = [
+            "--metadata-valid", "true",
+            "--runtime-identity-expected", "false",
+            "--meta-status", "stopped",
+            "--tmux", "missing",
+            "--run-token", "missing",
+            "--worker", "unknown",
+            "--provider-process", "unknown",
+            "--heartbeat", "missing",
+            "--checkpoint", "missing",
+            "--checkpoint-recoverable", "false",
+            "--agent-session-known", "false",
+        ]
+        let first = evidence + [
+            "--", "codex", "detach-codex-one",
+            "--project-dir", "/tmp/project\twith\ncontrols",
+        ]
+        let second = evidence + [
+            "--", "codex", "detach-codex-two",
+            "--project-dir", "/tmp/two",
+        ]
+        var input = Data()
+        for record in [first, second] {
+            input.append(Data("\(record.count)".utf8))
+            input.append(0)
+            for value in record {
+                input.append(Data(value.utf8))
+                input.append(0)
+            }
+        }
+        let incomplete = input
+        input.append(Data("0".utf8))
+        input.append(0)
+
+        let output = try DetachStateCommand.run(
+            arguments: ["health", "sessions", "-"],
+            standardInput: input)
+        let objects = try output.split(separator: 0x0A).map {
+            try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data($0)) as? [String: Any])
+        }
+        XCTAssertEqual(
+            objects.compactMap { $0["session_name"] as? String },
+            ["detach-codex-one", "detach-codex-two"])
+        XCTAssertEqual(
+            objects.first?["project_dir"] as? String,
+            "/tmp/project\twith\ncontrols")
+
+        XCTAssertThrowsError(try DetachStateCommand.run(
+            arguments: ["health", "sessions", "-"],
+            standardInput: incomplete
+        )) { error in
+            XCTAssertEqual(error as? DetachStateCommandError, .invalidArguments)
+        }
+
+        let malformed = [
+            Data("1".utf8),
+            Data("not-a-count\0".utf8),
+            Data("0\0trailing\0".utf8),
+            Data("2\0only-one\0".utf8),
+            Data([0x31, 0x00, 0xFF, 0x00]),
+        ]
+        for payload in malformed {
+            XCTAssertThrowsError(try DetachStateCommand.run(
+                arguments: ["health", "sessions", "-"],
+                standardInput: payload
+            )) { error in
+                XCTAssertEqual(error as? DetachStateCommandError, .invalidArguments)
+            }
+        }
     }
 
     func testMaintenanceReconcileDispatchesAndRejectsInvalidInventory() throws {

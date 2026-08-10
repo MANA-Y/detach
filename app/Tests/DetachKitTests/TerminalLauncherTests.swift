@@ -56,7 +56,7 @@ final class TerminalLauncherTests: XCTestCase {
     }
 
     @MainActor
-    func testLaunchUsesPrivateOuterZshStartupDirectory() throws {
+    func testLaunchReusesRunningAppAndPreparesNewAppStartupGuard() throws {
         let url = try TerminalLauncher.writeCommandFile(
             command: "exec /usr/bin/true",
             temporaryDirectory: temporaryDirectory,
@@ -65,7 +65,7 @@ final class TerminalLauncherTests: XCTestCase {
             commandURL: url,
             processEnvironment: ["ZDOTDIR": "/Users/test/custom-zdotdir"])
 
-        XCTAssertTrue(configuration.createsNewApplicationInstance)
+        XCTAssertFalse(configuration.createsNewApplicationInstance)
         XCTAssertEqual(
             configuration.environment["ZDOTDIR"],
             url.deletingLastPathComponent().path)

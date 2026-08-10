@@ -190,8 +190,8 @@ state, opaque turn ID, PIDs, health, reconcile, freshness, ownership,
 and cleanup fields. Keep the emitter and Swift `Session` decoder synchronized.
 Provider lifecycle records, never terminal text, supply turn state
 and the private run-token activity file defined in `power.md`.
-Cleanup uses typed `cleanup_eligible`. List decodes metadata once for health
-assessment and public JSON.
+Typed cleanup uses `cleanup_eligible`. List batches metadata, health, and JSON
+in two helpers.
 
 ### Provider identity and checkpoints
 

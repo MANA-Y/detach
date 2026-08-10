@@ -94,10 +94,10 @@ detach claude --detach -- "run the test suite and fix failures"
 The app and CLI operate on the same sessions. Start in one and continue in the
 other.
 
-When the terminal uses zsh, Detach uses a private startup guard until the
-temporary command starts. A startup prompt, such as an oh-my-zsh update, cannot
-consume the command path. Detach then restores the user's shell startup files
-for the session and for new windows in the same terminal process.
+Detach reuses the selected terminal application. When it must start that app,
+it uses a private startup guard until the temporary command starts. A startup
+prompt, such as an oh-my-zsh update, cannot consume the command path. Detach
+then restores the user's shell startup files for that process.
 
 ## One command center for Codex and Claude Code
 

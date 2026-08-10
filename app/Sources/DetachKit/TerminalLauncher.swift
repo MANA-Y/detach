@@ -115,12 +115,9 @@ public enum TerminalLauncher {
         configuration.activates = true
         configuration.addsToRecentItems = false
 
-        // Terminal runs a .command document by typing its path into a new
-        // interactive shell. A startup hook that reads one key, such as the
-        // oh-my-zsh update prompt, can otherwise consume the leading slash.
-        // A fresh application instance is required because NSWorkspace only
-        // applies launch environment variables to a new process.
-        configuration.createsNewApplicationInstance = true
+        // Launch Services reuses an existing app instance when one is present.
+        // It applies this startup environment only when it must launch the app.
+        configuration.createsNewApplicationInstance = false
         var environment = [
             "ZDOTDIR": commandURL.deletingLastPathComponent().path
         ]

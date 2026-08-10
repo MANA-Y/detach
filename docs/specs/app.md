@@ -153,12 +153,12 @@ user-specific path. Native power protection requires no Apple Events or
 Automation entitlement.
 
 Distribution bootstrap runs only from `/Applications`, never a DMG or App
-Translocation path. Terminal actions use `NSWorkspace`, not Apple Events, to
-open a private self-deleting `.command` file in a new terminal process. A
-private `.zshenv` guard is outer `ZDOTDIR`. It blocks startup prompts until
-payload removal. It then restores the original `ZDOTDIR` for the session and
-later shells. No shell may inherit an unusable temporary startup directory.
-Open, Resume, and Recover use the selected terminal, with Terminal as fallback.
+Translocation path. Terminal actions use `NSWorkspace`, not Apple Events. They
+open a private self-deleting `.command` file and reuse a running terminal app.
+If none runs, the launch environment sets a private `.zshenv` as outer
+`ZDOTDIR`. It blocks startup prompts until payload removal, then restores the
+original `ZDOTDIR` for that process. Open, Resume, and Recover use the selected
+terminal, with Terminal as fallback.
 The new-session sheet accepts an optional UTF-8 name up to 100 bytes. It rejects
 control characters, explains invalid input, blocks launch, and passes one
 shell-quoted `--name` argument. The app uses `display_name` as the title, with
