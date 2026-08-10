@@ -38,6 +38,11 @@ change real power state, upload assets, or claim publication.
   power, helper, watchdog, lease, assertion, or lid-probe impact. An unknown
   product path selects both manual gates. Test-only, documentation-only, and
   known unrelated product paths do not select them.
+- The path classifier is the fail-safe default. An explicit private semantic
+  review can omit a false-positive manual gate only when it is permission-safe,
+  ignored by Git, bound to the exact base and head commits, and gives a reason
+  for each decision. It cannot narrow unknown-path impact or omit automated
+  tests, signing, notarization, the signed power smoke, or artifact checks.
 - A selected closed-lid probe must emit its first liveness sample within a
   bounded ten-second launch window before owner confirmation is accepted.
   Automated release tests cover failed install and update paths. A selected
