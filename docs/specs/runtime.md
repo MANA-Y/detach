@@ -132,7 +132,9 @@ through:
 
 ```text
 detach-power run --session <name> --run-token <token>
-  --ready-file <absolute-path> --pid-file <absolute-path> -- <provider> ...
+  --ready-file <absolute-path> --pid-file <absolute-path>
+  --activity-file <absolute-path> --activity-source-file <absolute-path>
+  -- <provider> ...
 ```
 
 The power wrapper must confirm both protection layers and atomically mark the
@@ -183,13 +185,13 @@ the original copy tables immediately.
 `M-Enter`; off restores the original binding or plain Enter. It adds
 `*:extkeys` and `*:hyperlinks` once; OSC 8 links stay independent.
 
-`list --json` emits JSONL schema 1 and includes the optional `display_name`,
-`power_protection_state`, `agent_turn_state`, opaque `agent_turn_id`, runtime
-PIDs, health reason/actions, reconcile action, freshness, ownership proof, and
-cleanup eligibility. Keep the emitter and Swift `Session` decoder synchronized.
-Derive turn state from structured provider lifecycle records, never terminal
-text. Cleanup uses typed `cleanup_eligible`. List decodes metadata once and
-combines health assessment with public JSON emission in one typed call.
+`list --json` emits JSONL schema 1 with optional `display_name`, power and turn
+state, opaque turn ID, PIDs, health, reconcile, freshness, ownership,
+and cleanup fields. Keep the emitter and Swift `Session` decoder synchronized.
+Provider lifecycle records, never terminal text, supply turn state
+and the private run-token activity file defined in `power.md`.
+Cleanup uses typed `cleanup_eligible`. List decodes metadata once for health
+assessment and public JSON.
 
 ### Provider identity and checkpoints
 

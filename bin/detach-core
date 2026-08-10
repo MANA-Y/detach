@@ -30,6 +30,7 @@ DEFAULT_CHECKPOINT_INTERVAL=300
 DEFAULT_HISTORY_LIMIT=50000
 DEFAULT_HEALTH_HEARTBEAT_INTERVAL=10
 DEFAULT_HEALTH_HEARTBEAT_STALE=45
+DEFAULT_IDLE_HEALTH_HEARTBEAT_INTERVAL=30
 
 error() {
   printf '%s: %s\n' "$PROGRAM" "$*" >&2
@@ -112,6 +113,7 @@ else
 fi
 HEALTH_HEARTBEAT_INTERVAL="${DETACH_HEALTH_HEARTBEAT_INTERVAL:-$DEFAULT_HEALTH_HEARTBEAT_INTERVAL}"
 HEALTH_HEARTBEAT_STALE="${DETACH_HEALTH_HEARTBEAT_STALE:-$DEFAULT_HEALTH_HEARTBEAT_STALE}"
+IDLE_HEALTH_HEARTBEAT_INTERVAL="${DETACH_IDLE_HEALTH_HEARTBEAT_INTERVAL:-$DEFAULT_IDLE_HEALTH_HEARTBEAT_INTERVAL}"
 TMUX_STYLE_ENABLED="${DETACH_TMUX_STYLE:-${CONFIG_TMUX_STYLE:-1}}"
 case "$TMUX_STYLE_ENABLED" in
   0|1) ;;
@@ -220,6 +222,13 @@ validate_runtime_config() {
   esac
   [ "$HEALTH_HEARTBEAT_STALE" -gt "$HEALTH_HEARTBEAT_INTERVAL" ] || \
     die "health heartbeat stale threshold must exceed its interval"
+  case "$IDLE_HEALTH_HEARTBEAT_INTERVAL" in
+    ''|*[!0-9]*) die "idle health heartbeat interval must be a positive integer" ;;
+  esac
+  [ "$IDLE_HEALTH_HEARTBEAT_INTERVAL" -ge "$HEALTH_HEARTBEAT_INTERVAL" ] || \
+    die "idle health heartbeat interval must not be shorter than the active interval"
+  [ "$HEALTH_HEARTBEAT_STALE" -gt "$IDLE_HEALTH_HEARTBEAT_INTERVAL" ] || \
+    die "health heartbeat stale threshold must exceed the idle interval"
 }
 
 managed_requirements_toml() {
@@ -3037,12 +3046,116 @@ power_refresh_session_status() {
   tmux_apply_session_style "$session" "$status"
 }
 
+write_power_activity_state() {
+  local activity_file="$1"
+  local state="$2"
+  local force="${3:-0}"
+  local current=""
+
+  case "$state" in working|waiting) ;; *) return 1 ;; esac
+  if [ -e "$activity_file" ]; then
+    [ -f "$activity_file" ] && [ ! -L "$activity_file" ] || return 1
+    IFS= read -r current <"$activity_file" || current=""
+    [ "$current" != "$state" ] || [ "$force" = "1" ] || return 0
+  fi
+  printf '%s\n' "$state" >"$activity_file"
+}
+
+write_power_activity_source() {
+  local source_file="$1"
+  local transcript="$2"
+  local signature="$3"
+
+  [ -f "$transcript" ] && [ ! -L "$transcript" ] || return 1
+  if [ -e "$source_file" ]; then
+    [ -f "$source_file" ] && [ ! -L "$source_file" ] || return 1
+  fi
+  printf '%s\n%s' "$signature" "$transcript" >"$source_file"
+}
+
+POWER_ACTIVITY_TRANSCRIPT=""
+POWER_ACTIVITY_TRANSCRIPT_SIGNATURE=""
+POWER_ACTIVITY_WAITING_SOURCE_TRANSCRIPT=""
+POWER_ACTIVITY_WAITING_SOURCE_SIGNATURE=""
+POWER_ACTIVITY_STATE="working"
+
+refresh_power_activity_state() {
+  local session="$1"
+  local activity_file="$2"
+  local source_file="$3"
+  local transcript=""
+  local transcript_signature=""
+  local verified_signature=""
+  local source_changed=0
+  local state="working"
+
+  transcript="$(read_meta_field "$session" transcript_path rollout_path 2>/dev/null || true)"
+  if [ -z "$transcript" ] || [ ! -f "$transcript" ] || [ -L "$transcript" ]; then
+    POWER_ACTIVITY_TRANSCRIPT=""
+    POWER_ACTIVITY_TRANSCRIPT_SIGNATURE=""
+    POWER_ACTIVITY_STATE="working"
+    write_power_activity_state "$activity_file" working
+    return
+  fi
+
+  transcript_signature="$(stat -f '%i:%m:%z' "$transcript" 2>/dev/null || true)"
+  if [ -z "$transcript_signature" ]; then
+    POWER_ACTIVITY_TRANSCRIPT=""
+    POWER_ACTIVITY_TRANSCRIPT_SIGNATURE=""
+    POWER_ACTIVITY_STATE="working"
+    write_power_activity_state "$activity_file" working
+    return
+  fi
+
+  if [ "$transcript" != "$POWER_ACTIVITY_TRANSCRIPT" ]; then
+    POWER_ACTIVITY_TRANSCRIPT="$transcript"
+    POWER_ACTIVITY_TRANSCRIPT_SIGNATURE="$transcript_signature"
+    if [ ! "$transcript" -nt "$activity_file" ]; then
+      POWER_ACTIVITY_STATE="working"
+      write_power_activity_state "$activity_file" working
+      return
+    fi
+  elif [ "$transcript_signature" = "$POWER_ACTIVITY_TRANSCRIPT_SIGNATURE" ]; then
+    return
+  else
+    POWER_ACTIVITY_TRANSCRIPT_SIGNATURE="$transcript_signature"
+  fi
+
+  transcript_model_context "$transcript"
+  verified_signature="$(stat -f '%i:%m:%z' "$transcript" 2>/dev/null || true)"
+  if [ -z "$verified_signature" ] || \
+     [ "$verified_signature" != "$transcript_signature" ]; then
+    POWER_ACTIVITY_TRANSCRIPT_SIGNATURE=""
+    POWER_ACTIVITY_STATE="working"
+    write_power_activity_state "$activity_file" working
+    return
+  fi
+  [ "$TRANSCRIPT_AGENT_TURN_STATE" != "waiting" ] || state="waiting"
+  if [ "$state" = "waiting" ]; then
+    if [ "$transcript" != "$POWER_ACTIVITY_WAITING_SOURCE_TRANSCRIPT" ] || \
+       [ "$verified_signature" != "$POWER_ACTIVITY_WAITING_SOURCE_SIGNATURE" ]; then
+      source_changed=1
+    fi
+    write_power_activity_source \
+      "$source_file" "$transcript" "$verified_signature" || state="working"
+    if [ "$state" = "waiting" ]; then
+      POWER_ACTIVITY_WAITING_SOURCE_TRANSCRIPT="$transcript"
+      POWER_ACTIVITY_WAITING_SOURCE_SIGNATURE="$verified_signature"
+    fi
+  fi
+  POWER_ACTIVITY_STATE="$state"
+  write_power_activity_state "$activity_file" "$state" "$source_changed"
+}
+
 runtime_status_loop() {
   local session="$1"
   local run_token="$2"
   local worker_pid="$3"
   local provider_pid_file="$4"
+  local activity_file="$5"
+  local activity_source_file="$6"
   local sleep_pid=""
+  local sleep_interval
 
   runtime_status_loop_cleanup() {
     if [ -n "$sleep_pid" ]; then
@@ -3056,8 +3169,14 @@ runtime_status_loop() {
         [ "$(tmux_option "$session" '@detach_run_token')" = "$run_token" ]; do
     runtime_heartbeat_once \
       "$session" "$run_token" "$worker_pid" "$provider_pid_file"
+    refresh_power_activity_state \
+      "$session" "$activity_file" "$activity_source_file" 2>/dev/null || \
+      write_power_activity_state "$activity_file" working 2>/dev/null || true
     power_refresh_session_status "$session" 2>/dev/null || true
-    sleep "$HEALTH_HEARTBEAT_INTERVAL" &
+    sleep_interval="$HEALTH_HEARTBEAT_INTERVAL"
+    [ "$POWER_ACTIVITY_STATE" != "waiting" ] || \
+      sleep_interval="$IDLE_HEALTH_HEARTBEAT_INTERVAL"
+    sleep "$sleep_interval" &
     sleep_pid=$!
     wait "$sleep_pid" || exit 0
     sleep_pid=""
@@ -3088,9 +3207,13 @@ worker_main() {
   local has_claude_permission=0
   local power_ready_file
   local provider_pid_file
+  local power_activity_file
+  local power_activity_source_file
 
   power_ready_file="$(session_dir "$session")/power-ready-$run_token"
   provider_pid_file="$(session_dir "$session")/provider-pid-$run_token"
+  power_activity_file="$(session_dir "$session")/power-activity-$run_token"
+  power_activity_source_file="$(session_dir "$session")/power-activity-source-$run_token"
 
   worker_cleanup() {
     local cleanup_status=$?
@@ -3107,7 +3230,8 @@ worker_main() {
       wait "$power_monitor_pid" 2>/dev/null || true
     fi
     checkpoint_once "$session" "$run_token" || true
-    rm -f "$provider_pid_file"
+    rm -f "$provider_pid_file" "$power_activity_file" \
+      "$power_activity_source_file"
 
     if [ "$exit_status" -eq 0 ]; then
       status_label="completed"
@@ -3211,17 +3335,25 @@ worker_main() {
 
   "$SELF" __checkpoint_loop "$session" "$run_token" "$$" &
   checkpoint_pid=$!
-  runtime_status_loop "$session" "$run_token" "$$" "$provider_pid_file" &
+  write_power_activity_state "$power_activity_file" working || \
+    die "could not initialize provider activity state"
+  runtime_status_loop \
+    "$session" "$run_token" "$$" "$provider_pid_file" "$power_activity_file" \
+    "$power_activity_source_file" &
   power_monitor_pid=$!
 
   set +e
   if [ "$PROVIDER" = "claude" ]; then
     "$POWER_BIN" run --session "$session" --run-token "$run_token" \
-      --ready-file "$power_ready_file" --pid-file "$provider_pid_file" -- \
+      --ready-file "$power_ready_file" --pid-file "$provider_pid_file" \
+      --activity-file "$power_activity_file" \
+      --activity-source-file "$power_activity_source_file" -- \
       "$agent_bin" "${claude_args[@]}"
   else
     "$POWER_BIN" run --session "$session" --run-token "$run_token" \
-      --ready-file "$power_ready_file" --pid-file "$provider_pid_file" -- \
+      --ready-file "$power_ready_file" --pid-file "$provider_pid_file" \
+      --activity-file "$power_activity_file" \
+      --activity-source-file "$power_activity_source_file" -- \
       "$agent_bin" "${codex_args[@]}"
   fi
   exit_status=$?
@@ -3251,6 +3383,7 @@ tmux_environment_args() {
               DETACH_CLAUDE_STATE_ROOT DETACH_CLAUDE_CHECKPOINT_INTERVAL \
               DETACH_CLAUDE_HISTORY_LIMIT DETACH_CLAUDE_SYNC DETACH_CLAUDE_BIN \
               DETACH_HEALTH_HEARTBEAT_INTERVAL DETACH_HEALTH_HEARTBEAT_STALE \
+              DETACH_IDLE_HEALTH_HEARTBEAT_INTERVAL \
               CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN; do
     value="${!name-}"
     [ -n "$value" ] || continue
@@ -3279,6 +3412,8 @@ start_tmux_session() {
   local default_base
   local power_ready_file
   local provider_pid_file
+  local power_activity_file
+  local power_activity_source_file
   local worker_pid
   local provider_pid
   local readiness_attempts=0
@@ -3287,6 +3422,8 @@ start_tmux_session() {
   run_token="$(new_run_token)"
   power_ready_file="$(session_dir "$session")/power-ready-$run_token"
   provider_pid_file="$(session_dir "$session")/provider-pid-$run_token"
+  power_activity_file="$(session_dir "$session")/power-activity-$run_token"
+  power_activity_source_file="$(session_dir "$session")/power-activity-source-$run_token"
   if [ "$PROVIDER" = "claude" ] && [ -z "$recovery_id" ]; then
     recovery_id="$(new_run_token)"
   fi
@@ -3307,7 +3444,8 @@ start_tmux_session() {
       [ "$created" -eq 0 ] || "${TMUX_CMD[@]}" kill-session -t "=$session" 2>/dev/null || true
       "$POWER_BIN" release --session "$session" --run-token "$run_token" \
         >/dev/null 2>&1 || true
-      rm -f "$power_ready_file" "$provider_pid_file" "$legacy_env_file"
+      rm -f "$power_ready_file" "$provider_pid_file" "$power_activity_file" \
+        "$power_activity_source_file" "$legacy_env_file"
       state_update_meta_for_run "$session" "$run_token" \
         --string status start_failed --string finished_at "$(now_iso)" || true
     fi
@@ -3330,7 +3468,8 @@ start_tmux_session() {
     die "could not initialize session metadata"
   snapshot_known_threads "$session" "$cwd" || die "could not snapshot existing $PROVIDER_LABEL sessions"
   write_resume_args "$session" "$@" || die "could not save $PROVIDER_LABEL resume options"
-  rm -f "$power_ready_file" "$provider_pid_file"
+  rm -f "$power_ready_file" "$provider_pid_file" "$power_activity_file" \
+    "$power_activity_source_file"
   session_color="$(read_meta_field "$session" session_color)"
   default_base="$(read_meta_field "$session" default_session_base 2>/dev/null || true)"
   [[ "$session_color" =~ ^#[0-9A-Fa-f]{6}$ ]] || \

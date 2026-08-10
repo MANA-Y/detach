@@ -56,12 +56,14 @@ struct MenuBarPresentation: Equatable {
     ) {
         let state = heartbeat.effectivePowerState
         let running = allSessions.filter { $0.effectiveStatus == .running }
+        let working = running.filter { !$0.isWaitingForUser }
         power = MacPowerSettingsPresentation(
             state: state,
             helperStatus: helperStatus,
             watchdogStatus: watchdogStatus,
             distributionMatchesBundle: distributionMatchesBundle,
-            activeSessionCount: running.count)
+            activeSessionCount: running.count,
+            workingSessionCount: working.count)
         ageSeconds = heartbeat.healthy
             ? heartbeat.age(relativeTo: now).map { max(0, Int($0)) }
             : nil
@@ -84,7 +86,7 @@ struct MenuBarPresentation: Equatable {
             switch state {
             case .protected, .transitioning:
                 icon = .active(
-                    sessionCount: showsSessionCount ? running.count : nil)
+                    sessionCount: showsSessionCount ? working.count : nil)
             case .allowed:
                 icon = .canSleep
             case .lowBattery:
@@ -147,11 +149,13 @@ extension MacPowerSettingsPresentation.Reason {
     var localizedText: String {
         switch self {
         case let .activeSessions(count):
-            L10n.format("Held awake by active sessions: %d", count)
+            L10n.format("Held awake by working sessions: %d", count)
         case .protectionActive:
             L10n.string("Sleep protection is active")
         case .noActiveSessions:
             L10n.string("No active agent sessions")
+        case let .waitingSessions(count):
+            L10n.format("Sessions waiting for replies: %d", count)
         case let .sessionsNotHolding(count):
             L10n.format("Active sessions without sleep protection: %d", count)
         case .lowBattery:

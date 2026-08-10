@@ -89,6 +89,12 @@ final class MacPowerSettingsPresentationTests: XCTestCase {
         XCTAssertEqual(
             presentation(state: .allowed, activeSessionCount: 0).reason,
             .noActiveSessions)
+        XCTAssertEqual(
+            presentation(
+                state: .allowed,
+                activeSessionCount: 2,
+                workingSessionCount: 0).reason,
+            .waitingSessions(2))
     }
 
     func testReasonsForRemainingStates() {
@@ -109,13 +115,15 @@ final class MacPowerSettingsPresentationTests: XCTestCase {
         helper: PowerHelperRegistrationStatus = .enabled,
         watchdog: WatchdogStatus = .enabled,
         distributionMatchesBundle: Bool = true,
-        activeSessionCount: Int? = nil
+        activeSessionCount: Int? = nil,
+        workingSessionCount: Int? = nil
     ) -> MacPowerSettingsPresentation {
         MacPowerSettingsPresentation(
             state: state,
             helperStatus: helper,
             watchdogStatus: watchdog,
             distributionMatchesBundle: distributionMatchesBundle,
-            activeSessionCount: activeSessionCount)
+            activeSessionCount: activeSessionCount,
+            workingSessionCount: workingSessionCount)
     }
 }

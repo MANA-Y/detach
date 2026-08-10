@@ -232,6 +232,28 @@ final class DetachPowerCommandTests: XCTestCase {
         }
     }
 
+    private final class FakeActivityWatcher:
+        PowerRunActivityWatching, @unchecked Sendable
+    {
+        var states: [PowerRunActivityState]
+
+        init(states: [PowerRunActivityState] = []) {
+            self.states = states
+        }
+
+        func run(
+            activityFile: String?,
+            activitySourceFile: String?,
+            onStateChange: @escaping @Sendable (PowerRunActivityState) -> Void,
+            operation: @escaping @Sendable () throws -> ChildCommandResult
+        ) throws -> ChildCommandResult {
+            for state in states {
+                onStateChange(state)
+            }
+            return try operation()
+        }
+    }
+
     private final class FakeThermalWatcher:
         PowerThermalStateWatching, @unchecked Sendable
     {
@@ -273,7 +295,8 @@ final class DetachPowerCommandTests: XCTestCase {
     private func fixture(
         thermalWatcher: any PowerThermalStateWatching = FakeThermalWatcher(),
         thermalNow: @escaping @Sendable () -> Date = { Date() },
-        thermalCooldown: TimeInterval = PowerThermalSafetyLatch.defaultCooldown
+        thermalCooldown: TimeInterval = PowerThermalSafetyLatch.defaultCooldown,
+        activityWatcher: any PowerRunActivityWatching = FakeActivityWatcher()
     ) -> (
         DetachPowerCommand,
         EventLog,
@@ -293,6 +316,7 @@ final class DetachPowerCommandTests: XCTestCase {
                 assertionController: assertion,
                 childRunner: child,
                 heartbeatRunner: heartbeat,
+                activityWatcher: activityWatcher,
                 thermalWatcher: thermalWatcher,
                 thermalNow: thermalNow,
                 thermalCooldown: thermalCooldown),
@@ -399,6 +423,65 @@ final class DetachPowerCommandTests: XCTestCase {
             "helper.release",
             "assertion.release",
         ])
+    }
+
+    func testWaitingActivityReleasesBothProtectionsBeforeChildRuns() throws {
+        let watcher = FakeActivityWatcher(states: [.waiting])
+        let (command, events, assertion, helper, child, heartbeat) = fixture(
+            activityWatcher: watcher)
+        heartbeat.heartbeatCount = 0
+        child.onRun = {
+            XCTAssertFalse(assertion.isActive)
+            XCTAssertEqual(helper.released.count, 1)
+        }
+
+        let result = try command.execute(arguments: [
+            "run", "--session", "session", "--run-token", "token",
+            "--activity-file", "/fixture/activity",
+            "--activity-source-file", "/fixture/activity-source", "--",
+            "/fixture/provider",
+        ])
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertEqual(helper.renewed.map(\.1), [false])
+        XCTAssertEqual(helper.released.count, 2)
+        XCTAssertFalse(assertion.isActive)
+        XCTAssertEqual(events.values, [
+            "assertion.acquire",
+            "helper.acquire",
+            "helper.renew",
+            "assertion.release",
+            "helper.release",
+            "heartbeat.start",
+            "child.run",
+            "heartbeat.end",
+            "helper.release",
+            "assertion.release",
+        ])
+    }
+
+    func testWorkingActivityReacquiresAfterWaitingBeforeChildRuns() throws {
+        let watcher = FakeActivityWatcher(states: [.waiting, .working])
+        let (command, _, assertion, helper, child, heartbeat) = fixture(
+            activityWatcher: watcher)
+        heartbeat.heartbeatCount = 0
+        child.onRun = {
+            XCTAssertTrue(assertion.isActive)
+            XCTAssertEqual(helper.acquired.count, 2)
+            XCTAssertEqual(helper.released.count, 1)
+        }
+
+        _ = try command.execute(arguments: [
+            "run", "--session", "session", "--run-token", "token",
+            "--activity-file", "/fixture/activity",
+            "--activity-source-file", "/fixture/activity-source", "--",
+            "/fixture/provider",
+        ])
+
+        XCTAssertEqual(helper.acquired.map(\.1), [true, true])
+        XCTAssertEqual(helper.renewed.map(\.1), [false])
+        XCTAssertEqual(helper.released.count, 2)
+        XCTAssertFalse(assertion.isActive)
     }
 
     func testAssertionFailureRefusesToAcquireLeaseOrLaunchChild() {
@@ -932,6 +1015,14 @@ final class DetachPowerCommandTests: XCTestCase {
              "--pid-file requires one absolute path"),
             (["run", "--pid-file", "/a", "--pid-file", "/b"],
              "--pid-file requires one absolute path"),
+            (["run", "--activity-file", "relative"],
+             "--activity-file requires one absolute path"),
+            (["run", "--activity-file", "/a", "--activity-file", "/b"],
+             "--activity-file requires one absolute path"),
+            (["run", "--activity-source-file", "relative"],
+             "--activity-source-file requires one absolute path"),
+            (["run", "--activity-source-file", "/a", "--activity-source-file", "/b"],
+             "--activity-source-file requires one absolute path"),
             (["run", "--mystery"], "unknown run option: --mystery"),
             (["run", "--session", "s", "--run-token", "t"],
              "run requires -- COMMAND [ARGS...]"),

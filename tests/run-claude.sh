@@ -159,6 +159,9 @@ export DETACH_TMUX_CONFIG="$TMP_ROOT/tmux.conf"
 export DETACH_CLAUDE_BIN="$ROOT/tests/fake-claude"
 export DETACH_CODEX_BIN="$ROOT/tests/fake-codex"
 export DETACH_CLAUDE_CHECKPOINT_INTERVAL=1
+export DETACH_HEALTH_HEARTBEAT_INTERVAL=1
+export DETACH_IDLE_HEALTH_HEARTBEAT_INTERVAL=2
+export DETACH_HEALTH_HEARTBEAT_STALE=4
 export DETACH_CLAUDE_SYNC=0
 export DETACH_LOCKS_ROOT="$TMP_ROOT/locks"
 export DETACH_INSTALL_STATE_ROOT="$TEST_INSTALL_STATE_ROOT"
@@ -197,6 +200,19 @@ wait_for_fake_claude_ready() {
     }
     sleep 0.05
   done
+}
+
+wait_for_file_text() {
+  local file="$1" text="$2" attempts=0
+  while [ "$attempts" -lt 100 ]; do
+    if [ -f "$file" ] && grep -Fx -- "$text" "$file" >/dev/null 2>&1; then
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.1
+  done
+  printf 'timed out waiting for %s in %s\n' "$text" "$file" >&2
+  return 1
 }
 
 bash -n "$SCRIPT"
@@ -406,6 +422,13 @@ printf '%s' "$json_line" | grep -F '"model":' | grep -F '"context_used_tokens":'
 assert_json_field agent_turn_state working
 assert_json_field agent_turn_id "$session_id"
 transcript="$("$STATE_HELPER" meta get "$meta" transcript_path)"
+power_activity="$DETACH_CLAUDE_STATE_ROOT/sessions/$session/power-activity-$("$STATE_HELPER" meta get "$meta" run_token)"
+power_activity_source="$DETACH_CLAUDE_STATE_ROOT/sessions/$session/power-activity-source-$("$STATE_HELPER" meta get "$meta" run_token)"
+wait_for_file_text "$power_activity" working
+grep -Fx -- '--activity-file' "$FAKE_POWER_ARGS_FILE" >/dev/null
+grep -Fx -- "$power_activity" "$FAKE_POWER_ARGS_FILE" >/dev/null
+grep -Fx -- '--activity-source-file' "$FAKE_POWER_ARGS_FILE" >/dev/null
+grep -Fx -- "$power_activity_source" "$FAKE_POWER_ARGS_FILE" >/dev/null
 printf '{"type":"user","isSidechain":false,"isMeta":false,"sessionId":"%s","message":{"role":"user","content":[{"type":"tool_result"}]},"uuid":"tool-result-event","timestamp":"2099-01-01T00:02:00.000Z"}\n' \
   "$session_id" >>"$transcript"
 printf '{"type":"assistant","isSidechain":false,"sessionId":"%s","message":{"role":"assistant","stop_reason":"end_turn","id":"message-1"},"uuid":"assistant-chunk-1","timestamp":"2099-01-01T00:03:00.000Z"}\n' \
@@ -423,6 +446,14 @@ json_line="$("$SCRIPT" list --json | grep -F "\"session_name\":\"$session\"")"
 [ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin effective_status)" = "running" ]
 [ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_state)" = "waiting" ]
 [ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_id)" = "turn-duration-1" ]
+wait_for_file_text "$power_activity" waiting
+[ -s "$power_activity_source" ]
+printf '{"type":"user","isSidechain":false,"isMeta":false,"sessionId":"%s","message":{"role":"user","content":"continue"},"uuid":"turn-after-idle","timestamp":"2099-01-01T00:03:03.000Z"}\n' \
+  "$session_id" >>"$transcript"
+wait_for_file_text "$power_activity" working
+json_line="$("$SCRIPT" list --json | grep -F "\"session_name\":\"$session\"")"
+[ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_state)" = "working" ]
+[ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_id)" = "turn-after-idle" ]
 [ -s "$CLAUDE_CONFIG_DIR/projects/fake/$session_id.jsonl" ]
 [ -d "$CLAUDE_CONFIG_DIR/projects/fake/$session_id/subagents" ]
 [ -d "$CLAUDE_CONFIG_DIR/projects/fake/$session_id/tool-results" ]
