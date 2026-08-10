@@ -762,6 +762,9 @@ run_bash_profile_case() {
   done
 }
 
+shell_case_pids=()
+
+(
 run_bash_profile_case bash-profile .bash_profile
 run_bash_profile_case bash-login .bash_login
 run_bash_profile_case bash-profile-fallback .profile
@@ -779,7 +782,10 @@ assert_single_path_marker "$SHELL_CASE_HOME/.profile"
   "$SHELL_CASE_HOME/.local/bin/detach" ]
 shell_case_uninstall >/dev/null
 cmp -s "$TMP_ROOT/sh-profile.original" "$SHELL_CASE_HOME/.profile"
+) &
+shell_case_pids+=("$!")
 
+(
 # A hash failure while staging the first managed profile must be atomic: no
 # profile marker, ownership state, or public CLI may become visible. A normal
 # retry must still install and uninstall back to the exact original bytes.
@@ -862,7 +868,10 @@ printf '%s\n' \
   'export USER_EDIT_BEFORE_POST_SHA_REPAIR=1' >"$TMP_ROOT/missing-post-sha.expected"
 cmp -s "$TMP_ROOT/missing-post-sha.expected" "$SHELL_CASE_HOME/.profile"
 [ ! -e "$SHELL_CASE_HOME/.local/state/detach/shell-path" ]
+) &
+shell_case_pids+=("$!")
 
+(
 # A managed-line format migration must revoke exact-backup restoration when the
 # profile changed after the old post-install hash was recorded. Otherwise a
 # later uninstall could overwrite a user's intervening edit with that backup.
@@ -936,7 +945,10 @@ grep -F 'shell profile backup is missing or unsafe' \
 cmp -s "$TMP_ROOT/missing-backup-profile.configured" "$SHELL_CASE_HOME/.profile"
 assert_single_path_marker "$SHELL_CASE_HOME/.profile"
 [ -d "$missing_backup_state" ]
+) &
+shell_case_pids+=("$!")
 
+(
 # csh/tcsh share the .login + .cshrc adapter. Exercise each binary available on
 # the host, including an actual interactive lookup through the generated line.
 for c_shell in /bin/csh /bin/tcsh; do
@@ -994,7 +1006,10 @@ grep -F 'unsupported login shell' "$TMP_ROOT/unsupported-shell.stderr" >/dev/nul
 cmp -s "$TMP_ROOT/unsupported-profile.original" "$SHELL_CASE_HOME/.profile"
 ! grep -F '# Detach CLI PATH' "$SHELL_CASE_HOME/.profile" >/dev/null
 shell_case_uninstall >/dev/null
+) &
+shell_case_pids+=("$!")
 
+(
 # A startup-file symlink is accepted only when its target remains inside HOME.
 SHELL_CASE_HOME="$TMP_ROOT/shell-internal-symlink/home"
 SHELL_CASE_SHELL=/bin/zsh
@@ -1037,5 +1052,15 @@ fi
 grep -F 'refusing unsafe shell profile' "$TMP_ROOT/external-ancestor.stderr" >/dev/null
 [ ! -e "$TMP_ROOT/external-fish-config/fish/conf.d/detach.fish" ]
 shell_case_uninstall >/dev/null
+) &
+shell_case_pids+=("$!")
+
+shell_case_status=0
+for shell_case_pid in "${shell_case_pids[@]}"; do
+  if ! wait "$shell_case_pid"; then
+    shell_case_status=1
+  fi
+done
+[ "$shell_case_status" -eq 0 ]
 
 printf 'Detach distribution tests passed\n'

@@ -336,7 +336,7 @@ export FAKE_CODEX_ARGS_FILE="$TMP_ROOT/args.txt"
 export FAKE_CODEX_SLEEP=4
 export FAKE_CODEX_EXIT=7
 export FAKE_CODEX_FOREIGN_FIRST=1
-export FAKE_CODEX_INIT_DELAY=1
+export FAKE_CODEX_INIT_DELAY=0.1
 export TMUX_TMPDIR="/tmp/detach-codex-tmux-$$"
 # The test owns a private tmux server. An outer Detach/tmux context must not
 # influence the absolute Detach socket or make attach semantics switch clients.
@@ -1451,7 +1451,7 @@ DETACH_TMUX_SOCKET_PATH="$TMUX_SOCKET_ROOT/list-scale.sock" \
   "$SCRIPT" codex list --json >"$list_scale_output"
 list_scale_elapsed="$SECONDS"
 [ "$(wc -l <"$list_scale_output" | tr -d '[:space:]')" = 25 ]
-[ "$(wc -l <"$list_scale_invocations" | tr -d '[:space:]')" -le 55 ] || {
+[ "$(wc -l <"$list_scale_invocations" | tr -d '[:space:]')" -le 5 ] || {
   printf 'list restored per-field state helper fan-out\n' >&2
   exit 1
 }

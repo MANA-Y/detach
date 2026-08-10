@@ -52,6 +52,10 @@ public enum DetachStateCommand {
             return try metaSnapshot(
                 Array(arguments.dropFirst(2)),
                 standardInput: injectedStandardInput)
+        case ("meta", "snapshots"):
+            return try metaSnapshots(
+                Array(arguments.dropFirst(2)),
+                standardInput: injectedStandardInput)
         case ("meta", "usable"):
             return try metaUsable(
                 Array(arguments.dropFirst(2)),
@@ -88,6 +92,10 @@ public enum DetachStateCommand {
             return try healthEvaluate(Array(arguments.dropFirst(2)))
         case ("health", "session"):
             return try healthSession(Array(arguments.dropFirst(2)))
+        case ("health", "sessions"):
+            return try healthSessions(
+                Array(arguments.dropFirst(2)),
+                standardInput: injectedStandardInput)
         case ("maintenance", "reconcile"):
             return try maintenanceReconcile(
                 Array(arguments.dropFirst(2)),
@@ -222,6 +230,72 @@ public enum DetachStateCommand {
             as: UTF8.self))
         var output = Data((assessment.effectiveStatus.rawValue + "\n").utf8)
         output.append(try emitSession(sessionArguments))
+        return output
+    }
+
+    /// Evaluates a NUL-safe stream of health-session argument arrays in one
+    /// process. Each record starts with its decimal argument count. A final
+    /// zero count proves that the shell producer reached normal completion.
+    private static func healthSessions(
+        _ arguments: [String],
+        standardInput: Data?
+    ) throws -> Data {
+        guard arguments.count == 1 else {
+            throw DetachStateCommandError.invalidArguments
+        }
+        let input = try inputData(
+            atPath: arguments[0],
+            standardInput: standardInput)
+        let components = input.split(
+            separator: 0,
+            omittingEmptySubsequences: false)
+        guard components.last?.isEmpty == true else {
+            throw DetachStateCommandError.invalidArguments
+        }
+        let fields = components.dropLast()
+        var index = fields.startIndex
+        var complete = false
+        var output = Data()
+        while index < fields.endIndex {
+            guard let countText = String(
+                    data: Data(fields[index]),
+                    encoding: .utf8),
+                  let count = Int(countText),
+                  count >= 0,
+                  count <= 256 else {
+                throw DetachStateCommandError.invalidArguments
+            }
+            index = fields.index(after: index)
+            if count == 0 {
+                guard index == fields.endIndex else {
+                    throw DetachStateCommandError.invalidArguments
+                }
+                complete = true
+                break
+            }
+            guard fields.distance(from: index, to: fields.endIndex) >= count else {
+                throw DetachStateCommandError.invalidArguments
+            }
+            var sessionArguments: [String] = []
+            sessionArguments.reserveCapacity(count)
+            for _ in 0..<count {
+                guard let value = String(
+                        data: Data(fields[index]),
+                        encoding: .utf8) else {
+                    throw DetachStateCommandError.invalidArguments
+                }
+                sessionArguments.append(value)
+                index = fields.index(after: index)
+            }
+            let envelope = try healthSession(sessionArguments)
+            guard let newline = envelope.firstIndex(of: 0x0A) else {
+                throw DetachStateCommandError.invalidArguments
+            }
+            output.append(envelope[envelope.index(after: newline)...])
+        }
+        guard complete else {
+            throw DetachStateCommandError.invalidArguments
+        }
         return output
     }
 
@@ -464,6 +538,26 @@ public enum DetachStateCommand {
         return Data((render(scalar) + "\n").utf8)
     }
 
+    private static let metadataSnapshotFields: [(String, [String])] = [
+        ("status", ["status"]),
+        ("display_name", ["display_name"]),
+        ("project_dir", ["project_dir"]),
+        ("last_checkpoint_at", ["last_checkpoint_at"]),
+        ("agent_session_id", ["agent_session_id", "codex_session_id"]),
+        ("created_at", ["created_at"]),
+        ("finished_at", ["finished_at"]),
+        ("exit_status", ["exit_status"]),
+        ("worker_pid", ["worker_pid"]),
+        ("provider_pid", ["provider_pid"]),
+        ("worker_heartbeat_at", ["worker_heartbeat_at"]),
+        ("session_color", ["session_color"]),
+        ("transcript_path", ["transcript_path", "rollout_path"]),
+        ("run_token", ["run_token"]),
+        ("worker_heartbeat_epoch", ["worker_heartbeat_epoch"]),
+        ("last_checkpoint_epoch", ["last_checkpoint_epoch"]),
+        ("health_schema", ["health_schema"]),
+    ]
+
     /// Emits fixed key/value pairs separated by NUL bytes. The final complete
     /// marker lets a Bash process-substitution consumer detect helper failure
     /// even though Bash cannot directly observe that producer's exit status.
@@ -477,39 +571,90 @@ public enum DetachStateCommand {
         let data = try inputData(
             atPath: arguments[0],
             standardInput: standardInput)
-        let fields: [(String, [String])] = [
-            ("status", ["status"]),
-            ("display_name", ["display_name"]),
-            ("project_dir", ["project_dir"]),
-            ("last_checkpoint_at", ["last_checkpoint_at"]),
-            ("agent_session_id", ["agent_session_id", "codex_session_id"]),
-            ("created_at", ["created_at"]),
-            ("finished_at", ["finished_at"]),
-            ("exit_status", ["exit_status"]),
-            ("worker_pid", ["worker_pid"]),
-            ("provider_pid", ["provider_pid"]),
-            ("worker_heartbeat_at", ["worker_heartbeat_at"]),
-            ("session_color", ["session_color"]),
-            ("transcript_path", ["transcript_path", "rollout_path"]),
-            ("run_token", ["run_token"]),
-            ("worker_heartbeat_epoch", ["worker_heartbeat_epoch"]),
-            ("last_checkpoint_epoch", ["last_checkpoint_epoch"]),
-            ("health_schema", ["health_schema"]),
-        ]
         guard let values = try SessionMetadataDocument.usableScalars(
             in: data,
             expectedSessionName: arguments[1],
-            pathGroups: fields.map(\.1)) else {
+            pathGroups: metadataSnapshotFields.map(\.1)) else {
             throw DetachStateCommandError.unusableMetadata
         }
         var output = Data()
-        for ((name, _), value) in zip(fields, values) {
+        for ((name, _), value) in zip(metadataSnapshotFields, values) {
             appendNULTerminated(name, to: &output)
             appendNULTerminated(value.map(render) ?? "", to: &output)
         }
         appendNULTerminated("snapshot_complete", to: &output)
         appendNULTerminated("true", to: &output)
         return output
+    }
+
+    /// Reads primary/checkpoint metadata pairs in one process. Input and output
+    /// use NUL delimiters so metadata values can contain tabs and newlines. An
+    /// empty-session completion record detects an interrupted shell producer.
+    private static func metaSnapshots(
+        _ arguments: [String],
+        standardInput: Data?
+    ) throws -> Data {
+        guard arguments.count == 1 else {
+            throw DetachStateCommandError.invalidArguments
+        }
+        let input = try inputData(
+            atPath: arguments[0],
+            standardInput: standardInput)
+        let components = input.split(separator: 0, omittingEmptySubsequences: false)
+        guard components.last?.isEmpty == true else {
+            throw DetachStateCommandError.invalidArguments
+        }
+        let request = components.dropLast()
+        var index = request.startIndex
+        var complete = false
+        var output = Data()
+        while index < request.endIndex {
+            guard let session = String(data: Data(request[index]), encoding: .utf8) else {
+                throw DetachStateCommandError.invalidArguments
+            }
+            index = request.index(after: index)
+            if session.isEmpty {
+                guard index < request.endIndex,
+                      String(data: Data(request[index]), encoding: .utf8) == "true",
+                      request.index(after: index) == request.endIndex else {
+                    throw DetachStateCommandError.invalidArguments
+                }
+                complete = true
+                break
+            }
+            guard request.distance(from: index, to: request.endIndex) >= 2,
+                  let primary = String(data: Data(request[index]), encoding: .utf8),
+                  let checkpoint = String(
+                    data: Data(request[request.index(after: index)]),
+                    encoding: .utf8) else {
+                throw DetachStateCommandError.invalidArguments
+            }
+            index = request.index(index, offsetBy: 2)
+            let values = metadataSnapshotValues(at: primary, session: session)
+                ?? metadataSnapshotValues(at: checkpoint, session: session)
+            appendNULTerminated(session, to: &output)
+            appendNULTerminated(values == nil ? "false" : "true", to: &output)
+            for value in values ?? Array(repeating: nil, count: metadataSnapshotFields.count) {
+                appendNULTerminated(value.map(render) ?? "", to: &output)
+            }
+        }
+        guard complete else {
+            throw DetachStateCommandError.invalidArguments
+        }
+        appendNULTerminated("", to: &output)
+        appendNULTerminated("true", to: &output)
+        return output
+    }
+
+    private static func metadataSnapshotValues(
+        at path: String,
+        session: String
+    ) -> [DetachStateScalar?]? {
+        guard let data = try? Data(contentsOf: fileURL(path)) else { return nil }
+        return try? SessionMetadataDocument.usableScalars(
+            in: data,
+            expectedSessionName: session,
+            pathGroups: metadataSnapshotFields.map(\.1))
     }
 
     private static func metaUsable(
