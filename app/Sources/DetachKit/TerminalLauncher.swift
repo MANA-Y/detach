@@ -107,7 +107,10 @@ public enum TerminalLauncher {
     }
 
     @MainActor
-    static func openConfiguration(commandURL: URL) -> NSWorkspace.OpenConfiguration {
+    static func openConfiguration(
+        commandURL: URL,
+        processEnvironment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> NSWorkspace.OpenConfiguration {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         configuration.addsToRecentItems = false
@@ -118,10 +121,36 @@ public enum TerminalLauncher {
         // A fresh application instance is required because NSWorkspace only
         // applies launch environment variables to a new process.
         configuration.createsNewApplicationInstance = true
-        configuration.environment = [
+        var environment = [
             "ZDOTDIR": commandURL.deletingLastPathComponent().path
         ]
+        if let originalZDOTDIR = processEnvironment["ZDOTDIR"] {
+            environment["DETACH_TERMINAL_ORIGINAL_ZDOTDIR"] = originalZDOTDIR
+        }
+        configuration.environment = environment
         return configuration
+    }
+
+    static func startupFileContents() -> Data {
+        Data("""
+        # Detach suppresses startup prompts until Terminal runs run.command.
+        detach_outer_zdotdir=${ZDOTDIR:-}
+        if [[ -n "$detach_outer_zdotdir" && ! -e "$detach_outer_zdotdir/run.command" ]]; then
+            if [[ -n ${DETACH_TERMINAL_ORIGINAL_ZDOTDIR+x} ]]; then
+                export ZDOTDIR="$DETACH_TERMINAL_ORIGINAL_ZDOTDIR"
+            else
+                unset ZDOTDIR
+            fi
+            unset DETACH_TERMINAL_ORIGINAL_ZDOTDIR
+            detach_user_zdotdir=${ZDOTDIR:-${HOME:-/}}
+            if [[ "$detach_user_zdotdir" != "$detach_outer_zdotdir" && -r "$detach_user_zdotdir/.zshenv" ]]; then
+                source "$detach_user_zdotdir/.zshenv"
+            fi
+            unset detach_user_zdotdir
+        fi
+        unset detach_outer_zdotdir
+
+        """.utf8)
     }
 
     static func commandFileContents(command: String) throws -> Data {
@@ -135,8 +164,12 @@ public enum TerminalLauncher {
         builtin cd -q -- "${HOME:-/}" || builtin cd -q -- / || exit 125
         /bin/rm -f -- "$command_file" || exit 125
         [[ ! -e "$command_file" ]] || exit 125
-        /bin/rmdir -- "$command_dir" 2>/dev/null || true
-        unset command_file command_dir ZDOTDIR
+        if [[ -n ${DETACH_TERMINAL_ORIGINAL_ZDOTDIR+x} ]]; then
+            export ZDOTDIR="$DETACH_TERMINAL_ORIGINAL_ZDOTDIR"
+        else
+            unset ZDOTDIR
+        fi
+        unset command_file command_dir DETACH_TERMINAL_ORIGINAL_ZDOTDIR
         exec /bin/zsh -lic \(shellQuoted(command))
 
         """
@@ -154,13 +187,19 @@ public enum TerminalLauncher {
         let directory = temporaryDirectory
             .appendingPathComponent("Detach-\(UUID().uuidString)", isDirectory: true)
         let url = directory.appendingPathComponent("run.command")
+        let startupURL = directory.appendingPathComponent(".zshenv")
         do {
             try fileManager.createDirectory(
                 at: directory,
                 withIntermediateDirectories: false,
                 attributes: [.posixPermissions: NSNumber(value: Int16(0o700))])
+            try startupFileContents()
+                .write(to: startupURL, options: .withoutOverwriting)
             try commandFileContents(command: command)
                 .write(to: url, options: .withoutOverwriting)
+            try fileManager.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o600))],
+                ofItemAtPath: startupURL.path)
             try fileManager.setAttributes(
                 [.posixPermissions: NSNumber(value: Int16(0o700))],
                 ofItemAtPath: url.path)

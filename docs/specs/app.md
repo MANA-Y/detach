@@ -155,16 +155,16 @@ Automation entitlement.
 
 Distribution bootstrap runs only from `/Applications`, never a DMG or App
 Translocation path. Terminal actions use `NSWorkspace`, not Apple Events, to
-open a private self-deleting `.command` file in a new terminal process. They set
-its directory as outer `ZDOTDIR`; the file clears it before user zsh startup so
-a prompt cannot consume its path. Open, Resume, and Recover use the selected
-terminal bundle identifier, with Terminal as fallback. The new-session sheet
-accepts an optional display name of at most 100 UTF-8 bytes. It rejects control
-characters, blocks invalid launches, explains the limit inline, and passes the
-label as one shell-quoted `--name` argument. The app uses typed `display_name`
-as the session title, with the project/internal name fallback for old records.
-Notifications are opt-in. One app poller provides baseline and transition
-deduplication.
+open a private self-deleting `.command` file in a new terminal process. A
+private `.zshenv` guard is outer `ZDOTDIR`. It blocks startup prompts until
+payload removal. It then restores the original `ZDOTDIR` for the session and
+later shells. No shell may inherit an unusable temporary startup directory.
+Open, Resume, and Recover use the selected terminal, with Terminal as fallback.
+The new-session sheet accepts an optional UTF-8 name up to 100 bytes. It rejects
+control characters, explains invalid input, blocks launch, and passes one
+shell-quoted `--name` argument. The app uses `display_name` as the title, with
+the project/internal name fallback for old records.
+Notifications are opt-in. One app poller deduplicates baseline and transitions.
 
 Sparkle 2 is pinned in `Package.resolved`, embedded with its symlink layout
 intact, and signed inside-out before the outer app. Ad-hoc development builds
