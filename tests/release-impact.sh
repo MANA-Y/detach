@@ -16,7 +16,8 @@ git -C "$REPO" checkout -qb main
 git -C "$REPO" config user.name 'Detach Tests'
 git -C "$REPO" config user.email 'detach-tests@example.invalid'
 printf '%s\n' baseline >"$REPO/README.md"
-git -C "$REPO" add README.md scripts/release-impact
+printf '%s\n' 'app/build/' >"$REPO/.gitignore"
+git -C "$REPO" add .gitignore README.md scripts/release-impact
 git -C "$REPO" commit -qm baseline
 
 commit_path() {
@@ -76,6 +77,51 @@ assert_value "$TMP_ROOT/shared-power.tsv" install_matrix_required true
 assert_value "$TMP_ROOT/shared-power.tsv" lid_test_required true
 assert_value "$TMP_ROOT/shared-power.tsv" unknown_impact false
 
+REVIEW_ROOT="$REPO/app/build/release-impact-reviews"
+REVIEW="$REVIEW_ROOT/current.tsv"
+mkdir -m 0700 -p "$REVIEW_ROOT"
+cat >"$REVIEW" <<EOF
+schema	1
+base_commit	$CORE_HEAD
+head_commit	$SHARED_POWER_HEAD
+install_matrix_required	false
+install_matrix_rationale	Automated coverage proves this change does not alter clean-account system UI.
+lid_test_required	false
+lid_test_rationale	No assertion, lease, helper daemon, or closed-lid runtime behavior changed.
+EOF
+chmod 0600 "$REVIEW"
+DETACH_RELEASE_IMPACT_REVIEW="$REVIEW" \
+  "$REPO/scripts/release-impact" "$CORE_HEAD" "$SHARED_POWER_HEAD" \
+  >"$TMP_ROOT/reviewed.tsv"
+assert_value "$TMP_ROOT/reviewed.tsv" install_matrix_required false
+assert_value "$TMP_ROOT/reviewed.tsv" lid_test_required false
+assert_value "$TMP_ROOT/reviewed.tsv" unknown_impact false
+assert_value "$TMP_ROOT/reviewed.tsv" semantic_review_applied true
+grep -F $'install_matrix_review_reason\tAutomated coverage proves' \
+  "$TMP_ROOT/reviewed.tsv" >/dev/null
+grep -F $'lid_test_review_reason\tNo assertion, lease' \
+  "$TMP_ROOT/reviewed.tsv" >/dev/null
+
+chmod 0644 "$REVIEW"
+if DETACH_RELEASE_IMPACT_REVIEW="$REVIEW" \
+    "$REPO/scripts/release-impact" "$CORE_HEAD" "$SHARED_POWER_HEAD" \
+    >"$TMP_ROOT/review-mode.out" 2>"$TMP_ROOT/review-mode.err"; then
+  printf 'release impact accepted a public impact review\n' >&2
+  exit 1
+fi
+grep -F 'must not be accessible by group/other' \
+  "$TMP_ROOT/review-mode.err" >/dev/null
+chmod 0600 "$REVIEW"
+
+if DETACH_RELEASE_IMPACT_REVIEW="$REVIEW" \
+    "$REPO/scripts/release-impact" "$BASE" "$SHARED_POWER_HEAD" \
+    >"$TMP_ROOT/review-range.out" 2>"$TMP_ROOT/review-range.err"; then
+  printf 'release impact accepted a stale impact review\n' >&2
+  exit 1
+fi
+grep -F 'does not match the exact release source range' \
+  "$TMP_ROOT/review-range.err" >/dev/null
+
 POWER_HEAD="$(commit_path app/Sources/DetachPower/main.swift power)"
 "$REPO/scripts/release-impact" "$SHARED_POWER_HEAD" "$POWER_HEAD" \
   >"$TMP_ROOT/power.tsv"
@@ -89,6 +135,25 @@ assert_value "$TMP_ROOT/unknown.tsv" install_matrix_required true
 assert_value "$TMP_ROOT/unknown.tsv" lid_test_required true
 assert_value "$TMP_ROOT/unknown.tsv" unknown_impact true
 grep -F $'unknown_reason\tproduct/new-runtime' "$TMP_ROOT/unknown.tsv" >/dev/null
+
+cat >"$REVIEW" <<EOF
+schema	1
+base_commit	$POWER_HEAD
+head_commit	$UNKNOWN_HEAD
+install_matrix_required	false
+install_matrix_rationale	A semantic review cannot narrow an unknown product path impact selection.
+lid_test_required	false
+lid_test_rationale	A semantic review cannot narrow an unknown product path impact selection.
+EOF
+chmod 0600 "$REVIEW"
+if DETACH_RELEASE_IMPACT_REVIEW="$REVIEW" \
+    "$REPO/scripts/release-impact" "$POWER_HEAD" "$UNKNOWN_HEAD" \
+    >"$TMP_ROOT/review-unknown.out" 2>"$TMP_ROOT/review-unknown.err"; then
+  printf 'release impact review omitted gates for an unknown product path\n' >&2
+  exit 1
+fi
+grep -F 'cannot omit a gate selected by an unknown product path' \
+  "$TMP_ROOT/review-unknown.err" >/dev/null
 
 NEW_APP_HEAD="$(commit_path app/Sources/DetachApp/FutureFlow.swift future-app)"
 "$REPO/scripts/release-impact" "$UNKNOWN_HEAD" "$NEW_APP_HEAD" \

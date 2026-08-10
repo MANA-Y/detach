@@ -139,6 +139,11 @@ localization impact. It selects the supervised closed-lid probe only for power,
 helper, watchdog, lease, assertion, or lid-probe impact. Unknown product paths
 select both manual gates. Its private resume state and impact evidence live
 under ignored `app/build/`.
+The path result is fail-safe. For a false positive, a release operator can
+supply `DETACH_RELEASE_IMPACT_REVIEW` with an absolute path directly under
+ignored `app/build/release-impact-reviews/`. The `0600` TSV file must bind the
+exact base and head commits, set both manual-gate decisions, and give a reason
+for each. It cannot narrow unknown-path impact or an automated release gate.
 Set `DETACH_RELEASE_IGNORE_TIMING=1` only when the owner explicitly accepts
 busy-machine timing for that single release; the script requires the same exact
 release-target confirmation before it omits reference-machine timing checks.
