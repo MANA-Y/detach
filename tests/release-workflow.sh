@@ -274,6 +274,10 @@ SH
 set -eu
 case " $* " in
   *' notarytool history '*)
+    [ -t 1 ] || {
+      printf '%s\n' 'fake notary credential lookup requires a PTY' >&2
+      exit 68
+    }
     [ "${FAKE_NOTARY_UNAVAILABLE:-0}" != 1 ] || {
       printf '%s\n' 'fake notary credential unavailable' >&2
       exit 69
@@ -522,7 +526,7 @@ run_invalid_resume_artifact_credentials_case() {
   printf '%s\n' 'changed after notarization' >"$REPO/app/build/Detach.dmg"
   export FAKE_NOTARY_UNAVAILABLE=1
   expect_failure invalid-resume-artifact-credentials \
-    'fake notary credential unavailable' run_workflow
+    'notary credential preflight failed' run_workflow
   unset FAKE_NOTARY_UNAVAILABLE
   [ ! -f "$RELEASE_EXISTS" ]
 }

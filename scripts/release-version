@@ -401,6 +401,29 @@ verify_github_credentials() {
   gh auth status >/dev/null
 }
 
+verify_notary_profile() {
+  local profile="$1" output="$STATE_DIR/notary-preflight.json"
+
+  [ -x /usr/bin/expect ] || die 'system expect tool is required for notary preflight'
+  if ! DETACH_NOTARY_PREFLIGHT_PROFILE="$profile" \
+       DETACH_NOTARY_PREFLIGHT_OUTPUT="$output" \
+       /usr/bin/expect <<'EXPECT'
+log_user 0
+log_file -noappend $env(DETACH_NOTARY_PREFLIGHT_OUTPUT)
+spawn xcrun notarytool history \
+  --keychain-profile $env(DETACH_NOTARY_PREFLIGHT_PROFILE) \
+  --output-format json --no-progress
+expect eof
+set result [wait]
+exit [lindex $result 3]
+EXPECT
+  then
+    chmod 0600 "$output" 2>/dev/null || true
+    die "notary credential preflight failed; see private evidence: $output"
+  fi
+  chmod 0600 "$output"
+}
+
 verify_artifact_credentials() {
   local identity="${DETACH_CODESIGN_IDENTITY:-}"
   local notary_profile="${DETACH_NOTARY_PROFILE:-}"
@@ -418,9 +441,7 @@ verify_artifact_credentials() {
   identities="$(security find-identity -v -p codesigning)"
   grep -F "\"$identity\"" <<<"$identities" >/dev/null || \
     die 'configured Developer ID signing identity is not installed or valid'
-  xcrun notarytool history --keychain-profile "$notary_profile" \
-    --output-format json >"$STATE_DIR/notary-preflight.json"
-  chmod 0600 "$STATE_DIR/notary-preflight.json"
+  verify_notary_profile "$notary_profile"
 
   sparkle_tools="$APP_ROOT/.build/artifacts/sparkle/Sparkle/bin"
   if [ -n "$key_file" ]; then
