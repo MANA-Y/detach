@@ -32,7 +32,6 @@ jobs:
         run: |
           baseline_root="$(scripts/quality-baseline)"
           printf 'DETACH_QUALITY_BASELINE_ROOT=%s\n' "$baseline_root" >>"$GITHUB_ENV"
-          printf 'DETACH_QUALITY_ALLOW_POLICY_13_BOOTSTRAP=1\n' >>"$GITHUB_ENV"
       - name: Restore Swift and tmux caches
         id: swift-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4

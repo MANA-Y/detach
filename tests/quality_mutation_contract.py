@@ -16,6 +16,12 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts/quality-mutation"
 WORKFLOW = ROOT / ".github/workflows/quality-mutations.yml"
+sys.path.insert(0, str(ROOT / "tools"))
+
+from quality_policy import POLICY_FILE, Policy  # noqa: E402
+
+
+POLICY = Policy(POLICY_FILE)
 
 
 def fail(message: str) -> None:
@@ -167,7 +173,7 @@ def main() -> int:
         passed_summary.write_text(
             json.dumps({
                 "schema": 1,
-                "policy": 14,
+                "policy": POLICY.version,
                 "score_percent": 100,
                 "floor_percent": 100,
                 "killed": 1,

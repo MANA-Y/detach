@@ -460,8 +460,10 @@ def validate_metrics(document: Any, *, expected_policy: Optional[int] = None) ->
             raise MetricsError("quality metrics no-baseline comparison is inconsistent")
     elif not baseline_source or baseline_policy <= 0:
         raise MetricsError("quality metrics baseline comparison is incomplete")
-    if comparison["mode"] == "policy-13-bootstrap" and baseline_policy != 13:
-        raise MetricsError("quality metrics bootstrap policy is invalid")
+    if comparison["mode"] == "policy-13-bootstrap" and (
+        document["policy"] != 14 or baseline_policy != 13
+    ):
+        raise MetricsError("quality metrics historical bootstrap policy is invalid")
     expected_comparison_status = (
         "not-available"
         if not baseline_source
@@ -474,60 +476,7 @@ def validate_metrics(document: Any, *, expected_policy: Optional[int] = None) ->
     return document
 
 
-def git_show(commit: str, relative: str) -> str:
-    if not HEX_COMMIT.fullmatch(commit):
-        raise MetricsError("bootstrap commit is invalid")
-    return run(["git", "show", f"{commit}:{relative}"]).stdout
-
-
-def bootstrap_metrics(commit: str, policy: Policy) -> dict[str, Any]:
-    aggregate: dict[str, str] = {}
-    for line in git_show(commit, "tests/quality-baseline.tsv").splitlines():
-        fields = line.split("\t")
-        if len(fields) != 2 or fields[0] in aggregate:
-            raise MetricsError("policy-13 aggregate bootstrap is malformed")
-        aggregate[fields[0]] = fields[1]
-    file_values: dict[str, str] = {}
-    for line in git_show(commit, "tests/quality-file-baseline.tsv").splitlines():
-        fields = line.split("\t")
-        if len(fields) != 2 or fields[0] in file_values:
-            raise MetricsError("policy-13 file bootstrap is malformed")
-        file_values[fields[0]] = fields[1]
-    if aggregate.get("schema") != "1" or file_values.get("schema") != "1":
-        raise MetricsError("policy-13 bootstrap schema is unsupported")
-    critical = []
-    for source, requirement in policy.critical:
-        relative = source.removeprefix("app/")
-        raw = file_values.get(relative)
-        if raw is None:
-            raise MetricsError(f"policy-13 bootstrap is missing critical source: {source}")
-        critical.append(
-            {
-                "path": source,
-                "requirement": requirement,
-                "line_coverage_percent": float(raw),
-            }
-        )
-    return {
-        "source_commit": commit,
-        "policy": 13,
-        "suites": {
-            "ui": {
-                "test_count": int(aggregate["ui_test_count_min"]),
-                "line_coverage_percent": float(aggregate["ui_line_coverage_min"]),
-            },
-            "business": {
-                "test_count": int(aggregate["business_test_count_min"]),
-                "line_coverage_percent": float(aggregate["business_line_coverage_min"]),
-            },
-        },
-        "critical_files": critical,
-    }
-
-
-def load_baseline(
-    root: Optional[Path], policy: Policy, allow_policy_13_bootstrap: bool
-) -> tuple[Optional[dict[str, Any]], str, str]:
+def load_baseline(root: Optional[Path]) -> tuple[Optional[dict[str, Any]], str, str]:
     if root is None:
         return None, "none", ""
     run_dir, manifest = load_baseline_run(root)
@@ -544,12 +493,6 @@ def load_baseline(
         if document["policy"] != int(manifest["policy"]):
             raise MetricsError("baseline metrics policy does not match its manifest")
         return document, "green-main-artifact", manifest["source_commit"]
-    if manifest["policy"] == "13" and allow_policy_13_bootstrap:
-        return (
-            bootstrap_metrics(manifest["source_commit"], policy),
-            "policy-13-bootstrap",
-            manifest["source_commit"],
-        )
     raise MetricsError("last green main artifact has no quality metrics")
 
 
@@ -771,9 +714,7 @@ def evaluate(arguments: argparse.Namespace) -> int:
     coverage = collect_coverage(coverage_document)
     tests = collect_tests(Path(arguments.tests))
     baseline_root = Path(arguments.baseline_root) if arguments.baseline_root else None
-    baseline, baseline_mode, baseline_commit = load_baseline(
-        baseline_root, policy, arguments.allow_policy_13_bootstrap
-    )
+    baseline, baseline_mode, baseline_commit = load_baseline(baseline_root)
     if arguments.authority != "local-diagnostic" and baseline is None:
         raise MetricsError("authoritative quality metrics require last green main evidence")
     base_commit = baseline_commit or arguments.base_commit
@@ -842,7 +783,6 @@ def parser() -> argparse.ArgumentParser:
         choices=("local-diagnostic", "ci-merge", "ci-main", "release"),
         default="local-diagnostic",
     )
-    evaluate_parser.add_argument("--allow-policy-13-bootstrap", action="store_true")
     evaluate_parser.add_argument("--test-changed-lines", default="", help=argparse.SUPPRESS)
     validate_parser = subcommands.add_parser("validate")
     validate_parser.add_argument("path")

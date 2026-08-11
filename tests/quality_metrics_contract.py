@@ -69,7 +69,13 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def create_baseline(root: Path, metrics: Path, *, include_metrics: bool = True) -> Path:
+def create_baseline(
+    root: Path,
+    metrics: Path,
+    *,
+    include_metrics: bool = True,
+    manifest_policy: Optional[int] = None,
+) -> Path:
     run_dir = root / "run"
     run_dir.mkdir(parents=True)
     artifacts = run_dir / "artifacts.tsv"
@@ -84,7 +90,7 @@ def create_baseline(root: Path, metrics: Path, *, include_metrics: bool = True) 
         artifacts.write_text("schema\t1\n", encoding="utf-8")
     (run_dir / "manifest.tsv").write_text(
         "schema\t4\n"
-        f"policy\t{POLICY.version}\n"
+        f"policy\t{manifest_policy if manifest_policy is not None else POLICY.version}\n"
         "authority\tci-main\n"
         "result\tpassed\n"
         f"source_commit\t{BASE_COMMIT}\n"
@@ -378,6 +384,73 @@ def main() -> None:
         )
         require_text(no_metrics, "has no quality metrics")
 
+        old_floor_root = root / "old-floor-only"
+        create_baseline(
+            old_floor_root,
+            baseline_metrics,
+            include_metrics=False,
+            manifest_policy=13,
+        )
+        old_floor_only = invoke(
+            evaluate_arguments(
+                coverage,
+                tests,
+                root / "old-floor-only.json",
+                changed,
+                baseline=old_floor_root,
+                authority="ci-merge",
+            ),
+            expected=2,
+        )
+        require_text(old_floor_only, "has no quality metrics")
+
+        write_json(changed, {})
+        historical_metrics = root / "historical-policy-14.json"
+        historical_document = json.loads(original_metrics)
+        historical_document["policy"] = 14
+        historical_document["comparison"]["baseline_policy"] = 13
+        historical_document["comparison"]["baseline_source_commit"] = "c" * 40
+        historical_document["comparison"]["mode"] = "policy-13-bootstrap"
+        historical_document["comparison"]["status"] = "passed"
+        write_json(historical_metrics, historical_document)
+        historical_root = root / "historical-policy-14"
+        create_baseline(
+            historical_root,
+            historical_metrics,
+            manifest_policy=14,
+        )
+        historical = root / "historical-result.json"
+        invoke(
+            evaluate_arguments(
+                coverage,
+                tests,
+                historical,
+                changed,
+                baseline=historical_root,
+                authority="ci-merge",
+            )
+        )
+        historical_result = json.loads(historical.read_text(encoding="utf-8"))
+        if (
+            historical_result["comparison"]["mode"] != "green-main-artifact"
+            or historical_result["comparison"]["baseline_policy"] != 14
+        ):
+            raise AssertionError("historical policy-14 metrics were not used as measured facts")
+
+        removed_bootstrap_flag = invoke(
+            [
+                *evaluate_arguments(
+                    coverage,
+                    tests,
+                    root / "removed-bootstrap-flag.json",
+                    changed,
+                ),
+                "--allow-policy-13-bootstrap",
+            ],
+            expected=2,
+        )
+        require_text(removed_bootstrap_flag, "unrecognized arguments")
+
         malformed = root / "malformed.json"
         write_json(malformed, {"schema": 999})
         malformed_result = invoke(["validate", str(malformed)], expected=2)
@@ -389,6 +462,13 @@ def main() -> None:
         write_json(extra_path, extra)
         extra_result = invoke(["validate", str(extra_path)], expected=2)
         require_text(extra_result, "schema is unsupported")
+
+        legacy_mode = json.loads(current.read_text(encoding="utf-8"))
+        legacy_mode["comparison"]["mode"] = "policy-13-bootstrap"
+        legacy_path = root / "legacy-mode.json"
+        write_json(legacy_path, legacy_mode)
+        legacy_result = invoke(["validate", str(legacy_path)], expected=2)
+        require_text(legacy_result, "historical bootstrap policy is invalid")
 
     print("Quality metrics contracts passed")
 

@@ -7,6 +7,7 @@ set -euo pipefail
 unset DETACH_QUALITY_AUTHORITY GITHUB_ACTIONS
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
+POLICY_VERSION="$("$ROOT/scripts/quality-policy" version)"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-quality-gate-test.XXXXXX")"
 TEMPLATE_REPO="$TMP_ROOT/template"
 
@@ -253,7 +254,7 @@ mkdir -p "$REPO/app/Sources/DetachKit"
 printf '%s\n' 'struct OddName {}' >"$REPO/app/Sources/DetachKit/line
 break.swift"
 plan="$(gate --plan --format json)"
-[[ "$plan" = '{"policy":13,"mode":"change","authority":"local-diagnostic","source_commit":"'* ]]
+[[ "$plan" = '{"policy":'"$POLICY_VERSION"',"mode":"change","authority":"local-diagnostic","source_commit":"'* ]]
 [[ "$plan" = *'"base_commit":"","input_fingerprint":"'* ]]
 [[ "$plan" = *'"stages":["static","swift","quality-contracts","app","ui-e2e","release-budget"]}' ]]
 
@@ -282,7 +283,8 @@ if ! gate --mode release >"$REPO/release.out" 2>&1; then
 fi
 ! grep -Fx release-workflow "$ACTION_LOG" >/dev/null
 [ "$(wc -l <"$ACTION_LOG" | tr -d ' ')" = 12 ]
-grep -F 'quality-gate: PASS policy=14 authority=release' "$REPO/release.out" >/dev/null
+grep -F "quality-gate: PASS policy=$POLICY_VERSION authority=release" \
+  "$REPO/release.out" >/dev/null
 
 setup_fixture github-budget
 plan="$(GITHUB_ACTIONS=true DETACH_QUALITY_AUTHORITY=ci-merge \
@@ -751,7 +753,7 @@ if ! GITHUB_ACTIONS=true DETACH_QUALITY_AUTHORITY=ci-merge \
   exit 1
 fi
 ! grep -F 'stage budget:' "$REPO/github-no-budgets.out" >/dev/null
-grep -F 'quality-gate: PASS policy=14 authority=ci-merge' \
+grep -F "quality-gate: PASS policy=$POLICY_VERSION authority=ci-merge" \
   "$REPO/github-no-budgets.out" >/dev/null
 grep -F $'authority\tci-merge' "$RESULT_ROOT"/*/manifest.tsv >/dev/null
 grep -F $'swift\tpassed' "$RESULT_ROOT"/*/summary.tsv >/dev/null
