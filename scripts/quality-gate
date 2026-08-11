@@ -3,8 +3,15 @@
 set -euo pipefail
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
-POLICY_VERSION=12
+QUALITY_POLICY="$ROOT/scripts/quality-policy"
+[ -x "$QUALITY_POLICY" ] || {
+  printf 'quality-gate: quality policy reader is missing or not executable\n' >&2
+  exit 2
+}
+POLICY_VERSION="$("$QUALITY_POLICY" version)"
 MODE=change
+REQUESTED_AUTHORITY="${DETACH_QUALITY_AUTHORITY:-}"
+AUTHORITY=""
 BASE_REF=""
 PLAN_ONLY=0
 DIAGNOSTIC_STAGE=""
@@ -38,9 +45,17 @@ SOURCE_COMMIT="$(git -C "$ROOT" rev-parse --verify HEAD)"
 INPUT_FINGERPRINT=""
 RELEASE_BUDGET="$ROOT/tests/release-budget.tsv"
 
-ALL_STAGES=(static gate-contract swift quality-contracts app ui-e2e codex claude distribution tmux-runtime release-preflight publish-preflight release-workflow release-budget)
-RELEASE_STAGES=(static gate-contract swift quality-contracts app ui-e2e codex claude distribution tmux-runtime release-preflight publish-preflight release-budget)
+ALL_STAGES=()
+while IFS= read -r stage; do
+  [ -z "$stage" ] || ALL_STAGES+=("$stage")
+done < <("$QUALITY_POLICY" stages all)
+RELEASE_STAGES=()
+while IFS= read -r stage; do
+  [ -z "$stage" ] || RELEASE_STAGES+=("$stage")
+done < <("$QUALITY_POLICY" stages release)
 SELECTED=()
+SELECTED_CAPABILITIES=()
+SELECTED_JOURNEYS=()
 EXPLANATIONS=()
 
 usage() {
@@ -52,7 +67,8 @@ usage: scripts/quality-gate [--mode change|repository|release] [--base GIT_REF] 
        scripts/quality-gate --list-stages
        scripts/quality-gate --stage NAME
 
-The normal modes are readiness evidence. --stage is a diagnostic rerun only.
+Local modes produce diagnostic evidence. Hosted CI and release modes can
+produce authoritative evidence. --stage is a diagnostic rerun only.
 EOF
 }
 
@@ -77,16 +93,46 @@ add_stage() {
   [ -z "$reason" ] || EXPLANATIONS+=("$reason -> $stage")
 }
 
+add_capability() {
+  local wanted="$1" existing
+  for existing in "${SELECTED_CAPABILITIES[@]:-}"; do
+    [ "$existing" = "$wanted" ] && return 0
+  done
+  SELECTED_CAPABILITIES+=("$wanted")
+}
+
+add_journey() {
+  local wanted="$1" existing
+  for existing in "${SELECTED_JOURNEYS[@]:-}"; do
+    [ "$existing" = "$wanted" ] && return 0
+  done
+  SELECTED_JOURNEYS+=("$wanted")
+}
+
+select_all_impacts() {
+  local identifier
+  SELECTED_CAPABILITIES=()
+  while IFS=$'\t' read -r identifier _; do
+    [ -z "$identifier" ] || SELECTED_CAPABILITIES+=("$identifier")
+  done < <("$QUALITY_POLICY" capabilities)
+  SELECTED_JOURNEYS=()
+  while IFS=$'\t' read -r identifier _; do
+    [ -z "$identifier" ] || SELECTED_JOURNEYS+=("$identifier")
+  done < <("$QUALITY_POLICY" journeys)
+}
+
 select_all() {
   local reason="${1:-full repository policy}" stage
   SELECTED=("${ALL_STAGES[@]}")
   for stage in "${ALL_STAGES[@]}"; do
     EXPLANATIONS+=("$reason -> $stage")
   done
+  select_all_impacts
 }
 
 select_release() {
   SELECTED=("${RELEASE_STAGES[@]}")
+  select_all_impacts
 }
 
 while [ "$#" -gt 0 ]; do
@@ -154,6 +200,33 @@ case "$TEST_DIRECT" in 0|1) ;; *) die 'DETACH_QUALITY_GATE_TEST_DIRECT must be 0
 [ "$TEST_MODE" = 1 ] || [ "$TEST_REAL_STATIC" = 0 ] || die 'real static fixture mode is test-only'
 [ "$TEST_MODE" = 1 ] || [ "$TEST_DIRECT" = 0 ] || die 'direct fixture mode is test-only'
 case "$MODE" in change|repository|release) ;; *) die "invalid mode: $MODE" ;; esac
+if [ -z "$REQUESTED_AUTHORITY" ]; then
+  if [ "$MODE" = release ]; then
+    AUTHORITY=release
+  else
+    AUTHORITY=local-diagnostic
+  fi
+else
+  AUTHORITY="$REQUESTED_AUTHORITY"
+fi
+case "$AUTHORITY" in
+  local-diagnostic)
+    [ "$MODE" != release ] || die 'release mode requires release authority'
+    ;;
+  ci-merge|ci-main)
+    [ "${GITHUB_ACTIONS:-}" = true ] || die "$AUTHORITY authority is restricted to GitHub Actions"
+    [ "$MODE" = repository ] || die "$AUTHORITY authority requires repository mode"
+    [ -z "$DIAGNOSTIC_STAGE" ] || die "$AUTHORITY authority cannot run one diagnostic stage"
+    ;;
+  release)
+    if [ "$MODE" != release ]; then
+      [ "${GITHUB_ACTIONS:-}" = true ] && [ "$MODE" = repository ] || \
+        die 'release authority requires release mode or repository mode in GitHub Actions'
+    fi
+    [ -z "$DIAGNOSTIC_STAGE" ] || die 'release authority cannot run one diagnostic stage'
+    ;;
+  *) die "invalid quality authority: $AUTHORITY" ;;
+esac
 if [ -n "$RELEASE_TIMING_OVERRIDE" ]; then
   [[ "$RELEASE_TIMING_OVERRIDE" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@v[0-9A-Za-z._+-]+$ ]] || \
     die 'DETACH_RELEASE_TIMING_OVERRIDE must be an exact owner/repository@tag'
@@ -212,83 +285,29 @@ if [ -n "$BASE_REF" ]; then
 fi
 
 select_for_path() {
-  local path="$1" change="${2:-changed}"
+  local path="$1" change="${2:-changed}" classification test_domain release_domain spec stages
+  local release_gates release_unknown route_pattern route_priority capabilities journeys stage item
   IMPACT_REASON="$change $path"
-  add_stage static
-  case "$path" in
-    .github/workflows/quality-gates.yml|docs/quality-gates.md|scripts/quality-gate|scripts/quality-history|scripts/test|tests/quality-gate.sh|tests/quality-contracts.sh|tests/quality-baseline.tsv|tests/quality-file-baseline.tsv|tests/quality-ratchet.sh|tests/quality-ratchet-contract.sh|tests/release-budget.tsv|tests/release-budget-ratchet.sh|tests/release-budget-ratchet-contract.sh|tests/shell-safety.sh|tests/shell-safety-contract.sh|tests/quality-history-contract.sh|tests/test-suite-contract.sh)
-      select_all "$change gate policy file $path"
-      ;;
-    tests/docs-contract.sh)
-      ;;
-    *.md|docs/assets/*|AGENTS.md|CLAUDE.md)
-      ;;
-    app/Sources/DetachKit/DetachState*.swift|app/Sources/DetachKit/Session*.swift|app/Sources/DetachKit/Storage*.swift|app/Sources/DetachState/*.swift)
-      add_stage swift; add_stage quality-contracts; add_stage app; add_stage codex; add_stage claude
-      add_stage distribution; add_stage tmux-runtime; add_stage release-budget
-      ;;
-    app/Sources/DetachKit/DetachPower*.swift|app/Sources/DetachKit/Power*.swift|app/Sources/DetachPower/*.swift|app/Sources/DetachPowerHelper/*.swift)
-      add_stage swift; add_stage quality-contracts; add_stage app; add_stage distribution
-      add_stage tmux-runtime; add_stage release-budget
-      ;;
-    app/Sources/*)
-      add_stage swift; add_stage quality-contracts; add_stage app; add_stage release-budget
-      ;;
-    app/Tests/*)
-      add_stage swift; add_stage quality-contracts; add_stage release-budget
-      ;;
-    app/Package.swift|app/Package.resolved)
-      add_stage swift; add_stage quality-contracts; add_stage app; add_stage tmux-runtime; add_stage release-budget
-      ;;
-    app/Resources/*)
-      add_stage swift; add_stage quality-contracts; add_stage app; add_stage tmux-runtime; add_stage release-budget
-      ;;
-    bin/*)
-      add_stage app; add_stage codex; add_stage claude; add_stage distribution; add_stage tmux-runtime; add_stage release-budget
-      ;;
-    install.sh|scripts/install.sh)
-      add_stage app; add_stage distribution; add_stage tmux-runtime; add_stage release-budget
-      ;;
-    scripts/build-tmux.sh)
-      add_stage app; add_stage codex; add_stage claude; add_stage tmux-runtime; add_stage release-budget
-      ;;
-    app/scripts/release.sh|app/scripts/publish-release.sh|app/scripts/make-dmg.sh|app/scripts/verify-appcast.sh|scripts/release-version|scripts/release-impact|scripts/release-lid-probe|VERSION|BUILD)
-      add_stage app; add_stage release-preflight; add_stage publish-preflight; add_stage release-workflow; add_stage release-budget
-      ;;
-    app/scripts/*)
-      add_stage app; add_stage tmux-runtime; add_stage release-preflight; add_stage release-budget
-      ;;
-    tests/run.sh|tests/fake-codex)
-      add_stage app; add_stage codex; add_stage release-budget
-      ;;
-    tests/run-claude.sh|tests/fake-claude)
-      add_stage app; add_stage claude; add_stage release-budget
-      ;;
-    tests/distribution.sh)
-      add_stage app; add_stage distribution; add_stage release-budget
-      ;;
-    tests/tmux-runtime.sh|tests/power-smoke.sh)
-      add_stage app; add_stage tmux-runtime; add_stage release-budget
-      ;;
-    tests/ui-e2e.sh|tests/ui-e2e-contract.sh|tests/fake-ui-cli)
-      add_stage app; add_stage release-budget
-      ;;
-    tests/release-preflight.sh)
-      add_stage release-preflight; add_stage release-budget
-      ;;
-    tests/publish-preflight.sh)
-      add_stage publish-preflight; add_stage release-budget
-      ;;
-    tests/release-impact.sh|tests/release-workflow.sh)
-      add_stage release-workflow; add_stage release-budget
-      ;;
-    .gitignore|.gitattributes)
-      ;;
-    *)
-      printf 'quality-gate: unknown impact for %s; selecting repository gate\n' "$path" >&2
-      select_all "$change unclassified path $path"
-      ;;
-  esac
+  classification="$("$QUALITY_POLICY" classify "$path")" || die "cannot classify path: $path"
+  IFS=$'\t' read -r classification test_domain release_domain spec stages \
+    release_gates release_unknown route_pattern route_priority capabilities journeys <<<"$classification"
+  if [ "$classification" = unknown ]; then
+    printf 'quality-gate: unknown impact for %s; selecting repository gate\n' "$path" >&2
+    select_all "$change unclassified path $path"
+    return
+  fi
+  IFS=, read -r -a domain_stages <<<"$stages"
+  for stage in "${domain_stages[@]}"; do
+    add_stage "$stage" "$change $test_domain domain $path"
+  done
+  IFS=, read -r -a domain_capabilities <<<"$capabilities"
+  for item in "${domain_capabilities[@]}"; do
+    add_capability "$item"
+  done
+  IFS=, read -r -a domain_journeys <<<"$journeys"
+  for item in "${domain_journeys[@]}"; do
+    add_journey "$item"
+  done
 }
 
 if [ -n "$DIAGNOSTIC_STAGE" ]; then
@@ -315,10 +334,18 @@ else
   fi
 fi
 
-# A selected packaged-app build is never readiness evidence by itself. Its
-# hermetic accessibility smoke must exercise that exact fresh executable.
-if contains_stage app && [ -z "$DIAGNOSTIC_STAGE" ]; then
-  add_stage ui-e2e 'mandatory packaged-app prerequisite'
+# Apply policy-owned transitive stage dependencies to a fixed point.
+if [ -z "$DIAGNOSTIC_STAGE" ]; then
+  dependency_changed=1
+  while [ "$dependency_changed" = 1 ]; do
+    dependency_changed=0
+    while IFS=$'\t' read -r prerequisite dependent; do
+      if contains_stage "$prerequisite" && ! contains_stage "$dependent"; then
+        add_stage "$dependent" "mandatory $prerequisite prerequisite"
+        dependency_changed=1
+      fi
+    done < <("$QUALITY_POLICY" dependencies)
+  done
 fi
 
 # Preserve the canonical cheap-to-expensive order after taking the union.
@@ -337,6 +364,8 @@ fi
 
 EFFECTIVE_MODE="$([ -n "$DIAGNOSTIC_STAGE" ] && printf diagnostic || printf '%s' "$MODE")"
 STAGE_LIST="$(IFS=,; printf '%s' "${SELECTED[*]}")"
+CAPABILITY_LIST="$(IFS=,; printf '%s' "${SELECTED_CAPABILITIES[*]:-}")"
+JOURNEY_LIST="$(IFS=,; printf '%s' "${SELECTED_JOURNEYS[*]:-}")"
 
 compute_input_fingerprint() {
   {
@@ -353,11 +382,25 @@ compute_input_fingerprint() {
 }
 
 INPUT_FINGERPRINT="$(compute_input_fingerprint)"
-FINGERPRINT="$(printf 'input=%s\nmode=%s\nstages=%s\n' "$INPUT_FINGERPRINT" "$EFFECTIVE_MODE" "$STAGE_LIST" | shasum -a 256 | awk '{print $1}')"
+FINGERPRINT="$(printf 'input=%s\nmode=%s\nauthority=%s\nstages=%s\ncapabilities=%s\njourneys=%s\n' \
+  "$INPUT_FINGERPRINT" "$EFFECTIVE_MODE" "$AUTHORITY" "$STAGE_LIST" \
+  "$CAPABILITY_LIST" "$JOURNEY_LIST" | shasum -a 256 | awk '{print $1}')"
 
 if [ "$OUTPUT_FORMAT" = json ]; then
-  printf '{"policy":%s,"mode":"%s","source_commit":"%s","base_commit":"%s","input_fingerprint":"%s","fingerprint":"%s","stages":[' \
-    "$POLICY_VERSION" "$EFFECTIVE_MODE" "$SOURCE_COMMIT" "$RESOLVED_BASE" "$INPUT_FINGERPRINT" "$FINGERPRINT"
+  printf '{"policy":%s,"mode":"%s","authority":"%s","source_commit":"%s","base_commit":"%s","input_fingerprint":"%s","fingerprint":"%s","capabilities":[' \
+    "$POLICY_VERSION" "$EFFECTIVE_MODE" "$AUTHORITY" "$SOURCE_COMMIT" "$RESOLVED_BASE" "$INPUT_FINGERPRINT" "$FINGERPRINT"
+  separator=""
+  for capability in "${SELECTED_CAPABILITIES[@]:-}"; do
+    printf '%s"%s"' "$separator" "$capability"
+    separator=,
+  done
+  printf '],"journeys":['
+  separator=""
+  for journey in "${SELECTED_JOURNEYS[@]:-}"; do
+    printf '%s"%s"' "$separator" "$journey"
+    separator=,
+  done
+  printf '],"stages":['
   separator=""
   for stage in "${SELECTED[@]}"; do
     printf '%s"%s"' "$separator" "$stage"
@@ -365,8 +408,9 @@ if [ "$OUTPUT_FORMAT" = json ]; then
   done
   printf ']}\n'
 else
-  printf 'quality-gate policy=%s mode=%s fingerprint=%s stages=%s\n' \
-    "$POLICY_VERSION" "$EFFECTIVE_MODE" "$FINGERPRINT" "$STAGE_LIST"
+  printf 'quality-gate policy=%s mode=%s authority=%s fingerprint=%s stages=%s capabilities=%s journeys=%s\n' \
+    "$POLICY_VERSION" "$EFFECTIVE_MODE" "$AUTHORITY" "$FINGERPRINT" "$STAGE_LIST" \
+    "$CAPABILITY_LIST" "$JOURNEY_LIST"
   if [ "$EXPLAIN" = 1 ]; then
     for explanation in "${EXPLANATIONS[@]}"; do
       printf 'quality-gate: reason %s\n' "$explanation"
@@ -455,14 +499,17 @@ write_manifest() {
     [ "$timing_wall_seconds" -gt 0 ] || timing_wall_seconds="$duration"
   fi
   {
-    printf 'schema\t3\n'
+    printf 'schema\t4\n'
     printf 'policy\t%s\n' "$POLICY_VERSION"
     printf 'mode\t%s\n' "$EFFECTIVE_MODE"
+    printf 'authority\t%s\n' "$AUTHORITY"
     printf 'source_commit\t%s\n' "$SOURCE_COMMIT"
     printf 'base_commit\t%s\n' "$RESOLVED_BASE"
     printf 'input_fingerprint\t%s\n' "$INPUT_FINGERPRINT"
     printf 'fingerprint\t%s\n' "$FINGERPRINT"
     printf 'stages\t%s\n' "$STAGE_LIST"
+    printf 'capabilities\t%s\n' "$CAPABILITY_LIST"
+    printf 'journeys\t%s\n' "$JOURNEY_LIST"
     printf 'started_at\t%s\n' "$RUN_STARTED_AT"
     printf 'finished_at\t%s\n' "$finished_at"
     printf 'duration_seconds\t%s\n' "$duration"
@@ -509,8 +556,9 @@ resolve_latest_resume() {
   while IFS= read -r candidate; do
     manifest="$candidate/manifest.tsv"
     [ -f "$manifest" ] && [ ! -L "$manifest" ] || continue
-    [ "$(manifest_value "$manifest" schema 2>/dev/null || true)" = 3 ] || continue
+    [ "$(manifest_value "$manifest" schema 2>/dev/null || true)" = 4 ] || continue
     [ "$(manifest_value "$manifest" policy 2>/dev/null || true)" = "$POLICY_VERSION" ] || continue
+    [ "$(manifest_value "$manifest" authority 2>/dev/null || true)" = "$AUTHORITY" ] || continue
     [ "$(manifest_value "$manifest" source_commit 2>/dev/null || true)" = "$SOURCE_COMMIT" ] || continue
     [ "$(manifest_value "$manifest" base_commit 2>/dev/null || true)" = "$RESOLVED_BASE" ] || continue
     [ "$(manifest_value "$manifest" input_fingerprint 2>/dev/null || true)" = "$INPUT_FINGERPRINT" ] || continue
@@ -574,8 +622,9 @@ validate_resume() {
   [ -f "$RESUME_DIR/summary.tsv" ] && [ ! -L "$RESUME_DIR/summary.tsv" ] || die 'resume summary is missing or unsafe'
   [ -f "$RESUME_DIR/environment.tsv" ] && [ ! -L "$RESUME_DIR/environment.tsv" ] || die 'resume environment evidence is missing or unsafe'
   [ -f "$RESUME_DIR/artifacts.tsv" ] && [ ! -L "$RESUME_DIR/artifacts.tsv" ] || die 'resume artifact evidence is missing or unsafe'
-  [ "$(manifest_value "$RESUME_DIR/manifest.tsv" schema)" = 3 ] || die 'resume evidence schema is unsupported'
+  [ "$(manifest_value "$RESUME_DIR/manifest.tsv" schema)" = 4 ] || die 'resume evidence schema is unsupported'
   [ "$(manifest_value "$RESUME_DIR/manifest.tsv" policy)" = "$POLICY_VERSION" ] || die 'resume evidence uses another policy version'
+  [ "$(manifest_value "$RESUME_DIR/manifest.tsv" authority)" = "$AUTHORITY" ] || die 'resume evidence uses another authority'
   [ "$(manifest_value "$RESUME_DIR/manifest.tsv" source_commit)" = "$SOURCE_COMMIT" ] || die 'resume evidence uses another source commit'
   [ "$(manifest_value "$RESUME_DIR/manifest.tsv" base_commit)" = "$RESOLVED_BASE" ] || die 'resume evidence uses another base commit'
   [ "$(manifest_value "$RESUME_DIR/manifest.tsv" input_fingerprint)" = "$INPUT_FINGERPRINT" ] || die 'resume evidence does not match the current input'
@@ -615,8 +664,9 @@ validate_resume() {
     [ -f "$resume_parent_manifest" ] && [ ! -L "$resume_parent_manifest" ] || die 'resume evidence parent manifest is missing or unsafe'
     actual_parent_digest="$(shasum -a 256 "$resume_parent_manifest" | awk '{print $1}')"
     [ "$actual_parent_digest" = "$resume_parent_digest" ] || die 'resume evidence parent manifest digest does not match'
-    [ "$(manifest_value "$resume_parent_manifest" schema)" = 3 ] || die 'resume evidence parent schema is unsupported'
+    [ "$(manifest_value "$resume_parent_manifest" schema)" = 4 ] || die 'resume evidence parent schema is unsupported'
     [ "$(manifest_value "$resume_parent_manifest" policy)" = "$POLICY_VERSION" ] || die 'resume evidence parent policy does not match'
+    [ "$(manifest_value "$resume_parent_manifest" authority)" = "$AUTHORITY" ] || die 'resume evidence parent authority does not match'
     [ "$(manifest_value "$resume_parent_manifest" source_commit)" = "$SOURCE_COMMIT" ] || die 'resume evidence parent source commit does not match'
     [ "$(manifest_value "$resume_parent_manifest" base_commit)" = "$RESOLVED_BASE" ] || die 'resume evidence parent base commit does not match'
     [ "$(manifest_value "$resume_parent_manifest" input_fingerprint)" = "$INPUT_FINGERPRINT" ] || die 'resume evidence parent input does not match'
@@ -670,8 +720,11 @@ write_markdown() {
     printf '# Quality gate\n\n'
     printf -- '- Policy: `%s`\n' "$POLICY_VERSION"
     printf -- '- Mode: `%s`\n' "$EFFECTIVE_MODE"
+    printf -- '- Authority: `%s`\n' "$AUTHORITY"
     printf -- '- Source: `%s`\n' "$SOURCE_COMMIT"
     printf -- '- Fingerprint: `%s`\n\n' "$FINGERPRINT"
+    printf -- '- Capabilities: `%s`\n' "${CAPABILITY_LIST:--}"
+    printf -- '- Journeys: `%s`\n\n' "${JOURNEY_LIST:--}"
     printf '| Stage | Status | Seconds | Log | Origin |\n'
     printf '| --- | --- | ---: | --- | --- |\n'
     while IFS=$'\t' read -r _ _ stage status duration log _ origin_run; do
@@ -712,15 +765,7 @@ on_signal() {
 trap on_signal INT TERM HUP
 
 timeout_for_stage() {
-  case "$1" in
-    static) printf 120 ;;
-    gate-contract) printf 300 ;;
-    swift|quality-contracts) printf 1200 ;;
-    app) printf 2400 ;;
-    ui-e2e) printf 40 ;;
-    codex|claude|distribution|tmux-runtime) printf 1200 ;;
-    release-preflight|publish-preflight|release-workflow) printf 900 ;;
-  esac
+  "$QUALITY_POLICY" timeout "$1"
 }
 
 effective_timeout_for_stage() {
@@ -777,7 +822,7 @@ run_static() {
   while IFS= read -r -d '' file; do
     [ -f "$ROOT/$file" ] || continue
     case "$file" in
-      *.sh|bin/detach|bin/detach-core|scripts/quality-gate|scripts/release-version|scripts/release-impact|scripts/release-lid-probe)
+      *.sh|bin/detach|bin/detach-core|scripts/quality-gate|scripts/quality-policy|scripts/release-version|scripts/release-impact|scripts/release-lid-probe)
         /bin/bash -n "$ROOT/$file"
         ;;
     esac
@@ -872,6 +917,16 @@ run_stage_command() {
           grep -Fx 'Quality history contract tests passed'
       ) >"$contract_root/quality-history.log" 2>&1 &
       contract_pids+=("$!")
+      (
+        "$ROOT/tests/quality-policy.sh" |
+          grep -Fx 'Quality policy contracts passed'
+      ) >"$contract_root/quality-policy.log" 2>&1 &
+      contract_pids+=("$!")
+      (
+        "$ROOT/tests/quality-dashboard.sh" |
+          grep -Fx 'Quality dashboard contracts passed'
+      ) >"$contract_root/quality-dashboard.log" 2>&1 &
+      contract_pids+=("$!")
       contract_status=0
       for contract_pid in "${contract_pids[@]}"; do
         if ! wait "$contract_pid"; then
@@ -930,7 +985,7 @@ run_stage_command() {
   esac
 }
 
-export ROOT BASE_REF RESOLVED_BASE MODE DIAGNOSTIC_STAGE TEST_MODE TEST_REAL_STATIC TEST_DIRECT RUN_DIR
+export ROOT QUALITY_POLICY BASE_REF RESOLVED_BASE MODE DIAGNOSTIC_STAGE TEST_MODE TEST_REAL_STATIC TEST_DIRECT RUN_DIR
 export -f die changed_entries static_shell_files run_static run_tmux_socket_preflight run_stage_command
 
 stage_result_file() {
@@ -1244,12 +1299,21 @@ write_markdown
 
 if [ "$OVERALL_STATUS" -ne 0 ]; then
   write_manifest failed
-  printf 'quality-gate: FAIL policy=%s fingerprint=%s failures=%s evidence=%s junit=%s markdown=%s\n' "$POLICY_VERSION" "$FINGERPRINT" "$FAILURE_COUNT" "$SUMMARY" "$JUNIT" "$MARKDOWN" >&2
+  if [ "$AUTHORITY" = local-diagnostic ]; then
+    result_label='DIAGNOSTIC FAIL'
+  else
+    result_label=FAIL
+  fi
+  printf 'quality-gate: %s policy=%s authority=%s fingerprint=%s failures=%s evidence=%s junit=%s markdown=%s\n' "$result_label" "$POLICY_VERSION" "$AUTHORITY" "$FINGERPRINT" "$FAILURE_COUNT" "$SUMMARY" "$JUNIT" "$MARKDOWN" >&2
   exit "$OVERALL_STATUS"
 elif [ -n "$DIAGNOSTIC_STAGE" ]; then
   write_manifest diagnostic
   printf 'quality-gate: diagnostic stage passed; this is not readiness evidence\n'
 else
   write_manifest passed
-  printf 'quality-gate: PASS policy=%s fingerprint=%s evidence=%s junit=%s markdown=%s\n' "$POLICY_VERSION" "$FINGERPRINT" "$SUMMARY" "$JUNIT" "$MARKDOWN"
+  if [ "$AUTHORITY" = local-diagnostic ]; then
+    printf 'quality-gate: DIAGNOSTIC PASS policy=%s authority=%s fingerprint=%s evidence=%s junit=%s markdown=%s\n' "$POLICY_VERSION" "$AUTHORITY" "$FINGERPRINT" "$SUMMARY" "$JUNIT" "$MARKDOWN"
+  else
+    printf 'quality-gate: PASS policy=%s authority=%s fingerprint=%s evidence=%s junit=%s markdown=%s\n' "$POLICY_VERSION" "$AUTHORITY" "$FINGERPRINT" "$SUMMARY" "$JUNIT" "$MARKDOWN"
+  fi
 fi

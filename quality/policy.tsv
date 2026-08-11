@@ -1,0 +1,272 @@
+schema	1
+policy	13
+limit	pr_feedback_seconds	600
+limit	local_feedback_seconds	120
+limit	review_seconds	180
+limit	merge_wait_seconds	300
+limit	max_repair_loops	2
+stage	10	static	120	true
+stage	20	gate-contract	300	true
+stage	30	swift	1200	true
+stage	40	quality-contracts	1200	true
+stage	50	app	2400	true
+stage	60	ui-e2e	40	true
+stage	70	codex	1200	true
+stage	80	claude	1200	true
+stage	90	distribution	1200	true
+stage	100	tmux-runtime	1200	true
+stage	110	release-preflight	900	true
+stage	120	publish-preflight	900	true
+stage	130	release-workflow	900	false
+stage	140	release-budget	1	true
+dependency	app	ui-e2e
+test-domain	policy	static,gate-contract	quality-system
+test-domain	docs	static	documentation
+test-domain	state-runtime	static,swift,quality-contracts,app,codex,claude,distribution,tmux-runtime,release-budget	session-lifecycle
+test-domain	power	static,swift,quality-contracts,app,distribution,tmux-runtime,release-budget	power-protection
+test-domain	swift-source	static,swift,quality-contracts,app,release-budget	app-experience
+test-domain	onboarding-source	static,swift,quality-contracts,app,release-budget	onboarding
+test-domain	settings-source	static,swift,quality-contracts,app,release-budget	settings
+test-domain	update-source	static,swift,quality-contracts,app,release-budget	update
+test-domain	diagnostics-source	static,swift,quality-contracts,app,release-budget	diagnostics
+test-domain	runtime-source	static,swift,quality-contracts,app,release-budget	session-lifecycle
+test-domain	session-ui-source	static,swift,quality-contracts,app,release-budget	session-lifecycle,app-experience
+test-domain	swift-test	static,swift,quality-contracts,release-budget	quality-system
+test-domain	package	static,swift,quality-contracts,app,tmux-runtime,release-budget	installation,update
+test-domain	cli	static,app,codex,claude,distribution,tmux-runtime,release-budget	session-lifecycle
+test-domain	install	static,app,distribution,tmux-runtime,release-budget	installation
+test-domain	tmux-build	static,app,codex,claude,tmux-runtime,release-budget	session-lifecycle
+test-domain	release-tool	static,app,release-preflight,publish-preflight,release-workflow,release-budget	update,publication
+test-domain	app-script	static,app,tmux-runtime,release-preflight,release-budget	installation
+test-domain	codex-test	static,app,codex,release-budget	session-lifecycle
+test-domain	claude-test	static,app,claude,release-budget	session-lifecycle
+test-domain	distribution-test	static,app,distribution,release-budget	installation
+test-domain	runtime-test	static,app,tmux-runtime,release-budget	session-lifecycle,power-protection
+test-domain	ui-test	static,app,release-budget	app-experience
+test-domain	release-preflight-test	static,release-preflight,release-budget	update
+test-domain	publish-preflight-test	static,publish-preflight,release-budget	publication
+test-domain	release-workflow-test	static,release-workflow,release-budget	update,publication
+test-domain	metadata	static	quality-system
+test-domain	unknown	*	*
+release-domain	safe	-	false
+release-domain	install	install	false
+release-domain	lid	lid	false
+release-domain	both	install,lid	false
+release-domain	unknown	install,lid	true
+route	1000	quality/*	policy	safe	docs/specs/documentation.md
+route	1000	.github/workflows/quality-gates.yml	policy	safe	docs/specs/documentation.md
+route	1000	docs/quality-gates.md	policy	safe	docs/specs/documentation.md
+route	1000	docs/testing.md	policy	safe	docs/specs/documentation.md
+route	1000	scripts/quality-gate	policy	safe	docs/specs/documentation.md
+route	1000	scripts/quality-policy	policy	safe	docs/specs/documentation.md
+route	1000	tools/quality_policy.py	policy	safe	docs/specs/documentation.md
+route	1000	scripts/quality-dashboard	policy	safe	docs/specs/documentation.md
+route	1000	tools/quality_dashboard.py	policy	safe	docs/specs/documentation.md
+route	1000	scripts/quality-history	policy	safe	docs/specs/documentation.md
+route	1000	scripts/test	policy	safe	docs/specs/documentation.md
+route	1000	tests/quality-*	policy	safe	docs/specs/documentation.md
+route	1000	tests/release-budget*	policy	safe	docs/specs/documentation.md
+route	1000	tests/shell-safety*	policy	safe	docs/specs/documentation.md
+route	1000	tests/test-suite-contract.sh	policy	safe	docs/specs/documentation.md
+route	990	tests/docs-contract.sh	docs	safe	docs/specs/documentation.md
+route	950	*.md	docs	safe	docs/specs/documentation.md
+route	950	docs/assets/*	docs	safe	docs/specs/documentation.md
+route	960	AGENTS.md	docs	safe	docs/specs/documentation.md
+route	960	CLAUDE.md	docs	safe	docs/specs/documentation.md
+route	900	app/Sources/DetachKit/DetachState*.swift	state-runtime	safe	docs/specs/runtime.md
+route	900	app/Sources/DetachKit/Session*.swift	state-runtime	safe	docs/specs/runtime.md
+route	900	app/Sources/DetachKit/Storage*.swift	state-runtime	safe	docs/specs/runtime.md
+route	900	app/Sources/DetachState/*.swift	state-runtime	safe	docs/specs/runtime.md
+route	900	app/Sources/DetachKit/DetachPower*.swift	power	both	docs/specs/power.md
+route	900	app/Sources/DetachKit/Power*.swift	power	both	docs/specs/power.md
+route	900	app/Sources/DetachKit/ClamshellLockRunner.swift	power	both	docs/specs/power.md
+route	900	app/Sources/DetachKit/BoundedProcessRunner.swift	power	both	docs/specs/power.md
+route	900	app/Sources/DetachPower/*.swift	power	both	docs/specs/power.md
+route	900	app/Sources/DetachPowerHelper/*.swift	power	both	docs/specs/power.md
+route	900	app/Sources/DetachWatchdog/*.swift	power	both	docs/specs/power.md
+route	900	app/Sources/DetachApp/InstallationStore.swift	power	both	docs/specs/power.md
+route	900	app/Sources/DetachApp/PowerHelper*.swift	power	both	docs/specs/power.md
+route	900	app/Sources/DetachApp/Watchdog*.swift	power	both	docs/specs/power.md
+route	880	app/Sources/DetachApp/DetachApp.swift	onboarding-source	install	docs/specs/app.md
+route	880	app/Sources/DetachApp/Onboarding*.swift	onboarding-source	install	docs/specs/app.md
+route	880	app/Sources/DetachApp/RootView.swift	onboarding-source	install	docs/specs/app.md
+route	880	app/Sources/DetachApp/SetupGuidance.swift	onboarding-source	install	docs/specs/app.md
+route	880	app/Sources/DetachApp/Settings*.swift	settings-source	install	docs/specs/app.md
+route	880	app/Sources/DetachApp/UpdaterService.swift	update-source	install	docs/specs/app.md
+route	880	app/Sources/DetachKit/DetachCLI.swift	runtime-source	install	docs/specs/app.md
+route	880	app/Sources/DetachKit/DoctorReport.swift	diagnostics-source	install	docs/specs/app.md
+route	880	app/Sources/DetachKit/Localization.swift	onboarding-source	install	docs/specs/app.md
+route	880	app/Sources/DetachKit/UpdateConfiguration.swift	update-source	install	docs/specs/app.md
+route	870	app/Sources/DetachApp/EmptySessionsView.swift	swift-source	safe	docs/specs/app.md
+route	870	app/Sources/DetachApp/LogTextView.swift	swift-source	safe	docs/specs/app.md
+route	870	app/Sources/DetachApp/MenuBar*.swift	swift-source	safe	docs/specs/app.md
+route	870	app/Sources/DetachApp/NewSessionSheet.swift	session-ui-source	safe	docs/specs/app.md
+route	870	app/Sources/DetachApp/Session*.swift	session-ui-source	safe	docs/specs/app.md
+route	870	app/Sources/DetachApp/SidebarView.swift	session-ui-source	safe	docs/specs/app.md
+route	870	app/Sources/DetachApp/TextSize.swift	swift-source	safe	docs/specs/app.md
+route	870	app/Sources/DetachApp/Theme.swift	swift-source	safe	docs/specs/app.md
+route	870	app/Sources/DetachApp/TipsBar.swift	swift-source	safe	docs/specs/app.md
+route	870	app/Sources/DetachApp/TmuxExtendedKeysSettingsController.swift	swift-source	safe	docs/specs/app.md
+route	870	app/Sources/DetachApp/UIE2E*.swift	swift-source	safe	docs/specs/app.md
+route	850	app/Sources/DetachApp/*.swift	swift-source	unknown	docs/specs/app.md
+route	870	app/Sources/DetachKit/ANSIText.swift	swift-source	safe	docs/specs/runtime.md
+route	870	app/Sources/DetachKit/LogPoller.swift	swift-source	safe	docs/specs/runtime.md
+route	870	app/Sources/DetachKit/Terminal*.swift	runtime-source	safe	docs/specs/runtime.md
+route	870	app/Sources/DetachKit/Tip.swift	swift-source	safe	docs/specs/runtime.md
+route	870	app/Sources/DetachKit/Tmux*.swift	runtime-source	safe	docs/specs/runtime.md
+route	840	app/Sources/DetachKit/*.swift	swift-source	unknown	docs/specs/runtime.md
+route	800	app/Sources/*	swift-source	unknown	docs/specs/app.md
+route	800	app/Tests/*	swift-test	safe	docs/specs/app.md
+route	900	app/Resources/en.lproj/*	package	install	docs/specs/app.md
+route	900	app/Resources/ru.lproj/*	package	install	docs/specs/app.md
+route	900	app/Resources/Info.plist	package	install	docs/specs/app.md
+route	900	app/Resources/Detach.entitlements	package	install	docs/specs/app.md
+route	900	app/Resources/DetachDevelopment.entitlements	package	install	docs/specs/app.md
+route	900	app/Resources/DetachWatchdog*	package	both	docs/specs/power.md
+route	900	app/Resources/dev.tsarev.detach.power-*	package	both	docs/specs/power.md
+route	900	app/Resources/Detach.icns	package	safe	docs/specs/app.md
+route	900	app/Resources/ThirdParty/*	package	safe	docs/specs/release.md
+route	800	app/Resources/*	package	unknown	docs/specs/app.md
+route	900	app/Package.swift	package	unknown	docs/specs/app.md
+route	900	app/Package.resolved	package	unknown	docs/specs/app.md
+route	900	bin/detach	cli	lid	docs/specs/runtime.md
+route	900	bin/detach-core	cli	lid	docs/specs/runtime.md
+route	800	bin/*	cli	unknown	docs/specs/runtime.md
+route	900	install.sh	install	install	docs/specs/runtime.md
+route	900	scripts/install.sh	install	install	docs/specs/runtime.md
+route	900	scripts/build-tmux.sh	tmux-build	safe	docs/specs/runtime.md
+route	900	scripts/release-lid-probe	release-tool	lid	docs/specs/release.md
+route	900	app/scripts/make-dmg.sh	release-tool	install	docs/specs/release.md
+route	900	app/scripts/make-app.sh	app-script	unknown	docs/specs/release.md
+route	900	app/scripts/release.sh	release-tool	unknown	docs/specs/release.md
+route	900	app/scripts/bundle-modes.sh	app-script	unknown	docs/specs/release.md
+route	890	app/scripts/publish-release.sh	release-tool	safe	docs/specs/release.md
+route	890	app/scripts/verify-appcast.sh	release-tool	safe	docs/specs/release.md
+route	880	app/scripts/*	app-script	safe	docs/specs/release.md
+route	900	scripts/release-version	release-tool	safe	docs/specs/release.md
+route	900	scripts/release-impact	release-tool	safe	docs/specs/release.md
+route	800	scripts/*	unknown	unknown	docs/specs/documentation.md
+route	900	tests/run.sh	codex-test	safe	docs/specs/runtime.md
+route	900	tests/fake-codex	codex-test	safe	docs/specs/runtime.md
+route	900	tests/run-claude.sh	claude-test	safe	docs/specs/runtime.md
+route	900	tests/fake-claude	claude-test	safe	docs/specs/runtime.md
+route	900	tests/distribution.sh	distribution-test	safe	docs/specs/runtime.md
+route	900	tests/tmux-runtime.sh	runtime-test	safe	docs/specs/runtime.md
+route	900	tests/power-smoke.sh	runtime-test	safe	docs/specs/power.md
+route	900	tests/ui-e2e.sh	ui-test	safe	docs/specs/app.md
+route	900	tests/ui-e2e-contract.sh	ui-test	safe	docs/specs/app.md
+route	900	tests/fake-ui-cli	ui-test	safe	docs/specs/app.md
+route	900	tests/release-preflight.sh	release-preflight-test	safe	docs/specs/release.md
+route	900	tests/publish-preflight.sh	publish-preflight-test	safe	docs/specs/release.md
+route	900	tests/release-impact.sh	release-workflow-test	safe	docs/specs/release.md
+route	900	tests/release-workflow.sh	release-workflow-test	safe	docs/specs/release.md
+route	500	tests/*	unknown	safe	docs/specs/documentation.md
+route	900	VERSION	release-tool	safe	docs/specs/release.md
+route	900	BUILD	release-tool	safe	docs/specs/release.md
+route	900	README.md	docs	safe	docs/specs/documentation.md
+route	900	.gitignore	metadata	safe	docs/specs/documentation.md
+route	900	.gitattributes	metadata	safe	docs/specs/documentation.md
+route	800	.github/*	unknown	safe	docs/specs/documentation.md
+route	700	app/.gitignore	metadata	safe	docs/specs/documentation.md
+route	100	*.sh	unknown	unknown	docs/specs/documentation.md
+capability	quality-system	docs/specs/documentation.md	-	J-QUALITY-CHANGE
+capability	documentation	docs/specs/documentation.md	-	J-DOCS-CONSISTENCY
+capability	session-lifecycle	docs/specs/runtime.md	QC-RUNTIME-STATE,QC-RUNTIME-OWNERSHIP,QC-RUNTIME-STORAGE,QC-RUNTIME-TRANSITION	J-SESSION-CREATE,J-SESSION-PERSIST,J-SESSION-RECOVER,J-SESSION-STOP,J-SESSION-DELETE
+capability	power-protection	docs/specs/power.md	QC-POWER-ASSERTION,QC-POWER-AUTH,QC-POWER-LEASE,QC-POWER-XPC,QC-POWER-PROTECTION,QC-POWER-CLI,QC-POWER-PLATFORM	J-POWER-ENABLE,J-POWER-LOW-BATTERY,J-POWER-HELPER-LEASE,J-POWER-CLOSED-LID
+capability	app-experience	docs/specs/app.md	QC-HEALTH-FRESHNESS,QC-HEALTH-PRESENTATION,QC-APP-TIPS	J-APP-DASHBOARD,J-APP-EMPTY,J-APP-FAILURE,J-APP-FOCUS
+capability	onboarding	docs/specs/app.md	QC-APP-ONBOARDING	J-ONBOARD-FIRST-RUN,J-ONBOARD-PROVIDER,J-ONBOARD-APPROVAL
+capability	settings	docs/specs/app.md	QC-APP-SETTINGS	J-SETTINGS-CHANGE
+capability	update	docs/specs/app.md	QC-APP-UPDATE	J-UPDATE-CHECK,J-UPDATE-APPLY
+capability	diagnostics	docs/specs/app.md	QC-APP-DOCTOR	J-DOCTOR-REPORT
+capability	installation	docs/specs/release.md	QC-RELEASE-INSTALL	J-INSTALL-CLEAN,J-INSTALL-REPAIR,J-INSTALL-UNINSTALL
+capability	publication	docs/specs/release.md	QC-RELEASE-PUBLISH	J-PUBLISH-ARTIFACTS
+journey	J-QUALITY-CHANGE	quality-system	-	SC-POLICY-CONTRACT	A policy change keeps local feedback focused and hosted evidence complete.
+journey	J-DOCS-CONSISTENCY	documentation	-	SC-DOCS-CONTRACT	Documentation and executable contracts stay synchronized.
+journey	J-SESSION-CREATE	session-lifecycle	QC-RUNTIME-STATE,QC-RUNTIME-OWNERSHIP	SC-SESSION-CREATE-CODEX,SC-SESSION-CREATE-CLAUDE	A user creates a managed provider session.
+journey	J-SESSION-PERSIST	session-lifecycle	QC-RUNTIME-STATE,QC-RUNTIME-STORAGE	SC-SESSION-PERSIST-CODEX,SC-SESSION-PERSIST-CLAUDE	A live session remains available after the app exits.
+journey	J-SESSION-RECOVER	session-lifecycle	QC-RUNTIME-OWNERSHIP,QC-RUNTIME-STORAGE,QC-RUNTIME-TRANSITION	SC-SESSION-RECOVER-CODEX,SC-SESSION-RECOVER-CLAUDE	A user recovers the exact owned session after interruption.
+journey	J-SESSION-STOP	session-lifecycle	QC-RUNTIME-OWNERSHIP	SC-SESSION-STOP-CODEX,SC-SESSION-STOP-CLAUDE	A user stops only the selected owned session.
+journey	J-SESSION-DELETE	session-lifecycle	QC-RUNTIME-OWNERSHIP,QC-RUNTIME-STORAGE	SC-SESSION-DELETE-CODEX,SC-SESSION-DELETE-CLAUDE	A user deletes one completed session without affecting another session.
+journey	J-POWER-ENABLE	power-protection	QC-POWER-ASSERTION,QC-POWER-LEASE	SC-POWER-UNIT	A protected session acquires both required power protections.
+journey	J-POWER-LOW-BATTERY	power-protection	QC-POWER-PROTECTION	SC-POWER-LOW-BATTERY	Low battery removes unsafe protection and reports the reason.
+journey	J-POWER-HELPER-LEASE	power-protection	QC-POWER-AUTH,QC-POWER-LEASE,QC-POWER-XPC	SC-POWER-HELPER	The helper accepts only an authorized bounded lease.
+journey	J-POWER-CLOSED-LID	power-protection	QC-POWER-PROTECTION	SC-POWER-CLOSED-LID	A protected session continues on supervised supported hardware with the lid closed.
+journey	J-APP-DASHBOARD	app-experience	QC-HEALTH-FRESHNESS,QC-HEALTH-PRESENTATION	SC-UI-DASHBOARD	A user sees fresh typed session health on the dashboard.
+journey	J-APP-EMPTY	app-experience	QC-HEALTH-PRESENTATION,QC-APP-TIPS	SC-UI-EMPTY	A user sees useful empty-state guidance.
+journey	J-APP-FAILURE	app-experience	QC-HEALTH-PRESENTATION	SC-UI-FAILURE	A user sees an actionable failure without parsed terminal claims.
+journey	J-APP-FOCUS	app-experience	QC-HEALTH-PRESENTATION	SC-UI-FOCUS	Background status checks do not steal keyboard focus.
+journey	J-ONBOARD-FIRST-RUN	onboarding	QC-APP-ONBOARDING	SC-UI-ONBOARD-FIRST-RUN	A new user completes the first-run setup.
+journey	J-ONBOARD-PROVIDER	onboarding	QC-APP-ONBOARDING	SC-UI-ONBOARD-PROVIDER	Onboarding detects an authenticated supported provider.
+journey	J-ONBOARD-APPROVAL	onboarding	QC-APP-ONBOARDING	SC-UI-ONBOARD-APPROVAL	Onboarding explains and observes required macOS approvals.
+journey	J-SETTINGS-CHANGE	settings	QC-APP-SETTINGS	SC-UI-SETTINGS	A user changes a setting and observes the persisted result.
+journey	J-UPDATE-CHECK	update	QC-APP-UPDATE	SC-UPDATE-CHECK	A user receives a typed update state.
+journey	J-UPDATE-APPLY	update	QC-APP-UPDATE	SC-UPDATE-APPLY	A valid update preserves the arm64 and signature contract.
+journey	J-DOCTOR-REPORT	diagnostics	QC-APP-DOCTOR	SC-DOCTOR-REPORT	A user receives a typed actionable doctor report.
+journey	J-INSTALL-CLEAN	installation	QC-RELEASE-INSTALL	SC-INSTALL-CLEAN	A user installs one immutable self-contained payload.
+journey	J-INSTALL-REPAIR	installation	QC-RELEASE-INSTALL	SC-INSTALL-REPAIR	Repair restores the exact immutable payload.
+journey	J-INSTALL-UNINSTALL	installation	QC-RELEASE-INSTALL	SC-INSTALL-UNINSTALL	Uninstall removes only Detach-owned data selected by the user.
+journey	J-PUBLISH-ARTIFACTS	publication	QC-RELEASE-PUBLISH	SC-PUBLISH-CONTRACT	Publication exposes only verified allowlisted artifacts.
+scenario	SC-POLICY-CONTRACT	gate-contract	automated	tests/quality-policy.sh
+scenario	SC-DOCS-CONTRACT	static	automated	tests/docs-contract.sh
+scenario	SC-SESSION-CREATE-CODEX	codex	legacy-stage	tests/run.sh
+scenario	SC-SESSION-CREATE-CLAUDE	claude	legacy-stage	tests/run-claude.sh
+scenario	SC-SESSION-PERSIST-CODEX	codex	legacy-stage	tests/run.sh
+scenario	SC-SESSION-PERSIST-CLAUDE	claude	legacy-stage	tests/run-claude.sh
+scenario	SC-SESSION-RECOVER-CODEX	codex	legacy-stage	tests/run.sh
+scenario	SC-SESSION-RECOVER-CLAUDE	claude	legacy-stage	tests/run-claude.sh
+scenario	SC-SESSION-STOP-CODEX	codex	legacy-stage	tests/run.sh
+scenario	SC-SESSION-STOP-CLAUDE	claude	legacy-stage	tests/run-claude.sh
+scenario	SC-SESSION-DELETE-CODEX	codex	legacy-stage	tests/run.sh
+scenario	SC-SESSION-DELETE-CLAUDE	claude	legacy-stage	tests/run-claude.sh
+scenario	SC-POWER-UNIT	swift	legacy-stage	cd app && swift test --filter Power
+scenario	SC-POWER-LOW-BATTERY	swift	legacy-stage	cd app && swift test --filter PowerProtection
+scenario	SC-POWER-HELPER	swift	legacy-stage	cd app && swift test --filter PowerHelper
+scenario	SC-POWER-CLOSED-LID	release-budget	manual-release	scripts/release-lid-probe
+scenario	SC-UI-DASHBOARD	ui-e2e	legacy-stage	tests/ui-e2e.sh
+scenario	SC-UI-EMPTY	ui-e2e	legacy-stage	tests/ui-e2e.sh
+scenario	SC-UI-FAILURE	ui-e2e	planned	pending out-of-process UI journey
+scenario	SC-UI-FOCUS	ui-e2e	legacy-stage	tests/ui-e2e.sh
+scenario	SC-UI-ONBOARD-FIRST-RUN	ui-e2e	planned	pending out-of-process UI journey
+scenario	SC-UI-ONBOARD-PROVIDER	ui-e2e	planned	pending out-of-process UI journey
+scenario	SC-UI-ONBOARD-APPROVAL	ui-e2e	planned	pending out-of-process UI journey
+scenario	SC-UI-SETTINGS	ui-e2e	planned	pending out-of-process UI journey
+scenario	SC-UPDATE-CHECK	release-preflight	legacy-stage	tests/release-preflight.sh
+scenario	SC-UPDATE-APPLY	publish-preflight	legacy-stage	tests/publish-preflight.sh
+scenario	SC-DOCTOR-REPORT	distribution	legacy-stage	tests/distribution.sh
+scenario	SC-INSTALL-CLEAN	distribution	legacy-stage	tests/distribution.sh
+scenario	SC-INSTALL-REPAIR	distribution	legacy-stage	tests/distribution.sh
+scenario	SC-INSTALL-UNINSTALL	distribution	legacy-stage	tests/distribution.sh
+scenario	SC-PUBLISH-CONTRACT	publish-preflight	legacy-stage	tests/publish-preflight.sh
+critical	app/Sources/DetachKit/SessionHealth.swift	QC-HEALTH-FRESHNESS	99.10
+critical	app/Sources/DetachKit/DetachState.swift	QC-RUNTIME-STATE	99.03
+critical	app/Sources/DetachKit/DetachStateCommand.swift	QC-RUNTIME-STATE	96.70
+critical	app/Sources/DetachKit/Storage.swift	QC-RUNTIME-STORAGE	95.28
+critical	app/Sources/DetachKit/StorageStore.swift	QC-RUNTIME-STORAGE	100.00
+critical	app/Sources/DetachKit/Tip.swift	QC-APP-TIPS	100.00
+critical	app/Sources/DetachKit/DetachPowerCommand.swift	QC-POWER-CLI	95.21
+critical	app/Sources/DetachKit/DetachPowerExecutable.swift	QC-POWER-CLI	100.00
+critical	app/Sources/DetachKit/PowerHelperLeaseService.swift	QC-POWER-LEASE	98.21
+critical	app/Sources/DetachKit/PowerHelperXPC.swift	QC-POWER-XPC	82.23
+critical	app/Sources/DetachKit/PowerHelperPlatform.swift	QC-POWER-PLATFORM	84.54
+critical	app/Sources/DetachKit/SessionStore.swift	QC-RUNTIME-OWNERSHIP	98.11
+critical	app/Sources/DetachKit/DoctorReport.swift	QC-APP-DOCTOR	100.00
+requirement	QC-RUNTIME-STATE	docs/specs/runtime.md	Typed state is the only shared state mutation boundary.
+requirement	QC-RUNTIME-OWNERSHIP	docs/specs/runtime.md	Session operations prove the exact run token and process ownership.
+requirement	QC-RUNTIME-STORAGE	docs/specs/runtime.md	Restores validate path, symlink, identity, and JSONL data before replacement.
+requirement	QC-POWER-ASSERTION	docs/specs/power.md	Power protection owns a user IOKit assertion.
+requirement	QC-POWER-AUTH	docs/specs/power.md	Helper authorization binds audit token, console user, signing, and deadline.
+requirement	QC-POWER-LEASE	docs/specs/power.md	The root helper lease is bounded and ownership safe.
+requirement	QC-POWER-XPC	docs/specs/power.md	The helper accepts only the typed power protocol.
+requirement	QC-POWER-PROTECTION	docs/specs/power.md	Low battery fails safe.
+requirement	QC-POWER-CLI	docs/specs/power.md	The power command reports and enforces typed protection state.
+requirement	QC-POWER-PLATFORM	docs/specs/power.md	Platform power operations preserve the helper safety boundary.
+requirement	QC-HEALTH-FRESHNESS	docs/specs/app.md	Health claims use typed fresh state.
+requirement	QC-HEALTH-PRESENTATION	docs/specs/app.md	The app presents typed health state without parsing terminal text.
+requirement	QC-RUNTIME-TRANSITION	docs/specs/runtime.md	Session transitions preserve exact process identity.
+requirement	QC-APP-TIPS	docs/specs/app.md	Session tips remain deterministic and user visible.
+requirement	QC-APP-DOCTOR	docs/specs/app.md	Doctor output derives from typed runtime state.
+requirement	QC-APP-ONBOARDING	docs/specs/app.md	Onboarding leads a new user through supported provider and approval setup.
+requirement	QC-APP-SETTINGS	docs/specs/app.md	Settings changes persist and affect only their declared behavior.
+requirement	QC-APP-UPDATE	docs/specs/app.md	Update state and application preserve the signed arm64 contract.
+requirement	QC-RELEASE-INSTALL	docs/specs/release.md	Install, repair, and uninstall mutate only Detach-owned payloads and selected state.
+requirement	QC-RELEASE-PUBLISH	docs/specs/release.md	Publication exposes only independently verified allowlisted artifacts.

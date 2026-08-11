@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Contract fixtures choose their authority explicitly. Do not let the parent
+# quality-gates job turn nested local diagnostics into CI merge evidence.
+unset DETACH_QUALITY_AUTHORITY GITHUB_ACTIONS
+
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-quality-gate-test.XXXXXX")"
 TEMPLATE_REPO="$TMP_ROOT/template"
@@ -11,21 +15,44 @@ cleanup() {
 }
 trap cleanup EXIT
 
-grep -F 'run: scripts/quality-gate --base "$BASE_SHA" --without-release-budget' \
+grep -F 'timeout-minutes: 10' "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'DETACH_QUALITY_AUTHORITY: ci-merge' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'run: scripts/quality-gate --mode repository --base "$BASE_SHA" --keep-going --without-release-budget' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'run: scripts/quality-gate --mode repository --keep-going --without-release-budget' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F -- '- "detach-release/**"' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+! grep -E 'uses:[[:space:]]+[^[:space:]]+@v[0-9]' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null || {
+  printf 'quality gate workflow contains a mutable Action tag\n' >&2
+  exit 1
+}
+grep -F 'quality-dashboard:' "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'pages: write' "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'scripts/quality-dashboard generate' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 
 prepare_template() {
   local stage
   mkdir -p "$TEMPLATE_REPO/scripts" "$TEMPLATE_REPO/tests/quality-gate-fixtures" \
-    "$TEMPLATE_REPO/app/build"
+    "$TEMPLATE_REPO/app/build" "$TEMPLATE_REPO/quality/generated" "$TEMPLATE_REPO/tools"
   install -m 0755 "$ROOT/scripts/quality-gate" "$TEMPLATE_REPO/scripts/quality-gate"
+  install -m 0755 "$ROOT/scripts/quality-policy" "$TEMPLATE_REPO/scripts/quality-policy"
+  install -m 0755 "$ROOT/scripts/quality-dashboard" "$TEMPLATE_REPO/scripts/quality-dashboard"
+  install -m 0755 "$ROOT/scripts/release-impact" "$TEMPLATE_REPO/scripts/release-impact"
+  install -m 0644 "$ROOT/tools/quality_policy.py" "$TEMPLATE_REPO/tools/quality_policy.py"
+  install -m 0644 "$ROOT/tools/quality_dashboard.py" "$TEMPLATE_REPO/tools/quality_dashboard.py"
   install -m 0755 "$ROOT/scripts/test" "$TEMPLATE_REPO/scripts/test"
+  install -m 0644 "$ROOT/quality/policy.tsv" "$TEMPLATE_REPO/quality/policy.tsv"
+  install -m 0644 "$ROOT/quality/generated/policy.json" \
+    "$TEMPLATE_REPO/quality/generated/policy.json"
   install -m 0755 "$ROOT/tests/quality-ratchet.sh" "$ROOT/tests/release-budget-ratchet.sh" \
-    "$ROOT/tests/shell-safety.sh" "$TEMPLATE_REPO/tests/"
+    "$ROOT/tests/shell-safety.sh" "$ROOT/tests/quality-policy.sh" \
+    "$ROOT/tests/quality-dashboard.sh" "$TEMPLATE_REPO/tests/"
   install -m 0644 "$ROOT/tests/quality-baseline.tsv" "$ROOT/tests/quality-file-baseline.tsv" \
     "$ROOT/tests/release-budget.tsv" \
     "$TEMPLATE_REPO/tests/"
@@ -145,6 +172,14 @@ printf '%s\n' 'struct ChangedPower {}' >"$REPO/app/Sources/DetachKit/PowerHelper
 plan="$(gate --plan)"
 [[ "$plan" = *'stages=static,swift,quality-contracts,app,ui-e2e,distribution,tmux-runtime,release-budget' ]]
 
+setup_fixture onboarding-journey-impact
+mkdir -p "$REPO/app/Sources/DetachApp"
+printf '%s\n' 'struct ChangedOnboarding {}' \
+  >"$REPO/app/Sources/DetachApp/OnboardingFuture.swift"
+plan="$(gate --plan)"
+[[ "$plan" = *'capabilities=onboarding'* ]]
+[[ "$plan" = *'journeys=J-ONBOARD-FIRST-RUN,J-ONBOARD-PROVIDER,J-ONBOARD-APPROVAL'* ]]
+
 setup_fixture package
 mkdir -p "$REPO/app"
 printf '%s\n' '// changed package' >"$REPO/app/Package.swift"
@@ -187,7 +222,7 @@ setup_fixture quality-file-baseline
 printf 'Sources/DetachKit/NewCritical.swift\t95.00\n' \
   >>"$REPO/tests/quality-file-baseline.tsv"
 plan="$(gate --plan)"
-[[ "$plan" = *'stages=static,gate-contract,swift,quality-contracts,app,ui-e2e,codex,claude,distribution,tmux-runtime,release-preflight,publish-preflight,release-workflow,release-budget' ]]
+[[ "$plan" = *'stages=static,gate-contract' ]]
 
 setup_fixture unknown
 printf '%s\n' unknown >"$REPO/new-contract.data"
@@ -217,7 +252,7 @@ mkdir -p "$REPO/app/Sources/DetachKit"
 printf '%s\n' 'struct OddName {}' >"$REPO/app/Sources/DetachKit/line
 break.swift"
 plan="$(gate --plan --format json)"
-[[ "$plan" = '{"policy":12,"mode":"change","source_commit":"'* ]]
+[[ "$plan" = '{"policy":13,"mode":"change","authority":"local-diagnostic","source_commit":"'* ]]
 [[ "$plan" = *'"base_commit":"","input_fingerprint":"'* ]]
 [[ "$plan" = *'"stages":["static","swift","quality-contracts","app","ui-e2e","release-budget"]}' ]]
 
@@ -246,11 +281,21 @@ if ! gate --mode release >"$REPO/release.out" 2>&1; then
 fi
 ! grep -Fx release-workflow "$ACTION_LOG" >/dev/null
 [ "$(wc -l <"$ACTION_LOG" | tr -d ' ')" = 12 ]
+grep -F 'quality-gate: PASS policy=13 authority=release' "$REPO/release.out" >/dev/null
 
 setup_fixture github-budget
-plan="$(GITHUB_ACTIONS=true gate --mode repository --without-release-budget --plan)"
+plan="$(GITHUB_ACTIONS=true DETACH_QUALITY_AUTHORITY=ci-merge \
+  gate --mode repository --without-release-budget --plan)"
 [[ "$plan" = *'stages=static,gate-contract,swift,quality-contracts,app,ui-e2e,codex,claude,distribution,tmux-runtime,release-preflight,publish-preflight,release-workflow' ]]
 [[ "$plan" != *'release-budget'* ]]
+[[ "$plan" = *'authority=ci-merge'* ]]
+if DETACH_QUALITY_AUTHORITY=ci-merge gate --mode repository --plan \
+    >"$REPO/spoof-authority.out" 2>&1; then
+  printf 'quality gate accepted spoofed CI merge authority\n' >&2
+  exit 1
+fi
+grep -F 'ci-merge authority is restricted to GitHub Actions' \
+  "$REPO/spoof-authority.out" >/dev/null
 
 setup_fixture release-timing-override
 if production_plan --mode release --without-release-budget --plan \
@@ -607,7 +652,7 @@ chmod 0755 \
   "$REPO/tests/quality-gate-fixtures/release-workflow"
 GATE_PARALLEL_ROOT="$PARALLEL_ROOT" gate --mode repository >"$REPO/parallel.out"
 [ "$(wc -l <"$ACTION_LOG" | tr -d ' ')" = 11 ]
-grep -F 'quality-gate: PASS' "$REPO/parallel.out" >/dev/null
+grep -F 'quality-gate: DIAGNOSTIC PASS' "$REPO/parallel.out" >/dev/null
 
 setup_fixture resource-order
 ORDER_ROOT="$REPO/order"
@@ -654,7 +699,7 @@ chmod 0755 \
   "$REPO/tests/quality-gate-fixtures/publish-preflight" \
   "$REPO/tests/quality-gate-fixtures/release-workflow"
 GATE_ORDER_ROOT="$ORDER_ROOT" gate --mode repository >"$REPO/resource-order.out"
-grep -F 'quality-gate: PASS' "$REPO/resource-order.out" >/dev/null
+grep -F 'quality-gate: DIAGNOSTIC PASS' "$REPO/resource-order.out" >/dev/null
 
 setup_fixture release-budget-wall
 set_manifest_value "$REPO/tests/release-budget.tsv" wall_seconds_max 1
@@ -690,7 +735,7 @@ grep -F 'stage budget: static regressed: 3s > 2s' "$RESULT_ROOT"/*/static.log >/
 grep -F $'static\tfailed\t3' "$RESULT_ROOT"/*/summary.tsv >/dev/null
 
 setup_fixture github-no-timing-budgets
-if ! GITHUB_ACTIONS=true \
+if ! GITHUB_ACTIONS=true DETACH_QUALITY_AUTHORITY=ci-merge \
     DETACH_QUALITY_GATE_TEST_STAGE_SECONDS_STATIC=300 \
     DETACH_QUALITY_GATE_TEST_STAGE_SECONDS_SWIFT=300 \
     DETACH_QUALITY_GATE_TEST_STAGE_SECONDS_APP=300 \
@@ -701,6 +746,9 @@ if ! GITHUB_ACTIONS=true \
   exit 1
 fi
 ! grep -F 'stage budget:' "$REPO/github-no-budgets.out" >/dev/null
+grep -F 'quality-gate: PASS policy=13 authority=ci-merge' \
+  "$REPO/github-no-budgets.out" >/dev/null
+grep -F $'authority\tci-merge' "$RESULT_ROOT"/*/manifest.tsv >/dev/null
 grep -F $'swift\tpassed' "$RESULT_ROOT"/*/summary.tsv >/dev/null
 grep -F $'app\tpassed' "$RESULT_ROOT"/*/summary.tsv >/dev/null
 grep -F $'publish-preflight\tpassed' "$RESULT_ROOT"/*/summary.tsv >/dev/null
@@ -718,7 +766,10 @@ setup_fixture evidence
 printf '%s\n' docs >>"$REPO/README.md"
 gate >"$REPO/evidence.out"
 run_dir="$(find "$RESULT_ROOT" -mindepth 1 -maxdepth 1 -type d -print | head -1)"
-grep -F $'schema\t3' "$run_dir/manifest.tsv" >/dev/null
+grep -F $'schema\t4' "$run_dir/manifest.tsv" >/dev/null
+grep -F $'authority\tlocal-diagnostic' "$run_dir/manifest.tsv" >/dev/null
+grep -F $'capabilities\tdocumentation' "$run_dir/manifest.tsv" >/dev/null
+grep -F $'journeys\tJ-DOCS-CONSISTENCY' "$run_dir/manifest.tsv" >/dev/null
 grep -F $'input_fingerprint\t' "$run_dir/manifest.tsv" >/dev/null
 grep -E $'^started_at\t[0-9]{4}-' "$run_dir/manifest.tsv" >/dev/null
 grep -E $'^finished_at\t[0-9]{4}-' "$run_dir/manifest.tsv" >/dev/null
@@ -755,7 +806,7 @@ printf '%s\n' docs >>"$REPO/README.md"
   DETACH_QUALITY_GATE_TEST_MODE=1 DETACH_QUALITY_GATE_TEST_REAL_STATIC=1 \
     DETACH_QUALITY_GATE_RESULT_ROOT="$RESULT_ROOT" "$REPO/scripts/quality-gate"
 ) >"$REPO/targeted-static.out"
-grep -F 'quality-gate: PASS' "$REPO/targeted-static.out" >/dev/null
+grep -F 'quality-gate: DIAGNOSTIC PASS' "$REPO/targeted-static.out" >/dev/null
 if (
   cd -P "$REPO"
   DETACH_QUALITY_GATE_TEST_MODE=1 DETACH_QUALITY_GATE_TEST_REAL_STATIC=1 \

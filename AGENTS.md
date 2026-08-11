@@ -14,14 +14,15 @@ the providers separately.
    risky migration, or work with unresolved requirements, create an ignored
    ExecPlan under `docs/work/` from `docs/exec-plan-template.md` and keep it current.
 4. During implementation, run the narrow checks named by the selected specs.
-   Before reporting readiness, run `scripts/quality-gate` once. Use
-   `--resume latest` after a compatible interrupted or failed run.
+   Before handoff, inspect `scripts/quality-gate --plan --explain` and run the
+   focused local diagnostics once. Use `--resume latest` after a compatible
+   interrupted or failed run. Hosted pull-request CI is readiness authority.
 5. Review the final diff and evidence. Update the user contract or durable spec
    in the same change whenever behavior or an invariant changes.
 6. Unless the owner explicitly asks to keep work local, ordinary changes use a
    topic branch: stage only task-scoped files, inspect the staged public diff,
-   commit after readiness passes, push, and merge only through a PR whose
-   required `quality-gates` job passed. Verify final `main` upstream parity.
+   commit after local diagnostics pass, push, and merge only through a PR whose
+   required authoritative `quality-gates` job passed. Verify final `main` upstream parity.
    `scripts/release-version` is the sole direct-`main` path.
 
 `README.md` is the user-facing contract. `docs/specs/` contains durable
@@ -67,17 +68,17 @@ read every spec preemptively.
 
 ## Verification loop
 
-- `scripts/quality-gate --plan --explain`: inspect the mandatory readiness
-  stages selected from the actual diff.
-- `scripts/quality-gate`: authoritative impact-aware readiness gate.
-- `scripts/quality-gate --mode repository`: every automated repository
-  check; use for policy work and final broad audits.
+- `scripts/quality-gate --plan --explain`: inspect the local diagnostic stages
+  selected from the actual diff.
+- `scripts/quality-gate`: impact-aware local diagnostic.
+- `scripts/quality-gate --mode repository`: every automated repository check
+  as a local diagnostic. Hosted pull-request CI runs this mode as authority.
 - `--stage <name>` and direct test commands are diagnostic only, not readiness
   evidence.
 - Prefer one focused test while iterating. Do not repeatedly pay for the full
   suite when a narrower deterministic check can close the feedback loop.
 - Treat a local timing-budget failure as performance work: diagnose and reduce
-  the slow stage before rerunning readiness. Never rerun merely for warmer
+  the slow stage before rerunning it. Never rerun merely for warmer
   caches, timing variance, or a lucky result; rerun unchanged only after
   evidence identifies an unrelated external transient, and record its cause.
 - Never run real power tests, signing, notarization, tagging, upload, or
@@ -132,8 +133,8 @@ The repository, history, CI logs, releases, and artifacts are public.
 ## Definition of done
 
 A change is ready only when its observable behavior has regression evidence,
-the impact-selected quality gate prints PASS, affected user docs and durable
-specs agree with the code, and `git diff --check` is clean. Report manual
+the hosted pull-request repository gate prints authoritative PASS, affected
+user docs and durable specs agree with the code, and `git diff --check` is clean. Report manual
 release gates that were not run. Do not substitute a plausible implementation,
 a narrow test, or a green stale manifest for requirement-by-requirement
 evidence. Unless the owner requests a local-only handoff, deliver ready work as

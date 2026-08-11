@@ -1,0 +1,1876 @@
+{
+  "capabilities": [
+    {
+      "id": "quality-system",
+      "journeys": [
+        "J-QUALITY-CHANGE"
+      ],
+      "requirements": [],
+      "spec": "docs/specs/documentation.md"
+    },
+    {
+      "id": "documentation",
+      "journeys": [
+        "J-DOCS-CONSISTENCY"
+      ],
+      "requirements": [],
+      "spec": "docs/specs/documentation.md"
+    },
+    {
+      "id": "session-lifecycle",
+      "journeys": [
+        "J-SESSION-CREATE",
+        "J-SESSION-PERSIST",
+        "J-SESSION-RECOVER",
+        "J-SESSION-STOP",
+        "J-SESSION-DELETE"
+      ],
+      "requirements": [
+        "QC-RUNTIME-STATE",
+        "QC-RUNTIME-OWNERSHIP",
+        "QC-RUNTIME-STORAGE",
+        "QC-RUNTIME-TRANSITION"
+      ],
+      "spec": "docs/specs/runtime.md"
+    },
+    {
+      "id": "power-protection",
+      "journeys": [
+        "J-POWER-ENABLE",
+        "J-POWER-LOW-BATTERY",
+        "J-POWER-HELPER-LEASE",
+        "J-POWER-CLOSED-LID"
+      ],
+      "requirements": [
+        "QC-POWER-ASSERTION",
+        "QC-POWER-AUTH",
+        "QC-POWER-LEASE",
+        "QC-POWER-XPC",
+        "QC-POWER-PROTECTION",
+        "QC-POWER-CLI",
+        "QC-POWER-PLATFORM"
+      ],
+      "spec": "docs/specs/power.md"
+    },
+    {
+      "id": "app-experience",
+      "journeys": [
+        "J-APP-DASHBOARD",
+        "J-APP-EMPTY",
+        "J-APP-FAILURE",
+        "J-APP-FOCUS"
+      ],
+      "requirements": [
+        "QC-HEALTH-FRESHNESS",
+        "QC-HEALTH-PRESENTATION",
+        "QC-APP-TIPS"
+      ],
+      "spec": "docs/specs/app.md"
+    },
+    {
+      "id": "onboarding",
+      "journeys": [
+        "J-ONBOARD-FIRST-RUN",
+        "J-ONBOARD-PROVIDER",
+        "J-ONBOARD-APPROVAL"
+      ],
+      "requirements": [
+        "QC-APP-ONBOARDING"
+      ],
+      "spec": "docs/specs/app.md"
+    },
+    {
+      "id": "settings",
+      "journeys": [
+        "J-SETTINGS-CHANGE"
+      ],
+      "requirements": [
+        "QC-APP-SETTINGS"
+      ],
+      "spec": "docs/specs/app.md"
+    },
+    {
+      "id": "update",
+      "journeys": [
+        "J-UPDATE-CHECK",
+        "J-UPDATE-APPLY"
+      ],
+      "requirements": [
+        "QC-APP-UPDATE"
+      ],
+      "spec": "docs/specs/app.md"
+    },
+    {
+      "id": "diagnostics",
+      "journeys": [
+        "J-DOCTOR-REPORT"
+      ],
+      "requirements": [
+        "QC-APP-DOCTOR"
+      ],
+      "spec": "docs/specs/app.md"
+    },
+    {
+      "id": "installation",
+      "journeys": [
+        "J-INSTALL-CLEAN",
+        "J-INSTALL-REPAIR",
+        "J-INSTALL-UNINSTALL"
+      ],
+      "requirements": [
+        "QC-RELEASE-INSTALL"
+      ],
+      "spec": "docs/specs/release.md"
+    },
+    {
+      "id": "publication",
+      "journeys": [
+        "J-PUBLISH-ARTIFACTS"
+      ],
+      "requirements": [
+        "QC-RELEASE-PUBLISH"
+      ],
+      "spec": "docs/specs/release.md"
+    }
+  ],
+  "critical_sources": [
+    {
+      "coverage_floor": 99.1,
+      "path": "app/Sources/DetachKit/SessionHealth.swift",
+      "requirement": "QC-HEALTH-FRESHNESS"
+    },
+    {
+      "coverage_floor": 99.03,
+      "path": "app/Sources/DetachKit/DetachState.swift",
+      "requirement": "QC-RUNTIME-STATE"
+    },
+    {
+      "coverage_floor": 96.7,
+      "path": "app/Sources/DetachKit/DetachStateCommand.swift",
+      "requirement": "QC-RUNTIME-STATE"
+    },
+    {
+      "coverage_floor": 95.28,
+      "path": "app/Sources/DetachKit/Storage.swift",
+      "requirement": "QC-RUNTIME-STORAGE"
+    },
+    {
+      "coverage_floor": 100.0,
+      "path": "app/Sources/DetachKit/StorageStore.swift",
+      "requirement": "QC-RUNTIME-STORAGE"
+    },
+    {
+      "coverage_floor": 100.0,
+      "path": "app/Sources/DetachKit/Tip.swift",
+      "requirement": "QC-APP-TIPS"
+    },
+    {
+      "coverage_floor": 95.21,
+      "path": "app/Sources/DetachKit/DetachPowerCommand.swift",
+      "requirement": "QC-POWER-CLI"
+    },
+    {
+      "coverage_floor": 100.0,
+      "path": "app/Sources/DetachKit/DetachPowerExecutable.swift",
+      "requirement": "QC-POWER-CLI"
+    },
+    {
+      "coverage_floor": 98.21,
+      "path": "app/Sources/DetachKit/PowerHelperLeaseService.swift",
+      "requirement": "QC-POWER-LEASE"
+    },
+    {
+      "coverage_floor": 82.23,
+      "path": "app/Sources/DetachKit/PowerHelperXPC.swift",
+      "requirement": "QC-POWER-XPC"
+    },
+    {
+      "coverage_floor": 84.54,
+      "path": "app/Sources/DetachKit/PowerHelperPlatform.swift",
+      "requirement": "QC-POWER-PLATFORM"
+    },
+    {
+      "coverage_floor": 98.11,
+      "path": "app/Sources/DetachKit/SessionStore.swift",
+      "requirement": "QC-RUNTIME-OWNERSHIP"
+    },
+    {
+      "coverage_floor": 100.0,
+      "path": "app/Sources/DetachKit/DoctorReport.swift",
+      "requirement": "QC-APP-DOCTOR"
+    }
+  ],
+  "dependencies": [
+    {
+      "dependent": "ui-e2e",
+      "prerequisite": "app"
+    }
+  ],
+  "journeys": [
+    {
+      "capability": "quality-system",
+      "id": "J-QUALITY-CHANGE",
+      "requirements": [],
+      "scenarios": [
+        "SC-POLICY-CONTRACT"
+      ],
+      "summary": "A policy change keeps local feedback focused and hosted evidence complete."
+    },
+    {
+      "capability": "documentation",
+      "id": "J-DOCS-CONSISTENCY",
+      "requirements": [],
+      "scenarios": [
+        "SC-DOCS-CONTRACT"
+      ],
+      "summary": "Documentation and executable contracts stay synchronized."
+    },
+    {
+      "capability": "session-lifecycle",
+      "id": "J-SESSION-CREATE",
+      "requirements": [
+        "QC-RUNTIME-STATE",
+        "QC-RUNTIME-OWNERSHIP"
+      ],
+      "scenarios": [
+        "SC-SESSION-CREATE-CODEX",
+        "SC-SESSION-CREATE-CLAUDE"
+      ],
+      "summary": "A user creates a managed provider session."
+    },
+    {
+      "capability": "session-lifecycle",
+      "id": "J-SESSION-PERSIST",
+      "requirements": [
+        "QC-RUNTIME-STATE",
+        "QC-RUNTIME-STORAGE"
+      ],
+      "scenarios": [
+        "SC-SESSION-PERSIST-CODEX",
+        "SC-SESSION-PERSIST-CLAUDE"
+      ],
+      "summary": "A live session remains available after the app exits."
+    },
+    {
+      "capability": "session-lifecycle",
+      "id": "J-SESSION-RECOVER",
+      "requirements": [
+        "QC-RUNTIME-OWNERSHIP",
+        "QC-RUNTIME-STORAGE",
+        "QC-RUNTIME-TRANSITION"
+      ],
+      "scenarios": [
+        "SC-SESSION-RECOVER-CODEX",
+        "SC-SESSION-RECOVER-CLAUDE"
+      ],
+      "summary": "A user recovers the exact owned session after interruption."
+    },
+    {
+      "capability": "session-lifecycle",
+      "id": "J-SESSION-STOP",
+      "requirements": [
+        "QC-RUNTIME-OWNERSHIP"
+      ],
+      "scenarios": [
+        "SC-SESSION-STOP-CODEX",
+        "SC-SESSION-STOP-CLAUDE"
+      ],
+      "summary": "A user stops only the selected owned session."
+    },
+    {
+      "capability": "session-lifecycle",
+      "id": "J-SESSION-DELETE",
+      "requirements": [
+        "QC-RUNTIME-OWNERSHIP",
+        "QC-RUNTIME-STORAGE"
+      ],
+      "scenarios": [
+        "SC-SESSION-DELETE-CODEX",
+        "SC-SESSION-DELETE-CLAUDE"
+      ],
+      "summary": "A user deletes one completed session without affecting another session."
+    },
+    {
+      "capability": "power-protection",
+      "id": "J-POWER-ENABLE",
+      "requirements": [
+        "QC-POWER-ASSERTION",
+        "QC-POWER-LEASE"
+      ],
+      "scenarios": [
+        "SC-POWER-UNIT"
+      ],
+      "summary": "A protected session acquires both required power protections."
+    },
+    {
+      "capability": "power-protection",
+      "id": "J-POWER-LOW-BATTERY",
+      "requirements": [
+        "QC-POWER-PROTECTION"
+      ],
+      "scenarios": [
+        "SC-POWER-LOW-BATTERY"
+      ],
+      "summary": "Low battery removes unsafe protection and reports the reason."
+    },
+    {
+      "capability": "power-protection",
+      "id": "J-POWER-HELPER-LEASE",
+      "requirements": [
+        "QC-POWER-AUTH",
+        "QC-POWER-LEASE",
+        "QC-POWER-XPC"
+      ],
+      "scenarios": [
+        "SC-POWER-HELPER"
+      ],
+      "summary": "The helper accepts only an authorized bounded lease."
+    },
+    {
+      "capability": "power-protection",
+      "id": "J-POWER-CLOSED-LID",
+      "requirements": [
+        "QC-POWER-PROTECTION"
+      ],
+      "scenarios": [
+        "SC-POWER-CLOSED-LID"
+      ],
+      "summary": "A protected session continues on supervised supported hardware with the lid closed."
+    },
+    {
+      "capability": "app-experience",
+      "id": "J-APP-DASHBOARD",
+      "requirements": [
+        "QC-HEALTH-FRESHNESS",
+        "QC-HEALTH-PRESENTATION"
+      ],
+      "scenarios": [
+        "SC-UI-DASHBOARD"
+      ],
+      "summary": "A user sees fresh typed session health on the dashboard."
+    },
+    {
+      "capability": "app-experience",
+      "id": "J-APP-EMPTY",
+      "requirements": [
+        "QC-HEALTH-PRESENTATION",
+        "QC-APP-TIPS"
+      ],
+      "scenarios": [
+        "SC-UI-EMPTY"
+      ],
+      "summary": "A user sees useful empty-state guidance."
+    },
+    {
+      "capability": "app-experience",
+      "id": "J-APP-FAILURE",
+      "requirements": [
+        "QC-HEALTH-PRESENTATION"
+      ],
+      "scenarios": [
+        "SC-UI-FAILURE"
+      ],
+      "summary": "A user sees an actionable failure without parsed terminal claims."
+    },
+    {
+      "capability": "app-experience",
+      "id": "J-APP-FOCUS",
+      "requirements": [
+        "QC-HEALTH-PRESENTATION"
+      ],
+      "scenarios": [
+        "SC-UI-FOCUS"
+      ],
+      "summary": "Background status checks do not steal keyboard focus."
+    },
+    {
+      "capability": "onboarding",
+      "id": "J-ONBOARD-FIRST-RUN",
+      "requirements": [
+        "QC-APP-ONBOARDING"
+      ],
+      "scenarios": [
+        "SC-UI-ONBOARD-FIRST-RUN"
+      ],
+      "summary": "A new user completes the first-run setup."
+    },
+    {
+      "capability": "onboarding",
+      "id": "J-ONBOARD-PROVIDER",
+      "requirements": [
+        "QC-APP-ONBOARDING"
+      ],
+      "scenarios": [
+        "SC-UI-ONBOARD-PROVIDER"
+      ],
+      "summary": "Onboarding detects an authenticated supported provider."
+    },
+    {
+      "capability": "onboarding",
+      "id": "J-ONBOARD-APPROVAL",
+      "requirements": [
+        "QC-APP-ONBOARDING"
+      ],
+      "scenarios": [
+        "SC-UI-ONBOARD-APPROVAL"
+      ],
+      "summary": "Onboarding explains and observes required macOS approvals."
+    },
+    {
+      "capability": "settings",
+      "id": "J-SETTINGS-CHANGE",
+      "requirements": [
+        "QC-APP-SETTINGS"
+      ],
+      "scenarios": [
+        "SC-UI-SETTINGS"
+      ],
+      "summary": "A user changes a setting and observes the persisted result."
+    },
+    {
+      "capability": "update",
+      "id": "J-UPDATE-CHECK",
+      "requirements": [
+        "QC-APP-UPDATE"
+      ],
+      "scenarios": [
+        "SC-UPDATE-CHECK"
+      ],
+      "summary": "A user receives a typed update state."
+    },
+    {
+      "capability": "update",
+      "id": "J-UPDATE-APPLY",
+      "requirements": [
+        "QC-APP-UPDATE"
+      ],
+      "scenarios": [
+        "SC-UPDATE-APPLY"
+      ],
+      "summary": "A valid update preserves the arm64 and signature contract."
+    },
+    {
+      "capability": "diagnostics",
+      "id": "J-DOCTOR-REPORT",
+      "requirements": [
+        "QC-APP-DOCTOR"
+      ],
+      "scenarios": [
+        "SC-DOCTOR-REPORT"
+      ],
+      "summary": "A user receives a typed actionable doctor report."
+    },
+    {
+      "capability": "installation",
+      "id": "J-INSTALL-CLEAN",
+      "requirements": [
+        "QC-RELEASE-INSTALL"
+      ],
+      "scenarios": [
+        "SC-INSTALL-CLEAN"
+      ],
+      "summary": "A user installs one immutable self-contained payload."
+    },
+    {
+      "capability": "installation",
+      "id": "J-INSTALL-REPAIR",
+      "requirements": [
+        "QC-RELEASE-INSTALL"
+      ],
+      "scenarios": [
+        "SC-INSTALL-REPAIR"
+      ],
+      "summary": "Repair restores the exact immutable payload."
+    },
+    {
+      "capability": "installation",
+      "id": "J-INSTALL-UNINSTALL",
+      "requirements": [
+        "QC-RELEASE-INSTALL"
+      ],
+      "scenarios": [
+        "SC-INSTALL-UNINSTALL"
+      ],
+      "summary": "Uninstall removes only Detach-owned data selected by the user."
+    },
+    {
+      "capability": "publication",
+      "id": "J-PUBLISH-ARTIFACTS",
+      "requirements": [
+        "QC-RELEASE-PUBLISH"
+      ],
+      "scenarios": [
+        "SC-PUBLISH-CONTRACT"
+      ],
+      "summary": "Publication exposes only verified allowlisted artifacts."
+    }
+  ],
+  "limits": {
+    "local_feedback_seconds": 120,
+    "max_repair_loops": 2,
+    "merge_wait_seconds": 300,
+    "pr_feedback_seconds": 600,
+    "review_seconds": 180
+  },
+  "policy": 13,
+  "release_domains": [
+    {
+      "gates": "-",
+      "id": "safe",
+      "unknown": false
+    },
+    {
+      "gates": "install",
+      "id": "install",
+      "unknown": false
+    },
+    {
+      "gates": "lid",
+      "id": "lid",
+      "unknown": false
+    },
+    {
+      "gates": "install,lid",
+      "id": "both",
+      "unknown": false
+    },
+    {
+      "gates": "install,lid",
+      "id": "unknown",
+      "unknown": true
+    }
+  ],
+  "requirements": [
+    {
+      "id": "QC-RUNTIME-STATE",
+      "spec": "docs/specs/runtime.md",
+      "summary": "Typed state is the only shared state mutation boundary."
+    },
+    {
+      "id": "QC-RUNTIME-OWNERSHIP",
+      "spec": "docs/specs/runtime.md",
+      "summary": "Session operations prove the exact run token and process ownership."
+    },
+    {
+      "id": "QC-RUNTIME-STORAGE",
+      "spec": "docs/specs/runtime.md",
+      "summary": "Restores validate path, symlink, identity, and JSONL data before replacement."
+    },
+    {
+      "id": "QC-POWER-ASSERTION",
+      "spec": "docs/specs/power.md",
+      "summary": "Power protection owns a user IOKit assertion."
+    },
+    {
+      "id": "QC-POWER-AUTH",
+      "spec": "docs/specs/power.md",
+      "summary": "Helper authorization binds audit token, console user, signing, and deadline."
+    },
+    {
+      "id": "QC-POWER-LEASE",
+      "spec": "docs/specs/power.md",
+      "summary": "The root helper lease is bounded and ownership safe."
+    },
+    {
+      "id": "QC-POWER-XPC",
+      "spec": "docs/specs/power.md",
+      "summary": "The helper accepts only the typed power protocol."
+    },
+    {
+      "id": "QC-POWER-PROTECTION",
+      "spec": "docs/specs/power.md",
+      "summary": "Low battery fails safe."
+    },
+    {
+      "id": "QC-POWER-CLI",
+      "spec": "docs/specs/power.md",
+      "summary": "The power command reports and enforces typed protection state."
+    },
+    {
+      "id": "QC-POWER-PLATFORM",
+      "spec": "docs/specs/power.md",
+      "summary": "Platform power operations preserve the helper safety boundary."
+    },
+    {
+      "id": "QC-HEALTH-FRESHNESS",
+      "spec": "docs/specs/app.md",
+      "summary": "Health claims use typed fresh state."
+    },
+    {
+      "id": "QC-HEALTH-PRESENTATION",
+      "spec": "docs/specs/app.md",
+      "summary": "The app presents typed health state without parsing terminal text."
+    },
+    {
+      "id": "QC-RUNTIME-TRANSITION",
+      "spec": "docs/specs/runtime.md",
+      "summary": "Session transitions preserve exact process identity."
+    },
+    {
+      "id": "QC-APP-TIPS",
+      "spec": "docs/specs/app.md",
+      "summary": "Session tips remain deterministic and user visible."
+    },
+    {
+      "id": "QC-APP-DOCTOR",
+      "spec": "docs/specs/app.md",
+      "summary": "Doctor output derives from typed runtime state."
+    },
+    {
+      "id": "QC-APP-ONBOARDING",
+      "spec": "docs/specs/app.md",
+      "summary": "Onboarding leads a new user through supported provider and approval setup."
+    },
+    {
+      "id": "QC-APP-SETTINGS",
+      "spec": "docs/specs/app.md",
+      "summary": "Settings changes persist and affect only their declared behavior."
+    },
+    {
+      "id": "QC-APP-UPDATE",
+      "spec": "docs/specs/app.md",
+      "summary": "Update state and application preserve the signed arm64 contract."
+    },
+    {
+      "id": "QC-RELEASE-INSTALL",
+      "spec": "docs/specs/release.md",
+      "summary": "Install, repair, and uninstall mutate only Detach-owned payloads and selected state."
+    },
+    {
+      "id": "QC-RELEASE-PUBLISH",
+      "spec": "docs/specs/release.md",
+      "summary": "Publication exposes only independently verified allowlisted artifacts."
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "quality/*",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": ".github/workflows/quality-gates.yml",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "docs/quality-gates.md",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "docs/testing.md",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "scripts/quality-gate",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "scripts/quality-policy",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tools/quality_policy.py",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "scripts/quality-dashboard",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tools/quality_dashboard.py",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "scripts/quality-history",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "scripts/test",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tests/quality-*",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tests/release-budget*",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tests/shell-safety*",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tests/test-suite-contract.sh",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tests/docs-contract.sh",
+      "priority": 990,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "docs"
+    },
+    {
+      "pattern": "*.md",
+      "priority": 950,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "docs"
+    },
+    {
+      "pattern": "docs/assets/*",
+      "priority": 950,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "docs"
+    },
+    {
+      "pattern": "AGENTS.md",
+      "priority": 960,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "docs"
+    },
+    {
+      "pattern": "CLAUDE.md",
+      "priority": 960,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "docs"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/DetachState*.swift",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "state-runtime"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/Session*.swift",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "state-runtime"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/Storage*.swift",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "state-runtime"
+    },
+    {
+      "pattern": "app/Sources/DetachState/*.swift",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "state-runtime"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/DetachPower*.swift",
+      "priority": 900,
+      "release_domain": "both",
+      "spec": "docs/specs/power.md",
+      "test_domain": "power"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/Power*.swift",
+      "priority": 900,
+      "release_domain": "both",
+      "spec": "docs/specs/power.md",
+      "test_domain": "power"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/ClamshellLockRunner.swift",
+      "priority": 900,
+      "release_domain": "both",
+      "spec": "docs/specs/power.md",
+      "test_domain": "power"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/BoundedProcessRunner.swift",
+      "priority": 900,
+      "release_domain": "both",
+      "spec": "docs/specs/power.md",
+      "test_domain": "power"
+    },
+    {
+      "pattern": "app/Sources/DetachPower/*.swift",
+      "priority": 900,
+      "release_domain": "both",
+      "spec": "docs/specs/power.md",
+      "test_domain": "power"
+    },
+    {
+      "pattern": "app/Sources/DetachPowerHelper/*.swift",
+      "priority": 900,
+      "release_domain": "both",
+      "spec": "docs/specs/power.md",
+      "test_domain": "power"
+    },
+    {
+      "pattern": "app/Sources/DetachWatchdog/*.swift",
+      "priority": 900,
+      "release_domain": "both",
+      "spec": "docs/specs/power.md",
+      "test_domain": "power"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/InstallationStore.swift",
+      "priority": 900,
+      "release_domain": "both",
+      "spec": "docs/specs/power.md",
+      "test_domain": "power"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/PowerHelper*.swift",
+      "priority": 900,
+      "release_domain": "both",
+      "spec": "docs/specs/power.md",
+      "test_domain": "power"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/Watchdog*.swift",
+      "priority": 900,
+      "release_domain": "both",
+      "spec": "docs/specs/power.md",
+      "test_domain": "power"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/DetachApp.swift",
+      "priority": 880,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "onboarding-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/Onboarding*.swift",
+      "priority": 880,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "onboarding-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/RootView.swift",
+      "priority": 880,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "onboarding-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/SetupGuidance.swift",
+      "priority": 880,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "onboarding-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/Settings*.swift",
+      "priority": 880,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "settings-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/UpdaterService.swift",
+      "priority": 880,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "update-source"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/DetachCLI.swift",
+      "priority": 880,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "runtime-source"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/DoctorReport.swift",
+      "priority": 880,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "diagnostics-source"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/Localization.swift",
+      "priority": 880,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "onboarding-source"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/UpdateConfiguration.swift",
+      "priority": 880,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "update-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/EmptySessionsView.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/LogTextView.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/MenuBar*.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/NewSessionSheet.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "session-ui-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/Session*.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "session-ui-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/SidebarView.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "session-ui-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/TextSize.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/Theme.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/TipsBar.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/TmuxExtendedKeysSettingsController.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/UIE2E*.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/*.swift",
+      "priority": 850,
+      "release_domain": "unknown",
+      "spec": "docs/specs/app.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/ANSIText.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/LogPoller.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/Terminal*.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "runtime-source"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/Tip.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/Tmux*.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "runtime-source"
+    },
+    {
+      "pattern": "app/Sources/DetachKit/*.swift",
+      "priority": 840,
+      "release_domain": "unknown",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Sources/*",
+      "priority": 800,
+      "release_domain": "unknown",
+      "spec": "docs/specs/app.md",
+      "test_domain": "swift-source"
+    },
+    {
+      "pattern": "app/Tests/*",
+      "priority": 800,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "swift-test"
+    },
+    {
+      "pattern": "app/Resources/en.lproj/*",
+      "priority": 900,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "package"
+    },
+    {
+      "pattern": "app/Resources/ru.lproj/*",
+      "priority": 900,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "package"
+    },
+    {
+      "pattern": "app/Resources/Info.plist",
+      "priority": 900,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "package"
+    },
+    {
+      "pattern": "app/Resources/Detach.entitlements",
+      "priority": 900,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "package"
+    },
+    {
+      "pattern": "app/Resources/DetachDevelopment.entitlements",
+      "priority": 900,
+      "release_domain": "install",
+      "spec": "docs/specs/app.md",
+      "test_domain": "package"
+    },
+    {
+      "pattern": "app/Resources/DetachWatchdog*",
+      "priority": 900,
+      "release_domain": "both",
+      "spec": "docs/specs/power.md",
+      "test_domain": "package"
+    },
+    {
+      "pattern": "app/Resources/dev.tsarev.detach.power-*",
+      "priority": 900,
+      "release_domain": "both",
+      "spec": "docs/specs/power.md",
+      "test_domain": "package"
+    },
+    {
+      "pattern": "app/Resources/Detach.icns",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "package"
+    },
+    {
+      "pattern": "app/Resources/ThirdParty/*",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "package"
+    },
+    {
+      "pattern": "app/Resources/*",
+      "priority": 800,
+      "release_domain": "unknown",
+      "spec": "docs/specs/app.md",
+      "test_domain": "package"
+    },
+    {
+      "pattern": "app/Package.swift",
+      "priority": 900,
+      "release_domain": "unknown",
+      "spec": "docs/specs/app.md",
+      "test_domain": "package"
+    },
+    {
+      "pattern": "app/Package.resolved",
+      "priority": 900,
+      "release_domain": "unknown",
+      "spec": "docs/specs/app.md",
+      "test_domain": "package"
+    },
+    {
+      "pattern": "bin/detach",
+      "priority": 900,
+      "release_domain": "lid",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "cli"
+    },
+    {
+      "pattern": "bin/detach-core",
+      "priority": 900,
+      "release_domain": "lid",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "cli"
+    },
+    {
+      "pattern": "bin/*",
+      "priority": 800,
+      "release_domain": "unknown",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "cli"
+    },
+    {
+      "pattern": "install.sh",
+      "priority": 900,
+      "release_domain": "install",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "install"
+    },
+    {
+      "pattern": "scripts/install.sh",
+      "priority": 900,
+      "release_domain": "install",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "install"
+    },
+    {
+      "pattern": "scripts/build-tmux.sh",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "tmux-build"
+    },
+    {
+      "pattern": "scripts/release-lid-probe",
+      "priority": 900,
+      "release_domain": "lid",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-tool"
+    },
+    {
+      "pattern": "app/scripts/make-dmg.sh",
+      "priority": 900,
+      "release_domain": "install",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-tool"
+    },
+    {
+      "pattern": "app/scripts/make-app.sh",
+      "priority": 900,
+      "release_domain": "unknown",
+      "spec": "docs/specs/release.md",
+      "test_domain": "app-script"
+    },
+    {
+      "pattern": "app/scripts/release.sh",
+      "priority": 900,
+      "release_domain": "unknown",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-tool"
+    },
+    {
+      "pattern": "app/scripts/bundle-modes.sh",
+      "priority": 900,
+      "release_domain": "unknown",
+      "spec": "docs/specs/release.md",
+      "test_domain": "app-script"
+    },
+    {
+      "pattern": "app/scripts/publish-release.sh",
+      "priority": 890,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-tool"
+    },
+    {
+      "pattern": "app/scripts/verify-appcast.sh",
+      "priority": 890,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-tool"
+    },
+    {
+      "pattern": "app/scripts/*",
+      "priority": 880,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "app-script"
+    },
+    {
+      "pattern": "scripts/release-version",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-tool"
+    },
+    {
+      "pattern": "scripts/release-impact",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-tool"
+    },
+    {
+      "pattern": "scripts/*",
+      "priority": 800,
+      "release_domain": "unknown",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "unknown"
+    },
+    {
+      "pattern": "tests/run.sh",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "codex-test"
+    },
+    {
+      "pattern": "tests/fake-codex",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "codex-test"
+    },
+    {
+      "pattern": "tests/run-claude.sh",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "claude-test"
+    },
+    {
+      "pattern": "tests/fake-claude",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "claude-test"
+    },
+    {
+      "pattern": "tests/distribution.sh",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "distribution-test"
+    },
+    {
+      "pattern": "tests/tmux-runtime.sh",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/runtime.md",
+      "test_domain": "runtime-test"
+    },
+    {
+      "pattern": "tests/power-smoke.sh",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/power.md",
+      "test_domain": "runtime-test"
+    },
+    {
+      "pattern": "tests/ui-e2e.sh",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "ui-test"
+    },
+    {
+      "pattern": "tests/ui-e2e-contract.sh",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "ui-test"
+    },
+    {
+      "pattern": "tests/fake-ui-cli",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "ui-test"
+    },
+    {
+      "pattern": "tests/release-preflight.sh",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-preflight-test"
+    },
+    {
+      "pattern": "tests/publish-preflight.sh",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "publish-preflight-test"
+    },
+    {
+      "pattern": "tests/release-impact.sh",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-workflow-test"
+    },
+    {
+      "pattern": "tests/release-workflow.sh",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-workflow-test"
+    },
+    {
+      "pattern": "tests/*",
+      "priority": 500,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "unknown"
+    },
+    {
+      "pattern": "VERSION",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-tool"
+    },
+    {
+      "pattern": "BUILD",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-tool"
+    },
+    {
+      "pattern": "README.md",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "docs"
+    },
+    {
+      "pattern": ".gitignore",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "metadata"
+    },
+    {
+      "pattern": ".gitattributes",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "metadata"
+    },
+    {
+      "pattern": ".github/*",
+      "priority": 800,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "unknown"
+    },
+    {
+      "pattern": "app/.gitignore",
+      "priority": 700,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "metadata"
+    },
+    {
+      "pattern": "*.sh",
+      "priority": 100,
+      "release_domain": "unknown",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "unknown"
+    }
+  ],
+  "scenarios": [
+    {
+      "command": "tests/quality-policy.sh",
+      "id": "SC-POLICY-CONTRACT",
+      "stage": "gate-contract",
+      "status": "automated"
+    },
+    {
+      "command": "tests/docs-contract.sh",
+      "id": "SC-DOCS-CONTRACT",
+      "stage": "static",
+      "status": "automated"
+    },
+    {
+      "command": "tests/run.sh",
+      "id": "SC-SESSION-CREATE-CODEX",
+      "stage": "codex",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/run-claude.sh",
+      "id": "SC-SESSION-CREATE-CLAUDE",
+      "stage": "claude",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/run.sh",
+      "id": "SC-SESSION-PERSIST-CODEX",
+      "stage": "codex",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/run-claude.sh",
+      "id": "SC-SESSION-PERSIST-CLAUDE",
+      "stage": "claude",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/run.sh",
+      "id": "SC-SESSION-RECOVER-CODEX",
+      "stage": "codex",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/run-claude.sh",
+      "id": "SC-SESSION-RECOVER-CLAUDE",
+      "stage": "claude",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/run.sh",
+      "id": "SC-SESSION-STOP-CODEX",
+      "stage": "codex",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/run-claude.sh",
+      "id": "SC-SESSION-STOP-CLAUDE",
+      "stage": "claude",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/run.sh",
+      "id": "SC-SESSION-DELETE-CODEX",
+      "stage": "codex",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/run-claude.sh",
+      "id": "SC-SESSION-DELETE-CLAUDE",
+      "stage": "claude",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "cd app && swift test --filter Power",
+      "id": "SC-POWER-UNIT",
+      "stage": "swift",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "cd app && swift test --filter PowerProtection",
+      "id": "SC-POWER-LOW-BATTERY",
+      "stage": "swift",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "cd app && swift test --filter PowerHelper",
+      "id": "SC-POWER-HELPER",
+      "stage": "swift",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "scripts/release-lid-probe",
+      "id": "SC-POWER-CLOSED-LID",
+      "stage": "release-budget",
+      "status": "manual-release"
+    },
+    {
+      "command": "tests/ui-e2e.sh",
+      "id": "SC-UI-DASHBOARD",
+      "stage": "ui-e2e",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/ui-e2e.sh",
+      "id": "SC-UI-EMPTY",
+      "stage": "ui-e2e",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "pending out-of-process UI journey",
+      "id": "SC-UI-FAILURE",
+      "stage": "ui-e2e",
+      "status": "planned"
+    },
+    {
+      "command": "tests/ui-e2e.sh",
+      "id": "SC-UI-FOCUS",
+      "stage": "ui-e2e",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "pending out-of-process UI journey",
+      "id": "SC-UI-ONBOARD-FIRST-RUN",
+      "stage": "ui-e2e",
+      "status": "planned"
+    },
+    {
+      "command": "pending out-of-process UI journey",
+      "id": "SC-UI-ONBOARD-PROVIDER",
+      "stage": "ui-e2e",
+      "status": "planned"
+    },
+    {
+      "command": "pending out-of-process UI journey",
+      "id": "SC-UI-ONBOARD-APPROVAL",
+      "stage": "ui-e2e",
+      "status": "planned"
+    },
+    {
+      "command": "pending out-of-process UI journey",
+      "id": "SC-UI-SETTINGS",
+      "stage": "ui-e2e",
+      "status": "planned"
+    },
+    {
+      "command": "tests/release-preflight.sh",
+      "id": "SC-UPDATE-CHECK",
+      "stage": "release-preflight",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/publish-preflight.sh",
+      "id": "SC-UPDATE-APPLY",
+      "stage": "publish-preflight",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/distribution.sh",
+      "id": "SC-DOCTOR-REPORT",
+      "stage": "distribution",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/distribution.sh",
+      "id": "SC-INSTALL-CLEAN",
+      "stage": "distribution",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/distribution.sh",
+      "id": "SC-INSTALL-REPAIR",
+      "stage": "distribution",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/distribution.sh",
+      "id": "SC-INSTALL-UNINSTALL",
+      "stage": "distribution",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "tests/publish-preflight.sh",
+      "id": "SC-PUBLISH-CONTRACT",
+      "stage": "publish-preflight",
+      "status": "legacy-stage"
+    }
+  ],
+  "schema": 1,
+  "stages": [
+    {
+      "name": "static",
+      "order": 10,
+      "release": true,
+      "timeout_seconds": 120
+    },
+    {
+      "name": "gate-contract",
+      "order": 20,
+      "release": true,
+      "timeout_seconds": 300
+    },
+    {
+      "name": "swift",
+      "order": 30,
+      "release": true,
+      "timeout_seconds": 1200
+    },
+    {
+      "name": "quality-contracts",
+      "order": 40,
+      "release": true,
+      "timeout_seconds": 1200
+    },
+    {
+      "name": "app",
+      "order": 50,
+      "release": true,
+      "timeout_seconds": 2400
+    },
+    {
+      "name": "ui-e2e",
+      "order": 60,
+      "release": true,
+      "timeout_seconds": 40
+    },
+    {
+      "name": "codex",
+      "order": 70,
+      "release": true,
+      "timeout_seconds": 1200
+    },
+    {
+      "name": "claude",
+      "order": 80,
+      "release": true,
+      "timeout_seconds": 1200
+    },
+    {
+      "name": "distribution",
+      "order": 90,
+      "release": true,
+      "timeout_seconds": 1200
+    },
+    {
+      "name": "tmux-runtime",
+      "order": 100,
+      "release": true,
+      "timeout_seconds": 1200
+    },
+    {
+      "name": "release-preflight",
+      "order": 110,
+      "release": true,
+      "timeout_seconds": 900
+    },
+    {
+      "name": "publish-preflight",
+      "order": 120,
+      "release": true,
+      "timeout_seconds": 900
+    },
+    {
+      "name": "release-workflow",
+      "order": 130,
+      "release": false,
+      "timeout_seconds": 900
+    },
+    {
+      "name": "release-budget",
+      "order": 140,
+      "release": true,
+      "timeout_seconds": 1
+    }
+  ],
+  "test_domains": [
+    {
+      "capabilities": "quality-system",
+      "id": "policy",
+      "stages": "static,gate-contract"
+    },
+    {
+      "capabilities": "documentation",
+      "id": "docs",
+      "stages": "static"
+    },
+    {
+      "capabilities": "session-lifecycle",
+      "id": "state-runtime",
+      "stages": "static,swift,quality-contracts,app,codex,claude,distribution,tmux-runtime,release-budget"
+    },
+    {
+      "capabilities": "power-protection",
+      "id": "power",
+      "stages": "static,swift,quality-contracts,app,distribution,tmux-runtime,release-budget"
+    },
+    {
+      "capabilities": "app-experience",
+      "id": "swift-source",
+      "stages": "static,swift,quality-contracts,app,release-budget"
+    },
+    {
+      "capabilities": "onboarding",
+      "id": "onboarding-source",
+      "stages": "static,swift,quality-contracts,app,release-budget"
+    },
+    {
+      "capabilities": "settings",
+      "id": "settings-source",
+      "stages": "static,swift,quality-contracts,app,release-budget"
+    },
+    {
+      "capabilities": "update",
+      "id": "update-source",
+      "stages": "static,swift,quality-contracts,app,release-budget"
+    },
+    {
+      "capabilities": "diagnostics",
+      "id": "diagnostics-source",
+      "stages": "static,swift,quality-contracts,app,release-budget"
+    },
+    {
+      "capabilities": "session-lifecycle",
+      "id": "runtime-source",
+      "stages": "static,swift,quality-contracts,app,release-budget"
+    },
+    {
+      "capabilities": "session-lifecycle,app-experience",
+      "id": "session-ui-source",
+      "stages": "static,swift,quality-contracts,app,release-budget"
+    },
+    {
+      "capabilities": "quality-system",
+      "id": "swift-test",
+      "stages": "static,swift,quality-contracts,release-budget"
+    },
+    {
+      "capabilities": "installation,update",
+      "id": "package",
+      "stages": "static,swift,quality-contracts,app,tmux-runtime,release-budget"
+    },
+    {
+      "capabilities": "session-lifecycle",
+      "id": "cli",
+      "stages": "static,app,codex,claude,distribution,tmux-runtime,release-budget"
+    },
+    {
+      "capabilities": "installation",
+      "id": "install",
+      "stages": "static,app,distribution,tmux-runtime,release-budget"
+    },
+    {
+      "capabilities": "session-lifecycle",
+      "id": "tmux-build",
+      "stages": "static,app,codex,claude,tmux-runtime,release-budget"
+    },
+    {
+      "capabilities": "update,publication",
+      "id": "release-tool",
+      "stages": "static,app,release-preflight,publish-preflight,release-workflow,release-budget"
+    },
+    {
+      "capabilities": "installation",
+      "id": "app-script",
+      "stages": "static,app,tmux-runtime,release-preflight,release-budget"
+    },
+    {
+      "capabilities": "session-lifecycle",
+      "id": "codex-test",
+      "stages": "static,app,codex,release-budget"
+    },
+    {
+      "capabilities": "session-lifecycle",
+      "id": "claude-test",
+      "stages": "static,app,claude,release-budget"
+    },
+    {
+      "capabilities": "installation",
+      "id": "distribution-test",
+      "stages": "static,app,distribution,release-budget"
+    },
+    {
+      "capabilities": "session-lifecycle,power-protection",
+      "id": "runtime-test",
+      "stages": "static,app,tmux-runtime,release-budget"
+    },
+    {
+      "capabilities": "app-experience",
+      "id": "ui-test",
+      "stages": "static,app,release-budget"
+    },
+    {
+      "capabilities": "update",
+      "id": "release-preflight-test",
+      "stages": "static,release-preflight,release-budget"
+    },
+    {
+      "capabilities": "publication",
+      "id": "publish-preflight-test",
+      "stages": "static,publish-preflight,release-budget"
+    },
+    {
+      "capabilities": "update,publication",
+      "id": "release-workflow-test",
+      "stages": "static,release-workflow,release-budget"
+    },
+    {
+      "capabilities": "quality-system",
+      "id": "metadata",
+      "stages": "static"
+    },
+    {
+      "capabilities": "*",
+      "id": "unknown",
+      "stages": "*"
+    }
+  ]
+}

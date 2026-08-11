@@ -70,4 +70,12 @@ git -C "$ROOT" check-ignore -q docs/work/example.md ||
 git -C "$ROOT" check-ignore -q presentations/internal.html ||
   fail 'internal presentation sources must remain ignored'
 
+grep -F 'Hosted pull-request CI is readiness authority.' "$ROOT/AGENTS.md" >/dev/null ||
+  fail 'agent instructions must identify hosted CI as readiness authority'
+grep -F 'They never claim merge readiness.' \
+  "$ROOT/docs/specs/documentation.md" >/dev/null ||
+  fail 'documentation spec must keep local gates diagnostic'
+! grep -F 'Only full is readiness evidence.' "$ROOT/scripts/test" >/dev/null ||
+  fail 'local full suite must not claim readiness authority'
+
 printf 'Documentation and context contracts passed\n'

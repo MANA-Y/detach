@@ -3,8 +3,8 @@
 ## Outcome
 
 Codex and Claude Code receive the same small durable instruction core, discover
-only task-relevant detailed specs, use focused tests while iterating, and finish
-against the same deterministic quality gate.
+only task-relevant detailed specs, and use focused tests while iterating.
+Hosted pull-request CI is the deterministic merge-readiness authority.
 
 ## Invariants
 
@@ -27,21 +27,26 @@ against the same deterministic quality gate.
   Claude expands imports eagerly.
 - Ignored `presentations/` contains internal presentation sources. Git and the
   quality gate do not treat these files as repository inputs.
-- Fast diagnostics close the edit loop; `scripts/quality-gate` remains the
-  sole readiness entry point. A focused command or diagnostic stage is never
-  presented as final evidence.
+- Fast local diagnostics close the edit loop. They never claim merge readiness.
+  Hosted pull-request CI runs the full repository gate on the exact change and
+  is the sole ordinary merge-readiness authority.
 - `scripts/test critical`, `unit`, `coverage`, `smoke`, and `full` are the
   stable human entry points for the high-risk logic loop, complete Swift loop,
-  measured coverage loop, freshly packaged product smoke, and exhaustive
-  repository readiness respectively. Each supports `--plan`; only `full` is
-  readiness evidence because it delegates to the repository quality gate.
+  measured coverage loop, freshly packaged product smoke, and exhaustive local
+  repository diagnostic respectively. Each supports `--plan`. No command in
+  this group is merge-readiness evidence.
 - Resume evidence retains stage timing and digest-bound logs, binds its parent,
-  and cannot turn a prior time-budget regression into readiness.
+  requires the same authority, and cannot turn a prior time-budget regression
+  into authoritative evidence.
 - A local timing-budget failure creates performance work. Warm-cache or
   variance reruns cannot turn it into readiness; an unchanged rerun is allowed
   only for an evidenced unrelated external transient whose cause is recorded.
-- Hosted CI runs every selected functional check and timing-policy ratchet but
-  does not enforce reference-machine wall or per-stage timing ceilings.
+- Pull-request CI runs every functional check once and the timing-policy
+  ratchets. It does not enforce reference-machine wall or per-stage timing
+  ceilings. The workflow has a ten-minute overall deadline.
+- A deterministic static dashboard reads only validated gate evidence. The
+  same artifact opens locally and deploys to GitHub Pages only after a green
+  `main` repository run. Its deploy job alone has Pages write permission.
 - The active GitHub ruleset for `main` has no bypass actors. It requires the
   GitHub Actions `quality-gates` job. An administrator cannot use an unchecked
   push as a substitute for CI. A release commit first gets the same check on
@@ -68,4 +73,5 @@ only for a rule needed on most tasks.
 ## Verification
 
 Run `tests/docs-contract.sh` and `tests/test-suite-contract.sh`, inspect the
-context map for the affected area, then run the impact-selected quality gate.
+context map for the affected area, and run the focused local diagnostics. The
+required pull-request job supplies final merge evidence.

@@ -1,0 +1,115 @@
+#!/bin/bash
+
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
+TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-quality-policy.XXXXXX")"
+trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
+
+fail() {
+  printf 'quality-policy-contract: %s\n' "$*" >&2
+  exit 1
+}
+
+field() {
+  printf '%s\n' "$1" | awk -F '\t' -v column="$2" '{print $column}'
+}
+
+expect_route() {
+  local path="$1" expected_test="$2" expected_release="$3" expected_unknown="$4" result
+  result="$("$ROOT/scripts/quality-policy" classify "$path")"
+  [ "$(field "$result" 1)" = known ] || fail "expected a known route for $path"
+  [ "$(field "$result" 2)" = "$expected_test" ] || fail "unexpected test domain for $path"
+  [ "$(field "$result" 3)" = "$expected_release" ] || fail "unexpected release domain for $path"
+  [ "$(field "$result" 7)" = "$expected_unknown" ] || fail "unexpected unknown flag for $path"
+}
+
+"$ROOT/scripts/quality-policy" validate >/dev/null
+"$ROOT/scripts/quality-policy" generate --check
+[ "$("$ROOT/scripts/quality-policy" version)" = 13 ] || fail 'unexpected policy version'
+[ "$("$ROOT/scripts/quality-policy" stages all | wc -l | tr -d ' ')" = 14 ] || \
+  fail 'unexpected stage count'
+[ "$("$ROOT/scripts/quality-policy" stages release | tail -1)" = release-budget ] || \
+  fail 'release stage order is incorrect'
+[ "$("$ROOT/scripts/quality-policy" timeout app)" = 2400 ] || fail 'app timeout is not policy owned'
+[ "$("$ROOT/scripts/quality-policy" dependencies)" = $'app\tui-e2e' ] || \
+  fail 'packaged UI dependency is missing'
+[ "$("$ROOT/scripts/quality-policy" critical | wc -l | tr -d ' ')" = 13 ] || \
+  fail 'critical source inventory is incomplete'
+[ "$("$ROOT/scripts/quality-policy" requirements | wc -l | tr -d ' ')" = 20 ] || \
+  fail 'critical requirement inventory is incomplete'
+[ "$("$ROOT/scripts/quality-policy" capabilities | wc -l | tr -d ' ')" = 11 ] || \
+  fail 'capability inventory is incomplete'
+[ "$("$ROOT/scripts/quality-policy" journeys | wc -l | tr -d ' ')" = 26 ] || \
+  fail 'journey inventory is incomplete'
+[ "$("$ROOT/scripts/quality-policy" scenarios | wc -l | tr -d ' ')" = 31 ] || \
+  fail 'scenario inventory is incomplete'
+first_json="$("$ROOT/scripts/quality-policy" render-json | shasum -a 256 | awk '{print $1}')"
+second_json="$("$ROOT/scripts/quality-policy" render-json | shasum -a 256 | awk '{print $1}')"
+[ "$first_json" = "$second_json" ] || fail 'generated policy JSON is not deterministic'
+
+expect_route docs/testing.md policy safe false
+expect_route app/Sources/DetachKit/DetachStateCommand.swift state-runtime safe false
+expect_route app/Sources/DetachKit/PowerProtection.swift power both false
+expect_route app/Sources/DetachKit/TerminalLauncher.swift runtime-source safe false
+expect_route app/Sources/DetachApp/OnboardingView.swift onboarding-source install false
+expect_route app/Sources/DetachApp/FutureFlow.swift swift-source unknown true
+expect_route scripts/release-lid-probe release-tool lid false
+
+onboarding="$("$ROOT/scripts/quality-policy" classify app/Sources/DetachApp/OnboardingView.swift)"
+[ "$(field "$onboarding" 10)" = onboarding ] || fail 'onboarding capability impact is missing'
+[[ "$(field "$onboarding" 11)" = *J-ONBOARD-FIRST-RUN* ]] || \
+  fail 'onboarding journey impact is missing'
+session="$("$ROOT/scripts/quality-policy" classify app/Sources/DetachKit/SessionStore.swift)"
+[ "$(field "$session" 10)" = session-lifecycle ] || fail 'session capability impact is missing'
+[[ "$(field "$session" 11)" = *J-SESSION-RECOVER* ]] || \
+  fail 'session recovery journey impact is missing'
+
+unknown="$("$ROOT/scripts/quality-policy" classify product/new-runtime)"
+[ "$(field "$unknown" 1)" = unknown ] || fail 'new product path must fail safe'
+[ "$(field "$unknown" 5)" = "$("$ROOT/scripts/quality-policy" stages all | paste -sd, -)" ] || \
+  fail 'unknown product path must select every stage'
+[ "$(field "$unknown" 6)" = install,lid ] || fail 'unknown product path must select both release gates'
+
+cp "$ROOT/quality/policy.tsv" "$TMP_ROOT/duplicate.tsv"
+printf '%s\n' $'route\t950\tREADME.md\tdocs\tsafe\tdocs/specs/documentation.md' \
+  >>"$TMP_ROOT/duplicate.tsv"
+if DETACH_QUALITY_POLICY="$TMP_ROOT/duplicate.tsv" \
+    "$ROOT/scripts/quality-policy" classify README.md >"$TMP_ROOT/duplicate.out" 2>&1; then
+  fail 'equal-priority routes were accepted'
+fi
+grep -F 'equal-priority routes' "$TMP_ROOT/duplicate.out" >/dev/null || \
+  fail 'equal-priority route failure is unclear'
+
+awk -F '\t' -v OFS='\t' \
+  '$1 == "test-domain" && $2 == "docs" {$3="static,missing-stage"} {print}' \
+  "$ROOT/quality/policy.tsv" >"$TMP_ROOT/missing-stage.tsv"
+if DETACH_QUALITY_POLICY="$TMP_ROOT/missing-stage.tsv" \
+    "$ROOT/scripts/quality-policy" validate >"$TMP_ROOT/missing-stage.out" 2>&1; then
+  fail 'unresolved stage reference was accepted'
+fi
+grep -F 'references unknown stage: missing-stage' "$TMP_ROOT/missing-stage.out" >/dev/null || \
+  fail 'unresolved stage failure is unclear'
+
+awk -F '\t' -v OFS='\t' \
+  '!($1 == "requirement" && $2 == "QC-POWER-CLI") {print}' \
+  "$ROOT/quality/policy.tsv" >"$TMP_ROOT/missing-requirement.tsv"
+if DETACH_QUALITY_POLICY="$TMP_ROOT/missing-requirement.tsv" \
+    "$ROOT/scripts/quality-policy" validate >"$TMP_ROOT/missing-requirement.out" 2>&1; then
+  fail 'unresolved critical requirement was accepted'
+fi
+
+awk -F '\t' -v OFS='\t' \
+  '!($1 == "scenario" && $2 == "SC-UI-SETTINGS") {print}' \
+  "$ROOT/quality/policy.tsv" >"$TMP_ROOT/missing-scenario.tsv"
+if DETACH_QUALITY_POLICY="$TMP_ROOT/missing-scenario.tsv" \
+    "$ROOT/scripts/quality-policy" validate >"$TMP_ROOT/missing-scenario.out" 2>&1; then
+  fail 'unresolved journey scenario was accepted'
+fi
+grep -F 'references unknown scenario: SC-UI-SETTINGS' \
+  "$TMP_ROOT/missing-scenario.out" >/dev/null || fail 'missing scenario failure is unclear'
+
+! grep -F 'case "$path" in' "$ROOT/scripts/quality-gate" "$ROOT/scripts/release-impact" >/dev/null || \
+  fail 'a second path classifier remains in a production script'
+
+printf 'Quality policy contracts passed\n'

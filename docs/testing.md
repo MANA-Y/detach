@@ -16,13 +16,14 @@
   packaged-app Accessibility flow, then verifies the bundled runtime. It needs
   a logged-in WindowServer session and an environment that permits the private
   app and tmux socket. Use `scripts/test --plan smoke` to inspect the steps.
-- `scripts/test full` — every automated repository check; it delegates exactly
-  to `scripts/quality-gate --mode repository` and is readiness evidence.
-  `critical` and `smoke` are focused diagnostics and never substitute for it.
+- `scripts/test full` — every automated repository check as a local diagnostic;
+  it delegates exactly to `scripts/quality-gate --mode repository`. It does not
+  claim merge readiness. Pull-request CI runs the same functional matrix once
+  on the exact change and is merge authority.
 
-- `scripts/quality-gate` — the policy-versioned, impact-aware readiness entry
-  point for agents. It selects mandatory checks from the diff and fails safe to
-  the repository gate for unknown impact. See `docs/quality-gates.md`.
+- `scripts/quality-gate` — the policy-versioned, impact-aware local diagnostic
+  entry point. It selects checks from the diff and fails safe to the repository
+  gate for unknown impact. See `docs/quality-gates.md`.
 - `scripts/quality-gate --plan --explain` explains impact selection;
   `--plan --format json` is the machine-readable equivalent. A failed or
   interrupted run may use `--resume <run-dir>` or `--resume latest` only while
@@ -32,11 +33,17 @@
 - `scripts/quality-history [RESULT_ROOT]` reports p50/p95 wall and stage timing,
   ordinary failures, and execution-environment failures across retained local
   or downloaded gate evidence. It is telemetry, not readiness evidence.
-- `scripts/quality-gate --mode repository` — every automated repository gate.
-  CI uses the same entry point with `--without-release-budget`, disabling local
+- `scripts/quality-dashboard generate` creates
+  `app/build/quality-dashboard/{index.html,data.json}` from the newest schema-4
+  evidence. `scripts/quality-dashboard serve --seconds 300` serves it only on
+  loopback and stops at the deadline. A green `main` workflow publishes the
+  same static files to `https://iltsarev.github.io/detach/`.
+- `scripts/quality-gate --mode repository` — every automated repository check.
+  Local use is diagnostic. Pull-request CI uses the same entry point once with
+  `ci-merge` authority and `--without-release-budget`, disabling local
   reference-machine wall and stage timing enforcement while retaining every
-  selected functional stage and the static budget ratchets. Direct local use is
-  not readiness evidence. A normal release enforces the budgets; only the
+  functional stage and the static budget ratchets. A normal release enforces
+  the budgets; only the
   owner-confirmed `DETACH_RELEASE_IGNORE_TIMING=1 scripts/release-version X.Y.Z`
   path may omit them for one intentionally busy-machine release, with the
   waiver recorded in private evidence. `--stage` is diagnostic only and is not
@@ -53,8 +60,7 @@
   applies stage budgets to ordinary local partial plans, exempts only the
   explicit GitHub-only budget-free plan, and raises the established UI floors.
   Policy 9 adds contract-locked `critical`, `unit`, `coverage`, `smoke`, and
-  `full` operator entry points while retaining the quality gate as the only
-  readiness authority. Policy 10 adds the exact-owner-confirmed busy-machine
+  `full` operator entry points. Policy 10 adds the exact-owner-confirmed busy-machine
   release timing waiver without removing any functional or hardware gate.
 
 - `DETACH_TEST_TMUX_BIN="$PWD/app/build/Detach.app/Contents/Resources/DetachCLI/tmux" tests/run.sh`

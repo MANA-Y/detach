@@ -5,6 +5,11 @@ set +x
 export LC_ALL=C
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
+QUALITY_POLICY="$ROOT/scripts/quality-policy"
+[ -x "$QUALITY_POLICY" ] || {
+  printf 'release-impact: quality policy reader is missing or not executable\n' >&2
+  exit 1
+}
 
 die() {
   printf 'release-impact: %s\n' "$*" >&2
@@ -142,108 +147,25 @@ apply_semantic_review() {
 }
 
 classify_path() {
-  local path="$1"
-  case "$path" in
-    README.md|AGENTS.md|CLAUDE.md|VERSION|BUILD|.gitignore|.gitattributes|\
-    .github/*|docs/*|app/Tests/*|tests/*)
-      ;;
-
-    app/Sources/DetachPower/*|app/Sources/DetachPowerHelper/*|\
-    app/Sources/DetachWatchdog/*|app/Sources/DetachKit/ClamshellLockRunner.swift|\
-    app/Sources/DetachKit/BoundedProcessRunner.swift|\
-    app/Sources/DetachKit/DetachPower*.swift|app/Sources/DetachKit/Power*.swift|\
-    app/Sources/DetachApp/InstallationStore.swift|\
-    app/Sources/DetachApp/PowerHelper*.swift|app/Sources/DetachApp/Watchdog*.swift)
-      require_install_matrix "$path"
-      require_lid_test "$path"
-      ;;
-
-    bin/detach|bin/detach-core)
-      require_lid_test "$path"
-      ;;
-
-    app/Sources/DetachApp/DetachApp.swift|\
-    app/Sources/DetachApp/Onboarding*.swift|\
-    app/Sources/DetachApp/RootView.swift|\
-    app/Sources/DetachApp/SetupGuidance.swift|\
-    app/Sources/DetachApp/Settings*.swift|\
-    app/Sources/DetachApp/UpdaterService.swift|\
-    app/Sources/DetachKit/DetachCLI.swift|\
-    app/Sources/DetachKit/DoctorReport.swift|\
-    app/Sources/DetachKit/Localization.swift|\
-    app/Sources/DetachKit/UpdateConfiguration.swift)
-      require_install_matrix "$path"
-      ;;
-
-    app/Sources/DetachApp/EmptySessionsView.swift|\
-    app/Sources/DetachApp/LogTextView.swift|\
-    app/Sources/DetachApp/MenuBar*.swift|\
-    app/Sources/DetachApp/NewSessionSheet.swift|\
-    app/Sources/DetachApp/Session*.swift|\
-    app/Sources/DetachApp/SidebarView.swift|\
-    app/Sources/DetachApp/TextSize.swift|\
-    app/Sources/DetachApp/Theme.swift|\
-    app/Sources/DetachApp/TipsBar.swift|\
-    app/Sources/DetachApp/TmuxExtendedKeysSettingsController.swift|\
-    app/Sources/DetachApp/UIE2E*.swift|\
-    app/Sources/DetachKit/ANSIText.swift|\
-    app/Sources/DetachKit/DetachState*.swift|\
-    app/Sources/DetachKit/LogPoller.swift|\
-    app/Sources/DetachKit/Session*.swift|\
-    app/Sources/DetachKit/Storage*.swift|\
-    app/Sources/DetachKit/Terminal*.swift|\
-    app/Sources/DetachKit/Tip.swift|\
-    app/Sources/DetachKit/Tmux*.swift|\
-    app/Sources/DetachState/main.swift|scripts/build-tmux.sh)
-      ;;
-
-    app/Sources/DetachKit/*|app/Sources/*)
-      require_both_unknown "$path"
-      ;;
-
-    app/Resources/en.lproj/*|app/Resources/ru.lproj/*|\
-    app/Resources/Info.plist|app/Resources/Detach.entitlements|\
-    app/Resources/DetachDevelopment.entitlements)
-      require_install_matrix "$path"
-      ;;
-
-    app/Resources/DetachWatchdog*|app/Resources/dev.tsarev.detach.power-*)
-      require_install_matrix "$path"
-      require_lid_test "$path"
-      ;;
-
-    app/Resources/Detach.icns|app/Resources/ThirdParty/*)
-      ;;
-
-    app/Resources/*|app/Package.swift|app/Package.resolved|\
-    app/scripts/make-app.sh|app/scripts/release.sh|app/scripts/bundle-modes.sh)
-      require_both_unknown "$path"
-      ;;
-
-    install.sh|scripts/install.sh)
-      require_install_matrix "$path"
-      ;;
-
-    scripts/release-lid-probe)
-      require_lid_test "$path"
-      ;;
-
-    app/scripts/make-dmg.sh)
-      require_install_matrix "$path"
-      ;;
-
-    scripts/release-version|scripts/release-impact|scripts/quality-gate|\
-    scripts/quality-history|scripts/test|\
-    app/scripts/make-icon.sh|\
-    app/scripts/publish-release.sh|app/scripts/render-icon.swift|\
-    app/scripts/sparkle-public-key.sh|app/scripts/verify-app.sh|\
-    app/scripts/verify-appcast.sh)
-      ;;
-
-    *)
-      require_both_unknown "$path"
-      ;;
-  esac
+  local path="$1" status test_domain release_domain spec stages gates unknown
+  local route_pattern route_priority capabilities journeys gate
+  IFS=$'\t' read -r status test_domain release_domain spec stages gates unknown \
+    route_pattern route_priority capabilities journeys < <("$QUALITY_POLICY" classify "$path") || \
+    die "cannot classify path: $path"
+  if [ "$status" = unknown ] || [ "$unknown" = true ]; then
+    UNKNOWN_IMPACT=true
+    add_unique UNKNOWN_REASONS "$path"
+  fi
+  [ "$gates" = - ] || {
+    IFS=, read -r -a selected_gates <<<"$gates"
+    for gate in "${selected_gates[@]}"; do
+      case "$gate" in
+        install) require_install_matrix "$path" ;;
+        lid) require_lid_test "$path" ;;
+        *) die "quality policy selected an unknown release gate: $gate" ;;
+      esac
+    done
+  }
 }
 
 while IFS= read -r -d '' status && IFS= read -r -d '' path; do
