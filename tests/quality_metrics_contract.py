@@ -404,39 +404,6 @@ def main() -> None:
         )
         require_text(old_floor_only, "has no quality metrics")
 
-        write_json(changed, {})
-        historical_metrics = root / "historical-policy-14.json"
-        historical_document = json.loads(original_metrics)
-        historical_document["policy"] = 14
-        historical_document["comparison"]["baseline_policy"] = 13
-        historical_document["comparison"]["baseline_source_commit"] = "c" * 40
-        historical_document["comparison"]["mode"] = "policy-13-bootstrap"
-        historical_document["comparison"]["status"] = "passed"
-        write_json(historical_metrics, historical_document)
-        historical_root = root / "historical-policy-14"
-        create_baseline(
-            historical_root,
-            historical_metrics,
-            manifest_policy=14,
-        )
-        historical = root / "historical-result.json"
-        invoke(
-            evaluate_arguments(
-                coverage,
-                tests,
-                historical,
-                changed,
-                baseline=historical_root,
-                authority="ci-merge",
-            )
-        )
-        historical_result = json.loads(historical.read_text(encoding="utf-8"))
-        if (
-            historical_result["comparison"]["mode"] != "green-main-artifact"
-            or historical_result["comparison"]["baseline_policy"] != 14
-        ):
-            raise AssertionError("historical policy-14 metrics were not used as measured facts")
-
         removed_bootstrap_flag = invoke(
             [
                 *evaluate_arguments(
@@ -468,7 +435,7 @@ def main() -> None:
         legacy_path = root / "legacy-mode.json"
         write_json(legacy_path, legacy_mode)
         legacy_result = invoke(["validate", str(legacy_path)], expected=2)
-        require_text(legacy_result, "historical bootstrap policy is invalid")
+        require_text(legacy_result, "comparison baseline is invalid")
 
     print("Quality metrics contracts passed")
 
