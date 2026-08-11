@@ -51,7 +51,5 @@ arguments=(
 [ -z "${RESOLVED_BASE:-}" ] || arguments+=(--base-commit "$RESOLVED_BASE")
 [ -z "${DETACH_QUALITY_BASELINE_ROOT:-}" ] || \
   arguments+=(--baseline-root "$DETACH_QUALITY_BASELINE_ROOT")
-[ "${DETACH_QUALITY_ALLOW_POLICY_13_BOOTSTRAP:-0}" != 1 ] || \
-  arguments+=(--allow-policy-13-bootstrap)
 
 "$ROOT/scripts/quality-metrics" "${arguments[@]}"

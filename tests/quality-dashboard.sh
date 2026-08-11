@@ -8,6 +8,7 @@ RESULT_ROOT="$TMP_ROOT/results"
 RUN_DIR="$RESULT_ROOT/20260811T100000Z-1"
 OUTPUT="$TMP_ROOT/dashboard"
 MUTATION_SUMMARY="$TMP_ROOT/mutation-summary.json"
+POLICY_VERSION="$("$ROOT/scripts/quality-policy" version)"
 trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
 
 fail() {
@@ -26,11 +27,12 @@ for record in \
   'ui-e2e passed 4' \
   'release-budget passed 0'; do
   read -r stage status duration <<<"$record"
-  printf '14\trepository\t%s\t%s\t%s\t%s.log\tdigest\t-\n' \
-    "$stage" "$status" "$duration" "$stage" >>"$RUN_DIR/summary.tsv"
+  printf '%s\trepository\t%s\t%s\t%s\t%s.log\tdigest\t-\n' \
+    "$POLICY_VERSION" "$stage" "$status" "$duration" "$stage" \
+    >>"$RUN_DIR/summary.tsv"
 done
 summary_digest="$(shasum -a 256 "$RUN_DIR/summary.tsv" | awk '{print $1}')"
-cat >"$RUN_DIR/quality-metrics.json" <<'JSON'
+cat >"$RUN_DIR/quality-metrics.json" <<JSON
 {
   "changed_lines": {
     "base_commit": "fedcba9876543210fedcba9876543210fedcba98",
@@ -40,14 +42,14 @@ cat >"$RUN_DIR/quality-metrics.json" <<'JSON'
     "status": "passed"
   },
   "comparison": {
-    "baseline_policy": 14,
+    "baseline_policy": $POLICY_VERSION,
     "baseline_source_commit": "fedcba9876543210fedcba9876543210fedcba98",
     "mode": "green-main-artifact",
     "regressions": [],
     "status": "passed"
   },
   "critical_files": [],
-  "policy": 14,
+  "policy": $POLICY_VERSION,
   "schema": 1,
   "source_commit": "0123456789abcdef0123456789abcdef01234567",
   "suites": {
@@ -70,7 +72,7 @@ printf 'schema\t1\nfile\tquality-metrics.json\t%s\n' "$metrics_digest" \
 artifacts_digest="$(shasum -a 256 "$RUN_DIR/artifacts.tsv" | awk '{print $1}')"
 cat >"$RUN_DIR/manifest.tsv" <<EOF
 schema	4
-policy	14
+policy	$POLICY_VERSION
 mode	repository
 authority	ci-merge
 source_commit	0123456789abcdef0123456789abcdef01234567
@@ -92,18 +94,18 @@ summary_sha256	$summary_digest
 result	passed
 EOF
 
-cat >"$MUTATION_SUMMARY" <<'JSON'
+cat >"$MUTATION_SUMMARY" <<JSON
 {
   "floor_percent": 100,
   "killed": 1,
-  "policy": 14,
+  "policy": $POLICY_VERSION,
   "results": [
     {
       "duration_seconds": 4,
       "exit_code": 1,
       "mutant_id": "foreign-tmux-must-collide",
       "output_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      "policy": 14,
+      "policy": $POLICY_VERSION,
       "requirement": "QC-HEALTH-FRESHNESS",
       "schema": 1,
       "source": "app/Sources/DetachKit/SessionHealth.swift",

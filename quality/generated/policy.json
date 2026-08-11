@@ -502,7 +502,7 @@
     "pr_feedback_seconds": 600,
     "review_seconds": 180
   },
-  "policy": 14,
+  "policy": 15,
   "release_domains": [
     {
       "gates": "-",

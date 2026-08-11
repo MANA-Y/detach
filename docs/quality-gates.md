@@ -1,486 +1,178 @@
 # Quality gates
 
-`scripts/quality-gate` is the tracked quality contract for local agents, CI,
-and releases. Policy version 14 derives local diagnostics from one typed
-manifest and selects the full repository gate for unknown paths. Hosted pull-
-request CI runs every functional stage once and is the sole ordinary merge
-authority. The resource-aware scheduler
-runs isolated work concurrently without allowing two SwiftPM operations to
-share the same build directory.
+`quality/policy.tsv` is the single quality policy. It owns path impact,
+capabilities, user journeys, requirements, stages, time limits, critical
+sources, and release impact. `scripts/quality-policy` validates this source and
+generates `quality/generated/policy.json`. Generated data must match the source.
+
+`scripts/quality-gate` applies the policy. Local runs are diagnostics. Hosted
+pull request CI runs every functional stage on the current merge commit and is
+the only ordinary merge authority. Unknown paths select the full plan.
 
 ## Commands
 
-- `scripts/quality-gate` checks the working-tree diff.
-- `scripts/quality-gate --base <ref>` checks committed changes since a trusted
-  merge base plus staged, unstaged, and untracked files.
+- `scripts/quality-gate --plan --explain` shows affected capabilities,
+  journeys, stages, and the path that selected each stage.
+- `scripts/quality-gate` checks the working-tree diff and writes local
+  diagnostic evidence.
+- `scripts/quality-gate --base <ref>` also checks committed changes after the
+  resolved merge base.
 - `scripts/quality-gate --mode repository` runs every automated repository
-  check. Local use is diagnostic. Pull requests use this complete mode with
-  `ci-merge` authority.
-- `scripts/quality-gate --without-release-budget` disables the local
-  reference-machine wall and per-stage timing checks. The `main` and pull
-  request CI workflows use it because hosted-runner timing is not comparable
-  release evidence. Functional stages and static budget-ratchet checks remain
-  mandatory. Unconfirmed local use is not readiness evidence. A pre-release
-  repository audit or the release orchestrator may use it only after the owner
-  requests `DETACH_RELEASE_IGNORE_TIMING=1` and confirms the exact release
-  target.
-- `scripts/quality-gate --mode release` runs the complete pre-release suite.
-  It omits only the recursive test of `scripts/release-version` itself.
-- `scripts/quality-gate --plan` prints the selected stages without running
-  them. Add `--explain` to show which changed path selected each stage, or
-  `--format json` for machine-readable planning.
-- `scripts/quality-gate --resume <run-dir>` reuses passed stages from compatible
-  evidence whose policy, source commit, resolved base commit, and exact input
-  fingerprint still match. Reused stages retain their measured duration and a
-  digest-bound local log copy. The new manifest binds its parent manifest, and
-  timing inherits the maximum wall duration in the compatible chain, so resume
-  cannot erase a prior time-budget failure. The earlier plan must cover every
-  stage in the new plan, so a repository run can safely satisfy a smaller
-  change gate.
-- `scripts/quality-gate --resume latest` selects the newest compatible local
-  evidence automatically. Changed commits, refs, tracked bytes, or untracked
-  bytes invalidate reuse.
-- `scripts/quality-gate --keep-going` is retained for CI compatibility. The
-  resource-aware scheduler always completes independent work so one attempt
-  reports every safe-to-run failure. Stages whose prerequisite failed are
-  marked blocked instead of wasting time. The final result remains failed.
-- `scripts/quality-gate --list-stages` prints the canonical stage names used by
-  diagnostics and automation.
-- `--stage <name>` is an explicit diagnostic rerun and is never readiness
-  evidence.
-- `scripts/quality-history [RESULT_ROOT]` summarizes completed local or
-  downloaded evidence as run counts, failure counts, environment-failure
-  counts, and p50/p95 wall and stage durations. It is observational and cannot
-  produce readiness evidence.
-- `scripts/quality-dashboard generate` validates the latest schema-4 manifest
-  and summary digest, then writes deterministic static HTML and JSON under
-  `app/build/quality-dashboard/`. `scripts/quality-dashboard serve` binds only
-  loopback and stops after its bounded deadline.
-- `scripts/quality-mutation` validates and runs the deterministic mutation
-  corpus. The weekly and manual workflow runs each mutant in a separate job.
-  Mutation results are not part of pull-request latency.
+  check. A local run remains diagnostic.
+- `scripts/quality-gate --mode release` runs the complete pre-release plan. It
+  omits only the recursive `scripts/release-version` test.
+- `scripts/quality-gate --resume <run-dir>` reuses compatible passed stages.
+  `--resume latest` selects the newest compatible local run.
+- `scripts/quality-gate --stage <name>` reruns one diagnostic stage. It is not
+  readiness evidence.
+- `scripts/quality-history [RESULT_ROOT]` reports run and failure counts plus
+  p50 and p95 wall and stage durations. It cannot produce readiness evidence.
+- `scripts/quality-dashboard generate` writes deterministic static HTML and
+  JSON. `scripts/quality-dashboard serve` binds to loopback and stops after its
+  deadline.
+- `scripts/quality-mutation` validates and runs the deterministic safety mutant
+  corpus. Mutation work does not add to pull request latency.
 
-The stages are `static`, the gate orchestrator's own contract tests, `swift`,
-`quality-contracts`, development app build/verification, packaged-app
-`ui-e2e`, Codex and Claude integrations, distribution, bundled runtime,
-release and publish preflights, the hermetic release-impact and
-release-workflow tests, and the zero-work `release-budget` postflight. Every
-executable stage has a bounded timeout.
-Logs, a versioned TSV summary, a provenance manifest, a safe execution-context
-record, a digest inventory of bounded fake-test diagnostics, and JUnit XML are
-written privately under `app/build/quality-gates/`. The schema-4 manifest binds
-evidence to the policy, authority, source commit, resolved base commit, selected stages,
-input and plan fingerprints, timestamps, inherited timing, parent evidence,
-environment and artifact inventories, and SHA-256 digests of the summary and
-every stage log. The artifact inventory also binds `quality-metrics.json` when
-coverage runs. Failure, environment failure, timeout, interruption, blocked
-dependencies, malformed evidence, or mismatched resume evidence cannot produce
-PASS. The failure output names the exact diagnostic rerun. A red gate must be
-diagnosed, not made green by blind retries.
+`--without-release-budget` disables reference-Mac time comparisons. Hosted CI
+uses this option because hosted timing is not release timing. Functional
+checks, process deadlines, and static policy ratchets remain active. This
+option does not make a local run authoritative.
 
-Swift and Clang module caches are rooted under `app/.build`. Coverage-enabled
-Swift tests and the release app build get the reference machine's build
-resources in sequence because their locked stage ceilings are not meaningful
-while unrelated Git/release fixtures compete for CPU and disk. Artifact-only
-coverage analysis overlaps the app build and reads test discovery from the
-completed Swift log instead of invoking SwiftPM again. Once the app is
-verified, the provider and orchestrator lanes start together and drain before
-the independent distribution, preflight, and release-workflow lanes overlap as
-a second wave. This keeps every locked stage duration free of cross-wave CPU
-and disk contention. The UI stage launches a stripped
-process-private background copy with a fake CLI and private
-HOME/preferences/state; it cannot reach the installed Detach payload or user
-session data. Provider suites use private state/socket roots and only the
-freshly bundled tmux and `detach-state`; none of these stages invokes SwiftPM.
-The gate therefore does not depend on writable user caches, ambient tmux,
-provider session state, or the installed Detach app.
+## Authority and evidence
 
-There are no quarantined tests in policy version 14. A future quarantine must be
-tracked here with an owner, expiry, and reason, and may not remove a release
-contract check.
+Every manifest records one authority:
 
-## Policy version 14: automatic quality facts
+- `local-diagnostic` for ordinary local work;
+- `ci-merge` for the pull request merge commit;
+- `ci-main` for the current `main` commit;
+- `release` for the owner-confirmed release flow.
 
-Policy 14 removes manually edited coverage floors.
+The repository gate writes private evidence under
+`app/build/quality-gates/`. One run contains a schema-versioned TSV summary,
+JUnit, Markdown, stage logs, safe environment facts, a provenance manifest,
+and a digest inventory. Coverage runs also contain `quality-metrics.json`.
 
-1. CI downloads the exact evidence artifact from the last successful `main`
-   run before it starts the gate.
-2. The coverage-enabled Swift stage still runs once. A stdlib-only Python tool
-   reads LLVM coverage and Swift test evidence. Shell only starts the tools.
-3. The new artifact records exact UI and business test identities, aggregate
-   line coverage, all critical-source coverage, and changed executable lines.
-4. CI rejects a removed test, a lower aggregate percentage, or a lower
-   critical-source percentage relative to the last green `main` artifact.
-5. Changed executable Swift lines need at least 90 percent coverage. A new
-   critical source needs 100 percent coverage for its first baseline.
-6. Missing, malformed, stale, unbound, or non-`ci-main` baseline evidence fails
-   an authoritative run. A local diagnostic can record metrics without a
-   baseline but cannot claim readiness.
-7. The dashboard validates the metrics digest and shows UI, business, and
-   changed-line coverage from the exact run.
-8. A weekly and manually dispatchable workflow runs three deterministic safety
-   mutants in parallel. Each test has a 240-second deadline. The score must be
-   100 percent. A timeout, survivor, or non-test failure fails closed.
-9. A green mutation run updates the same GitHub Pages dashboard. A later
-   `main` run restores the latest valid mutation artifact before it deploys.
-10. Policy 14 has one transition exception. The first run can read the removed
-   policy-13 floors from the verified previous-main commit because that
-   artifact predates metrics. Remove this exception after the first policy-14
-   `main` artifact exists.
+The manifest binds the evidence to the policy, authority, source and base
+commits, exact input and plan fingerprints, selected capabilities, journeys,
+stages, timestamps, inherited timing, parent evidence, environment, artifacts,
+summary, and every stage log. A failure, timeout, interruption, blocked
+dependency, unsafe file, malformed record, or digest mismatch cannot produce
+PASS. Failure output gives the exact diagnostic rerun.
 
-## Policy version 13: one policy and explicit authority
+Resume requires the same policy, authority, source commit, base commit, and
+input fingerprint. The old plan must contain every selected stage. Reused logs
+keep their duration and digest. The new manifest binds the parent manifest.
+Inherited wall time cannot become shorter. A prior time failure cannot become
+PASS through resume.
 
-Policy 13 keeps policy 12's functional checks and fail-closed manual release
-selection. It changes the quality control boundary:
+## Automated stages and scheduling
 
-1. `quality/policy.tsv` owns stage order, timeouts, dependencies, path routing,
-   release impact, critical sources, requirements, and cycle deadlines.
-2. The stdlib-only Python policy engine validates every tracked path and fails
-   safe for an unknown added path. Production scripts contain no second path
-   classifier or critical-source list.
-3. Local change and repository runs record `local-diagnostic` authority and
-   print `DIAGNOSTIC PASS`. They cannot claim merge readiness.
-4. Pull-request CI runs repository mode on the exact change, records `ci-merge`
-   authority, and is the sole ordinary merge-readiness PASS.
-5. CI cancels superseded work and has a ten-minute workflow deadline. Every
-   stage also keeps its policy-owned timeout.
-6. Resume requires the same policy, input, commits, stage coverage, and
-   authority. Local evidence cannot satisfy CI.
-7. Every plan and manifest names affected product capabilities and user
-   journeys. The generated policy JSON rejects orphan paths, requirements,
-   journeys, and scenarios.
-8. A separate least-privilege job publishes the dashboard to GitHub Pages only
-   from a successful `main` run. It cannot publish local or pull-request data.
+The policy defines these stages:
 
-## Policy version 12: impact-selected manual release gates
+- static syntax, documentation, suite inventory, and policy ratchets;
+- gate self-contracts;
+- coverage-enabled Swift tests and automatic quality metrics;
+- development app build and verification;
+- packaged-app UI integration;
+- isolated Codex and Claude provider integrations;
+- distribution and bundled runtime contracts;
+- release and publish preflights;
+- release-impact and release-workflow contracts;
+- the zero-work release time-budget postflight.
 
-Policy 12 retains policy 11's functional stages, coverage floors, timing
-ceilings, and deterministic scheduling. It adds a fail-closed release impact
-classifier. The classifier selects the clean-account/system UI matrix only for
-related product changes. It selects the supervised closed-lid test only for
-related power changes. Unknown product paths select both manual gates. The
-`release-workflow` stage runs the classifier contract before the release
-orchestrator contract. This invalidates older resume evidence when the release
-gate selection changes.
+Every executable stage has a policy-owned process deadline. The GitHub workflow
+has a ten-minute deadline and cancels superseded work. The pull request feedback
+SLO is less than ten minutes.
 
-## Policy version 11: deterministic reference-machine scheduling
+Static validation runs before the parallel self-contract workers. This keeps
+its two-second local signal free of scheduler contention. Coverage compilation
+and the app build then get exclusive SwiftPM access. Quality analysis reads the
+completed Swift log and coverage profile without another test run. Provider
+lanes run after the verified app exists. Independent distribution and release
+lanes overlap after provider work drains.
 
-Policy 11 retains policy 10's functional stages, coverage floors, timing
-ceilings, and release waiver. It makes the locked timings reproducible again:
+Swift and Clang caches stay under `app/.build`. The packaged UI test uses a
+stripped process-private app, fake CLI, and private state. Provider tests use
+private state and socket roots plus the newly bundled `tmux` and
+`detach-state`. Tests do not use installed product state or ambient helpers.
 
-1. Coverage compilation and the packaged app build run before CPU/disk-heavy
-   distribution and release fixtures, so their 20- and 70-second measurements
-   describe the stage rather than scheduler contention.
-2. Independent lanes overlap within two non-overlapping waves after the app
-   prerequisite; deterministic marker contracts pin ordering and real overlap.
-3. The release-workflow contract runs its disjoint resumability and rejection
-   fixture lanes concurrently, preserving every scenario while removing
-   unrelated serial Git and fake-publication work.
-4. The new bounded POSIX process adapter is exercised by lifecycle tests but,
-   like the existing CLI and clamshell OS adapters, is excluded from the stable
-   business-core aggregate coverage denominator.
-5. App packaging reuses only the fingerprinted, revalidated pinned-tmux build
-   product and compiles only libevent's linked core target.
+There are no quarantined tests. A future quarantine needs an owner, reason, and
+expiry. It cannot remove release evidence.
 
-## Policy version 10: explicit busy-machine release waiver
+## Impact and user journeys
 
-Policy 10 retains policy 9's functional stages, quality floors, default timing
-ceilings, and performance-regression workflow. It adds one auditable operator
-exception: `DETACH_RELEASE_IGNORE_TIMING=1 scripts/release-version X.Y.Z` may
-omit reference-machine wall and per-stage enforcement after exact
-`owner/repository@tag` confirmation. Pre-release repository audits and the
-release orchestrator pass that exact target as an internal authorization to the
-gate; missing, malformed, or mismatched confirmation fails closed. Static
-budget ratchets, stage timeouts, functional tests,
-signing, notarization, real-power and closed-lid checks, publication, and remote
-asset verification are unchanged. Private quality-gate environment evidence
-and resumable release state record the waiver. The authorization variables are
-removed from every stage subprocess, so nested workflow and gate contracts
-cannot accidentally inherit the owner's capability.
+The policy maps each path to one test domain, release impact, owning spec, and
+one or more user capabilities. Capabilities map to stable user journeys,
+requirements, and automated scenarios. A known mixed diff uses the union of
+its routes. Deletions use the old path. Renames and copies use both paths. An
+unknown path selects every functional stage and every release impact.
 
-## Policy version 9: stable diagnostic test sets
-
-Policy 9 retains all policy-8 stages, coverage floors, safety properties, and
-timing ceilings. It adds stable operator-facing composition without weakening
-the sole readiness path:
-
-1. `scripts/test critical` runs shell safety plus pinned state, ownership,
-   storage, power, watchdog, and helper Swift suites for the fast high-risk
-   feedback loop.
-2. `scripts/test unit` runs the complete Swift suite without packaging, while
-   `scripts/test coverage` adds LLVM coverage, the locked-floor ratchet, and
-   the enforced quality contracts. Swift diagnostics use the repository-local
-   module cache and coverage resolves only the active SwiftPM build path after
-   removing its prior profile, preventing ambient-cache denial and stale
-   evidence selection.
-3. `scripts/test smoke` builds a fresh packaged app, validates and runs its
-   process-private Accessibility flow, and verifies the bundled runtime.
-4. `scripts/test full` delegates exactly to the repository quality gate. The
-   focused `critical` and `smoke` sets remain diagnostics, not readiness.
-5. Every set supports `--plan`, and `tests/test-suite-contract.sh` pins the
-   required constituents so a critical suite or product smoke step cannot be
-   silently dropped. That contract runs in the static stage.
-6. The packaged-app smoke additionally selects a completed Claude session and
-   proves that semantic Delete reaches only the exact process-private fake CLI
-   `claude delete --force` invocation; every other fake command remains denied.
-7. Aggregate DetachKit coverage can no longer hide a local regression in the
-   most safety-sensitive sources. `tests/quality-file-baseline.tsv` locks
-   independent line floors for session health/state/storage, power lifecycle,
-   helper XPC/platform, session storage, and doctor reporting. The quality
-   contracts require every tracked source in the LLVM report, while the static
-   ratchet rejects a lowered, removed, duplicated, malformed, or merge-base-
-   regressed floor.
-8. The policy-9 floor is the measured 221 UI tests at 25.80% line coverage and
-   433 business tests at 94.38%. Thirteen safety-critical sources have independent
-   floors; state encoding, storage adapters, tips, the power executable, and
-   doctor reporting are locked at 99.03-100%, while real IOKit and XPC adapter
-   lines remain covered by their separate integration and hardware gates.
-9. The gate's independent selection, failure, evidence, ratchet, shell-safety,
-   and history self-contracts run as isolated parallel shards. Every shard must
-   pass, and their output is collected deterministically; this keeps the
-   unchanged 100-second self-contract budget without dropping scenarios.
-
-## Policy version 8: truthful resume and diagnosable execution
-
-Policy 8 retains all functional and time ceilings from policy 7 and closes the
-gaps found while exercising the gate from a managed agent environment:
-
-1. Resume copies each reusable log into the new run, retains the original stage
-   duration and origin run, verifies every log digest, and binds the new
-   manifest to the exact parent manifest digest.
-2. The effective wall duration is the maximum inherited duration in the resume
-   chain. `release-budget` is always reevaluated and cannot be reused, so an
-   over-budget run remains red after resume.
-3. Per-stage ceilings are enforced even for an ordinary local partial plan
-   without the `release-budget` postflight; documentation-only `static` cannot
-   silently grow from its two-second contract toward its process timeout. The
-   explicit GitHub-only `--without-release-budget` option disables those
-   reference-machine comparisons while retaining functional checks.
-4. Known socket/sandbox denials are reported as `environment-failed`. They are
-   JUnit failures and never skips or PASS. UI and provider failures preserve a
-   bounded allowlist of fake-test diagnostics whose inventory is digest-bound.
-5. `environment.tsv` records only safe OS, architecture, Xcode, Swift, CI, and
-   managed-sandbox facts. It records no hostname, user name, credential, or
-   provider state.
-6. Pull-request and main hosted CI both omit all local reference-machine timing
-   enforcement. Local and release readiness continue to require it.
-7. The locked UI floors are now 175 tests and 22.21% line coverage; business
-   floors remain 294 tests and 80.98%. Typed state, session, and storage source
-   changes select both provider integrations and distribution; native power
-   boundary changes select distribution and runtime contracts.
-8. The existing static stage also runs a small deterministic repository safety
-   check for dynamic eval, remote-shell pipelines, unsafe deletion targets, and
-   unquoted dynamic source paths.
-9. `scripts/quality-history` makes timing margin and repeated environment or
-   product failures visible across retained evidence without changing results.
-10. The scheduler contract uses a 24-second synthetic serial workload and must
-    finish it within 12 seconds, preserving the original two-times parallelism
-    requirement while reducing idle sleep in the gate's own critical path.
-
-## Policy version 7: packaged-app accessibility smoke
-
-Policy 7 retains every policy-6 check and the unchanged 180-second wall ceiling,
-then adds one bounded packaged-app stage:
-
-1. Every app build embeds a unique marker in both the Mach-O and bundle
-   resources, so a stale executable cannot satisfy the smoke.
-2. `ui-e2e` is mandatory whenever readiness selects `app`, is blocked when
-   that prerequisite fails, and appears independently in resumable TSV,
-   Markdown, and JUnit evidence.
-3. The test copy has a distinct background-only identity and is stripped of
-   the production payload and all lifecycle, power, state, and tmux helpers.
-   All writable paths and the fake executable must remain below its private
-   root after symlink resolution.
-4. Accessibility assertions cover non-empty semantic geometry, labeled and
-   enabled session/action controls, session selection, a safe fake-CLI stop,
-   the new-session sheet, and the empty dashboard without stealing focus.
-5. The stage runs beside the provider/runtime lanes after the app prerequisite
-   and has a locked 15-second ceiling, so the repository wall budget remains
-   180 seconds.
-6. The two dormant test-driver source files are measured by this packaged-app
-   stage and excluded from the unit-test UI coverage denominator; all ordinary
-   DetachApp source remains under the unchanged 21.54% floor.
-
-## Policy version 6: lean agent context and durable specs
-
-Policy 6 keeps the policy-5 quality and time ratchets and adds one fast
-documentation contract to the existing static stage:
-
-1. Git tracks exactly one canonical `AGENTS.md`; `CLAUDE.md` contains only
-   `@AGENTS.md`, so Codex and Claude Code share one source without copied rules.
-2. The automatically loaded guide remains below 200 lines and 8 KiB.
-   Architecture lives in small task-specific files under `docs/specs/`.
-3. A five-row context map points to one spec and one focused feedback loop per
-   subsystem. Detailed specs are not eagerly imported.
-4. Small changes skip planning. Complex or cross-subsystem work may use the
-   ignored ExecPlan template without publishing temporary task history.
-5. `tests/docs-contract.sh` checks the single-source link, context budgets,
-   required specs, context-map coverage, plan shape, and ignored work area.
-6. Documentation-only changes still run only the bounded static stage; no new
-   build or test pass was added to the repository critical path.
-
-## Policy version 5: monotonic quality and time budgets
-
-Policy 5 makes the policy-4 measurements fail-closed contracts without adding
-another build or test pass:
-
-1. `quality-contracts` now requires the exact established floors: 170 UI tests,
-   294 business tests, 21.54% UI line coverage, and 80.98% stable business-core
-   line coverage. The business-core metric excludes the OS-dependent
-   `ClamshellLockRunner` and `DetachCLI` adapters, whose exercised lines differ
-   between GitHub's macOS image and a development Mac.
-2. The parallel static-policy branch runs `quality-ratchet`, which rejects
-   missing, duplicate, unknown, or non-numeric baseline fields and rejects any
-   floor below the locked policy-5 values.
-3. On pull requests, every quality floor is also compared with the immutable
-   merge-base version. Floors may increase but never decrease.
-4. The same parallel branch validates that time budgets were not weakened;
-   `release-budget` then evaluates existing evidence after all selected work. It
-   launches no subprocess workload and has a recorded duration of zero.
-5. A repository or release gate fails when wall time exceeds 180 seconds. It
-   also fails earlier diagnostics when a stage exceeds its tracked budget.
-6. Wall and stage budgets are ratcheted in the opposite direction: they may be
-   lowered, but cannot be raised above either the merge-base value or the
-   locked policy-5 ceiling.
-7. The postflight is selected for every code, test, packaging, and release-tool
-   impact, while documentation-only changes retain the static-only fast path.
-8. Negative contract tests prove that lowering each quality metric, weakening
-   either time budget, duplicating baseline fields, slowing one stage, or
-   exceeding wall time cannot produce PASS.
-9. Coverage analysis reuses the completed Swift log and runs beside the app
-   build; the app is verified once inside `make-app.sh`, eliminating a second
-   identical verifier invocation without removing its fail-closed check.
-10. Codex lifecycle tests wait for observable tmux, metadata, argument, token,
-    and checkpoint events instead of fixed sleeps. Their failure deadlines are
-    unchanged, but successful runs no longer pay arbitrary idle delays.
-
-The tracked stage ceilings are diagnostic guardrails: static 2s, orchestrator
-100s, Swift 20s, quality analysis 5s, app 70s, UI e2e 15s, Codex 110s, Claude 50s,
-distribution 80s, runtime 8s, release preflight 15s, publish preflight 25s, and
-release workflow 70s. The stricter 180-second wall ceiling is authoritative.
-Changing machine class or intentionally adding mandatory coverage requires
-making enough scheduling improvement to remain inside that same ceiling; the
-budget itself cannot be relaxed. CI pins Xcode 26.6 so its compiler does not
-move when GitHub changes the default toolchain.
-
-## Policy version 4: speed without quality loss
-
-Policy 4 adds a measured release-speed contract while preserving the existing
-checks:
-
-1. Run independent distribution, release, provider, runtime, and orchestrator
-   lanes concurrently, with explicit SwiftPM and app prerequisites.
-2. Run Codex and Claude integration suites concurrently only after the verified
-   app exists; each suite keeps its existing isolated state and tmux socket.
-3. Reuse the app's bundled `detach-state` in provider suites, eliminating two
-   redundant Swift builds from the critical path.
-4. Remove three exact release-suite duplicates from `distribution`; those same
-   suites remain mandatory first-class stages with their own logs and evidence.
-5. Write each stage's status and real duration when it finishes, so parallel
-   evidence does not report queueing time as execution time.
-6. Add `quality-contracts`, which fails on a reduction below 170 UI tests, 294
-   business tests, 21.54% UI line coverage, or 80.98% stable business-core line
-   coverage.
-7. Require representative power, presentation, setup, watchdog, CLI, state,
-   lease, health, and storage suites to remain discoverable.
-8. Exercise the scheduler with a 36-second synthetic serial workload and require
-   it to complete in at most 18 seconds.
-
-Coverage thresholds are floors recorded in `tests/quality-baseline.tsv`, not
-targets. Raising coverage or adding tests must not automatically lower them.
-
-## Policy version 3: 20 release improvements
-
-Policy 3 completes the following 20 concrete speed and quality tasks:
-
-1. Resolve a symbolic `--base` to its immutable commit before classification.
-2. Bind every fingerprint and reusable result to the exact source commit.
-3. Separate the input fingerprint from the mode-and-stage plan fingerprint.
-4. Reuse passed stages from a compatible superset plan, not only an identical
-   plan.
-5. Select the newest compatible evidence with `--resume latest`.
-6. Reject evidence from a running or diagnostic-only invocation.
-7. Require exactly one value for every security-relevant manifest key.
-8. Bind the reusable TSV summary to its manifest with SHA-256.
-9. Validate the summary header, field count, policy, mode, stage, and status.
-10. Reject duplicate stage records and expose canonical names through
-    `--list-stages`.
-11. Syntax-check only changed shell files in change mode while repository,
-    release, and diagnostic gates retain the exhaustive scan.
-12. Allow a bounded timeout override for one named stage without weakening the
-    others.
-13. Reject zero, negative, and non-numeric timeout overrides before execution.
-14. Run every stage command under fail-fast shell semantics so an early command
-    failure cannot be hidden by a later successful command.
-15. Mark Codex, Claude, distribution, and runtime checks blocked after their app
-    prerequisite fails while continuing independent preflights under
-    `--keep-going`.
-16. Represent blocked stages as skipped in JUnit and XML-escape report values.
-17. Record UTC start/finish timestamps and total duration in schema-2 evidence.
-18. Produce a human-readable Markdown summary next to TSV and JUnit evidence.
-19. Refuse symlinked result roots and keep run artifacts below a private
-    directory.
-20. Publish the generated Markdown evidence directly in the CI job summary.
-
-Policy 2's rename/deletion-safe NUL-delimited classification, explanations,
-JSON planning, fail-safe unknown impact, resumable stages, and retained CI
-artifacts remain part of the contract. New or changed shell files still cannot
-evade the static gate merely because they are untracked.
-
-## Impact classes
-
-| Change | Mandatory automated gates |
+| Change | Local diagnostic plan |
 | --- | --- |
-| Documentation only | static syntax and diff checks |
-| Swift source | static, Swift tests, quality contracts, app, UI e2e, release budget |
-| Swift tests | static, Swift tests, quality contracts, release budget |
-| Package/resources/app build | static, Swift, quality contracts, app, UI e2e, runtime contracts, release budget |
-| CLI/session lifecycle | static, app, UI e2e, both isolated integrations, distribution, runtime, release budget |
-| Install/distribution | static, app, UI e2e, distribution, runtime, release budget |
-| Release/publication | static, app, UI e2e, release/publish preflights, release-workflow test, release budget |
-| Gate policy and CI | static policy and gate self-contracts locally; full repository gate in CI |
-| Mixed unknown path | full repository gate |
+| Documentation | static |
+| Quality policy or CI | static and gate self-contracts |
+| Swift source | Swift, metrics, app, packaged UI, and required dependencies |
+| CLI or session lifecycle | app, both providers, distribution, runtime, and dependencies |
+| Install or distribution | app, distribution, runtime, and dependencies |
+| Release or publication | app, preflights, workflow contracts, and dependencies |
+| Unknown path | full repository plan |
 
-Known mixed diffs take the union of their mandatory gates. Deletions use their
-old path; renames and copies conservatively use both paths. Dependencies are
-added by the mapping (for example an integration always gets a freshly built
-bundled tmux). An unclassifiable path fails safe to the full set.
+Hosted pull request CI does not trust the local selection as merge evidence. It
+runs the full functional plan exactly once on the merge commit.
 
-## Definition of Done
+## Automatic quality facts
 
-An agent may report a change ready only when the changed behavior has a
-regression or contract test, the hosted pull-request repository gate has
-printed authoritative PASS, user-facing documentation is synchronized, and
-`git diff --check` is clean.
-The report must name any manual release gate that was not run. A single test or
-`--stage` rerun is useful diagnosis but cannot replace the selected gate.
+CI downloads the exact evidence from the last successful `main` run before it
+starts. An authoritative run accepts only a digest-bound
+`quality-metrics.json` from `ci-main`. It never reads a manual floor file.
 
-CI and `scripts/release-version` invoke this same entry point. Pull-request CI
-runs every functional stage and the static timing-policy ratchets once, but enforces
-neither reference-machine stage ceilings nor the `release-budget` wall ceiling;
-release readiness still requires both. Local timing is diagnostic. CI publishes its manifest,
-TSV, JUnit report, and logs for 14 days even when the gate passes, and also
-exposes the summary in the workflow UI. It does not copy a separate test matrix.
+The metric artifact records exact UI and business test identities, aggregate
+line coverage, critical-source coverage, and changed executable Swift lines.
+CI rejects a removed test or a lower aggregate or critical-source ratio.
+Changed executable lines need at least 90 percent coverage. A new critical
+source needs 100 percent coverage for its first baseline. Missing, stale,
+unbound, unsafe, or malformed baseline evidence fails closed.
 
-The active `main` ruleset has no bypass actors. It requires the `quality-gates`
-job from GitHub Actions. A pull request or an administrator push cannot update
-`main` when the check is missing, pending, or failed.
+A weekly and manual workflow runs each deterministic safety mutant in a
+separate bounded macOS job. The required mutation score is 100 percent. A
+survivor, timeout, or infrastructure-like failure is not a kill and fails the
+workflow.
 
-A release commit uses the same policy. The release workflow pushes the exact
-version commit to `detach-release/vX.Y.Z`. It waits for the repository gate on
-that ref. Then it makes sure that remote `main` did not move. It atomically
-updates `main` and the annotated tag only after these checks pass. A failed run
-keeps the temporary ref for diagnosis and resume. A verified push removes only
-the matching temporary ref.
+## Dashboard
 
-## Manual release-only gates
+The dashboard generator validates the current manifest, summary, metric and
+mutation digests. It shows authority, result, exact commit, exact CI run,
+freshness, fingerprint, durations, coverage, affected journeys, scenario gaps,
+mutation score, and recent latency.
 
-These are the only checks deliberately outside the automated repository gate:
+The same artifact opens locally and deploys to GitHub Pages. Pages deploys only
+after a green `ci-main` gate or a green mutation score for that policy. The
+workflow does not publish pull request or local evidence.
 
-1. Developer ID signing and Apple notarization with owner-held credentials.
-2. The explicitly opted-in signed real-power smoke test.
-3. The supervised closed-lid probe on supported Apple Silicon hardware.
-4. Exact owner/repository/tag publication confirmation.
+## Definition of done
 
-They remain fail-closed stages of `scripts/release-version`; ordinary agents
-and pull-request jobs must never receive their secrets or pretend to run them.
+An ordinary change is ready only when it has regression evidence, the current
+pull request merge commit has an authoritative `quality-gates` PASS, affected
+public docs and durable specs match the behavior, and `git diff --check` is
+clean. A narrow test or stage rerun is diagnostic only.
+
+The active `main` ruleset has no bypass actor. It requires the current
+`quality-gates` check. A pull request or administrator push cannot update
+`main` when the check is missing, pending, failed, or stale.
+
+Release readiness also requires the tracked reference-Mac time budgets and the
+release-only gates below. Ordinary implementation must not run them.
+
+## Release-only gates
+
+The release workflow automates signing and notarization. A person supplies only
+the irreversible publication confirmation and physical evidence that CI cannot
+produce.
+
+1. Owner confirmation before irreversible publication.
+2. Developer ID signing and Apple notarization with owner-held credentials.
+3. The signed real-power smoke test when release impact selects it.
+4. The supervised closed-lid probe when release impact selects it.
+
+They remain fail closed. Pull request jobs and ordinary agents do not receive
+their credentials and cannot report them as executed.

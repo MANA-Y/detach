@@ -1,5 +1,5 @@
 schema	1
-policy	14
+policy	15
 limit	pr_feedback_seconds	600
 limit	local_feedback_seconds	120
 limit	review_seconds	180

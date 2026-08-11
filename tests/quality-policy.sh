@@ -26,7 +26,8 @@ expect_route() {
 
 "$ROOT/scripts/quality-policy" validate >/dev/null
 "$ROOT/scripts/quality-policy" generate --check
-[ "$("$ROOT/scripts/quality-policy" version)" = 14 ] || fail 'unexpected policy version'
+policy_version="$("$ROOT/scripts/quality-policy" version)"
+[[ "$policy_version" =~ ^[1-9][0-9]*$ ]] || fail 'invalid policy version'
 [ "$("$ROOT/scripts/quality-policy" stages all | wc -l | tr -d ' ')" = 14 ] || \
   fail 'unexpected stage count'
 [ "$("$ROOT/scripts/quality-policy" stages release | tail -1)" = release-budget ] || \

@@ -1294,11 +1294,12 @@ assemble_summary() {
   rm -f "$digest_file"
 }
 
-# Give coverage compilation and the packaged app exclusive access to the
-# reference machine's build resources. Their locked stage ceilings assume
-# they are not competing with distribution Git fixtures or release workflow
-# simulations. Static validation is intentionally cheap enough to overlap.
+# Run static validation before the parallel self-contract workers. This keeps
+# its two-second signal free of scheduler contention. Give coverage compilation
+# and the packaged app exclusive access to the reference machine's build
+# resources after that.
 launch_stage static
+wait_stage static
 launch_stage swift
 wait_stage swift
 launch_stage quality-contracts
@@ -1313,7 +1314,7 @@ launch_stage codex
 launch_stage claude
 launch_stage tmux-runtime
 launch_stage gate-contract
-for stage in static quality-contracts ui-e2e codex claude tmux-runtime gate-contract; do
+for stage in quality-contracts ui-e2e codex claude tmux-runtime gate-contract; do
   wait_stage "$stage"
 done
 
