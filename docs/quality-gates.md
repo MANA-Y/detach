@@ -1,9 +1,10 @@
 # Quality gates
 
-`scripts/quality-gate` is the tracked readiness contract for local agents, CI,
-and releases. Policy version 12 derives
-the mandatory set from the Git diff, and selects the full repository gate for
-unknown paths or changes to this policy itself. Its resource-aware scheduler
+`scripts/quality-gate` is the tracked quality contract for local agents, CI,
+and releases. Policy version 13 derives local diagnostics from one typed
+manifest and selects the full repository gate for unknown paths. Hosted pull-
+request CI runs every functional stage once and is the sole ordinary merge
+authority. The resource-aware scheduler
 runs isolated work concurrently without allowing two SwiftPM operations to
 share the same build directory.
 
@@ -13,7 +14,8 @@ share the same build directory.
 - `scripts/quality-gate --base <ref>` checks committed changes since a trusted
   merge base plus staged, unstaged, and untracked files.
 - `scripts/quality-gate --mode repository` runs every automated repository
-  check. CI uses this mode on `main`; pull requests use impact analysis.
+  check. Local use is diagnostic. Pull requests use this complete mode with
+  `ci-merge` authority.
 - `scripts/quality-gate --without-release-budget` disables the local
   reference-machine wall and per-stage timing checks. The `main` and pull
   request CI workflows use it because hosted-runner timing is not comparable
@@ -50,6 +52,10 @@ share the same build directory.
   downloaded evidence as run counts, failure counts, environment-failure
   counts, and p50/p95 wall and stage durations. It is observational and cannot
   produce readiness evidence.
+- `scripts/quality-dashboard generate` validates the latest schema-4 manifest
+  and summary digest, then writes deterministic static HTML and JSON under
+  `app/build/quality-dashboard/`. `scripts/quality-dashboard serve` binds only
+  loopback and stops after its bounded deadline.
 
 The stages are `static`, the gate orchestrator's own contract tests, `swift`,
 `quality-contracts`, development app build/verification, packaged-app
@@ -59,8 +65,8 @@ release-workflow tests, and the zero-work `release-budget` postflight. Every
 executable stage has a bounded timeout.
 Logs, a versioned TSV summary, a provenance manifest, a safe execution-context
 record, a digest inventory of bounded fake-test diagnostics, and JUnit XML are
-written privately under `app/build/quality-gates/`. The schema-3 manifest binds
-evidence to the policy, source commit, resolved base commit, selected stages,
+written privately under `app/build/quality-gates/`. The schema-4 manifest binds
+evidence to the policy, authority, source commit, resolved base commit, selected stages,
 input and plan fingerprints, timestamps, inherited timing, parent evidence,
 environment and artifact inventories, and SHA-256 digests of the summary and
 every stage log. Failure, environment failure, timeout, interruption, blocked
@@ -85,9 +91,33 @@ freshly bundled tmux and `detach-state`; none of these stages invokes SwiftPM.
 The gate therefore does not depend on writable user caches, ambient tmux,
 provider session state, or the installed Detach app.
 
-There are no quarantined tests in policy version 12. A future quarantine must be
+There are no quarantined tests in policy version 13. A future quarantine must be
 tracked here with an owner, expiry, and reason, and may not remove a release
 contract check.
+
+## Policy version 13: one policy and explicit authority
+
+Policy 13 keeps policy 12's functional checks and fail-closed manual release
+selection. It changes the quality control boundary:
+
+1. `quality/policy.tsv` owns stage order, timeouts, dependencies, path routing,
+   release impact, critical sources, requirements, and cycle deadlines.
+2. The stdlib-only Python policy engine validates every tracked path and fails
+   safe for an unknown added path. Production scripts contain no second path
+   classifier or critical-source list.
+3. Local change and repository runs record `local-diagnostic` authority and
+   print `DIAGNOSTIC PASS`. They cannot claim merge readiness.
+4. Pull-request CI runs repository mode on the exact change, records `ci-merge`
+   authority, and is the sole ordinary merge-readiness PASS.
+5. CI cancels superseded work and has a ten-minute workflow deadline. Every
+   stage also keeps its policy-owned timeout.
+6. Resume requires the same policy, input, commits, stage coverage, and
+   authority. Local evidence cannot satisfy CI.
+7. Every plan and manifest names affected product capabilities and user
+   journeys. The generated policy JSON rejects orphan paths, requirements,
+   journeys, and scenarios.
+8. A separate least-privilege job publishes the dashboard to GitHub Pages only
+   from a successful `main` run. It cannot publish local or pull-request data.
 
 ## Policy version 12: impact-selected manual release gates
 
@@ -375,7 +405,8 @@ evade the static gate merely because they are untracked.
 | CLI/session lifecycle | static, app, UI e2e, both isolated integrations, distribution, runtime, release budget |
 | Install/distribution | static, app, UI e2e, distribution, runtime, release budget |
 | Release/publication | static, app, UI e2e, release/publish preflights, release-workflow test, release budget |
-| Gate policy, CI, mixed unknown path | full repository gate |
+| Gate policy and CI | static policy and gate self-contracts locally; full repository gate in CI |
+| Mixed unknown path | full repository gate |
 
 Known mixed diffs take the union of their mandatory gates. Deletions use their
 old path; renames and copies conservatively use both paths. Dependencies are
@@ -385,15 +416,16 @@ bundled tmux). An unclassifiable path fails safe to the full set.
 ## Definition of Done
 
 An agent may report a change ready only when the changed behavior has a
-regression or contract test, the normal impact-selected gate has printed PASS,
-user-facing documentation is synchronized, and `git diff --check` is clean.
+regression or contract test, the hosted pull-request repository gate has
+printed authoritative PASS, user-facing documentation is synchronized, and
+`git diff --check` is clean.
 The report must name any manual release gate that was not run. A single test or
 `--stage` rerun is useful diagnosis but cannot replace the selected gate.
 
-CI and `scripts/release-version` invoke this same entry point. CI runs every
-selected functional stage and the static timing-policy ratchets, but enforces
+CI and `scripts/release-version` invoke this same entry point. Pull-request CI
+runs every functional stage and the static timing-policy ratchets once, but enforces
 neither reference-machine stage ceilings nor the `release-budget` wall ceiling;
-local and release readiness still require both. CI publishes its manifest,
+release readiness still requires both. Local timing is diagnostic. CI publishes its manifest,
 TSV, JUnit report, and logs for 14 days even when the gate passes, and also
 exposes the summary in the workflow UI. It does not copy a separate test matrix.
 

@@ -37,13 +37,17 @@ setup_fixture() {
   ACTION_LOG="$FIXTURE/actions.log"
   PUBLISHED_MANIFEST="$FIXTURE/published-manifest.json"
   mkdir -p "$REPO/scripts" "$REPO/tests/quality-gate-fixtures" "$REPO/app/scripts" \
-    "$REPO/app/.build/artifacts/sparkle/Sparkle/bin" "$BIN" "$APPS" \
+    "$REPO/app/.build/artifacts/sparkle/Sparkle/bin" "$REPO/quality" "$REPO/tools" \
+    "$BIN" "$APPS" \
     "$REMOTE_ASSETS"
 
   install -m 0755 "$ROOT/scripts/release-version" "$REPO/scripts/release-version"
   install -m 0755 "$ROOT/scripts/release-impact" "$REPO/scripts/release-impact"
   install -m 0755 "$ROOT/scripts/release-lid-probe" "$REPO/scripts/release-lid-probe"
   install -m 0755 "$ROOT/scripts/quality-gate" "$REPO/scripts/quality-gate"
+  install -m 0755 "$ROOT/scripts/quality-policy" "$REPO/scripts/quality-policy"
+  install -m 0644 "$ROOT/tools/quality_policy.py" "$REPO/tools/quality_policy.py"
+  install -m 0644 "$ROOT/quality/policy.tsv" "$REPO/quality/policy.tsv"
   install -m 0755 "$ROOT/app/scripts/verify-appcast.sh" \
     "$REPO/app/scripts/verify-appcast.sh"
   printf '%s\n' 1.2.3 >"$REPO/VERSION"

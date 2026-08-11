@@ -13,9 +13,9 @@ critical  Fast safety-critical Swift and shell behavior.
 unit      Every Swift unit test without packaging or coverage analysis.
 coverage  Every Swift unit test with the enforced coverage contracts.
 smoke     Fresh packaged-app Accessibility and bundled-runtime smoke.
-full      Every automated repository readiness check.
+full      Every automated repository check as a local diagnostic.
 
-Only full is readiness evidence. Every other suite is a focused diagnostic.
+All local suites are diagnostics. Hosted pull-request CI is merge authority.
 EOF
 }
 

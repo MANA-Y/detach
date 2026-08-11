@@ -10,6 +10,7 @@ FILE_BASELINE="${DETACH_QUALITY_FILE_BASELINE:-$ROOT/tests/quality-file-baseline
 PRIOR_FILE_OVERRIDE="${DETACH_QUALITY_PRIOR_FILE_BASELINE:-}"
 BASE_COMMIT="${RESOLVED_BASE:-}"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-quality-ratchet.XXXXXX")"
+CRITICAL_POLICY="$TMP_ROOT/critical.tsv"
 
 cleanup() {
   rm -rf "$TMP_ROOT"
@@ -26,21 +27,11 @@ if [ "$TEST_MODE" != 1 ] && {
 fi
 
 keys=(ui_test_count_min business_test_count_min ui_line_coverage_min business_line_coverage_min)
-critical_files=(
-  Sources/DetachKit/SessionHealth.swift
-  Sources/DetachKit/DetachState.swift
-  Sources/DetachKit/DetachStateCommand.swift
-  Sources/DetachKit/Storage.swift
-  Sources/DetachKit/StorageStore.swift
-  Sources/DetachKit/Tip.swift
-  Sources/DetachKit/DetachPowerCommand.swift
-  Sources/DetachKit/DetachPowerExecutable.swift
-  Sources/DetachKit/PowerHelperLeaseService.swift
-  Sources/DetachKit/PowerHelperXPC.swift
-  Sources/DetachKit/PowerHelperPlatform.swift
-  Sources/DetachKit/SessionStore.swift
-  Sources/DetachKit/DoctorReport.swift
-)
+"$ROOT/scripts/quality-policy" critical >"$CRITICAL_POLICY"
+critical_files=()
+while IFS=$'\t' read -r source _ _; do
+  critical_files+=("${source#app/}")
+done <"$CRITICAL_POLICY"
 
 baseline_value() {
   local file="$1" key="$2"
@@ -120,22 +111,10 @@ hard_floor() {
 }
 
 file_hard_floor() {
-  case "$1" in
-    Sources/DetachKit/SessionHealth.swift) printf 99.10 ;;
-    Sources/DetachKit/DetachState.swift) printf 99.03 ;;
-    Sources/DetachKit/DetachStateCommand.swift) printf 96.70 ;;
-    Sources/DetachKit/Storage.swift) printf 95.28 ;;
-    Sources/DetachKit/StorageStore.swift) printf 100.00 ;;
-    Sources/DetachKit/Tip.swift) printf 100.00 ;;
-    Sources/DetachKit/DetachPowerCommand.swift) printf 95.21 ;;
-    Sources/DetachKit/DetachPowerExecutable.swift) printf 100.00 ;;
-    Sources/DetachKit/PowerHelperLeaseService.swift) printf 98.21 ;;
-    Sources/DetachKit/PowerHelperXPC.swift) printf 82.23 ;;
-    Sources/DetachKit/PowerHelperPlatform.swift) printf 84.54 ;;
-    Sources/DetachKit/SessionStore.swift) printf 98.11 ;;
-    Sources/DetachKit/DoctorReport.swift) printf 100.00 ;;
-    *) return 1 ;;
-  esac
+  local wanted="app/$1"
+  awk -F '\t' -v wanted="$wanted" \
+    '$1 == wanted {count++; value=$3} END {if (count != 1) exit 1; print value}' \
+    "$CRITICAL_POLICY"
 }
 
 assert_not_lower() {

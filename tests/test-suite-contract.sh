@@ -75,7 +75,7 @@ for command in \
 done
 
 [ "$full" = 'full: scripts/quality-gate --mode repository' ] ||
-  fail 'full suite must delegate to the repository quality gate'
+  fail 'full diagnostic must delegate to the repository quality gate'
 
 if "$ROOT/scripts/test" --plan unknown >"${TMPDIR:-/tmp}/detach-test-suite.out.$$" 2>&1; then
   rm -f "${TMPDIR:-/tmp}/detach-test-suite.out.$$"

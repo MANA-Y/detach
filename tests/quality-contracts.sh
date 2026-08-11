@@ -18,21 +18,10 @@ baseline_value() {
   awk -F '\t' -v wanted="$key" '$1 == wanted {count++; value=$2} END {if (count != 1) exit 1; print value}' "$BASELINE"
 }
 
-critical_files=(
-  Sources/DetachKit/SessionHealth.swift
-  Sources/DetachKit/DetachState.swift
-  Sources/DetachKit/DetachStateCommand.swift
-  Sources/DetachKit/Storage.swift
-  Sources/DetachKit/StorageStore.swift
-  Sources/DetachKit/Tip.swift
-  Sources/DetachKit/DetachPowerCommand.swift
-  Sources/DetachKit/DetachPowerExecutable.swift
-  Sources/DetachKit/PowerHelperLeaseService.swift
-  Sources/DetachKit/PowerHelperXPC.swift
-  Sources/DetachKit/PowerHelperPlatform.swift
-  Sources/DetachKit/SessionStore.swift
-  Sources/DetachKit/DoctorReport.swift
-)
+critical_files=()
+while IFS=$'\t' read -r source _ _; do
+  critical_files+=("${source#app/}")
+done < <("$ROOT/scripts/quality-policy" critical)
 
 [ -f "$BASELINE" ] && [ ! -L "$BASELINE" ] || {
   printf 'quality contracts: baseline is missing or unsafe\n' >&2

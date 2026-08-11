@@ -8,16 +8,21 @@ TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-release-impact.XXXXXX")"
 REPO="$TMP_ROOT/repo"
 trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
 
-mkdir -p "$REPO/scripts"
+mkdir -p "$REPO/scripts" "$REPO/quality" "$REPO/tools"
 cp "$ROOT/scripts/release-impact" "$REPO/scripts/release-impact"
+cp "$ROOT/scripts/quality-policy" "$REPO/scripts/quality-policy"
+cp "$ROOT/tools/quality_policy.py" "$REPO/tools/quality_policy.py"
+cp "$ROOT/quality/policy.tsv" "$REPO/quality/policy.tsv"
 chmod 0755 "$REPO/scripts/release-impact"
+chmod 0755 "$REPO/scripts/quality-policy"
 git -C "$REPO" init -q
 git -C "$REPO" checkout -qb main
 git -C "$REPO" config user.name 'Detach Tests'
 git -C "$REPO" config user.email 'detach-tests@example.invalid'
 printf '%s\n' baseline >"$REPO/README.md"
 printf '%s\n' 'app/build/' >"$REPO/.gitignore"
-git -C "$REPO" add .gitignore README.md scripts/release-impact
+git -C "$REPO" add .gitignore README.md quality/policy.tsv \
+  scripts/quality-policy scripts/release-impact tools/quality_policy.py
 git -C "$REPO" commit -qm baseline
 
 commit_path() {
