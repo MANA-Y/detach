@@ -452,7 +452,7 @@ def validate_metrics(document: Any, *, expected_policy: Optional[int] = None) ->
         not isinstance(baseline_policy, int)
         or baseline_policy < 0
         or (baseline_source and not HEX_COMMIT.fullmatch(baseline_source))
-        or comparison["mode"] not in ("none", "green-main-artifact", "policy-13-bootstrap")
+        or comparison["mode"] not in ("none", "green-main-artifact")
     ):
         raise MetricsError("quality metrics comparison baseline is invalid")
     if comparison["mode"] == "none":
@@ -460,10 +460,6 @@ def validate_metrics(document: Any, *, expected_policy: Optional[int] = None) ->
             raise MetricsError("quality metrics no-baseline comparison is inconsistent")
     elif not baseline_source or baseline_policy <= 0:
         raise MetricsError("quality metrics baseline comparison is incomplete")
-    if comparison["mode"] == "policy-13-bootstrap" and (
-        document["policy"] != 14 or baseline_policy != 13
-    ):
-        raise MetricsError("quality metrics historical bootstrap policy is invalid")
     expected_comparison_status = (
         "not-available"
         if not baseline_source
