@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Contract fixtures choose their authority explicitly. Do not let the parent
+# quality-gates job turn nested local diagnostics into CI merge evidence.
+unset DETACH_QUALITY_AUTHORITY GITHUB_ACTIONS
+
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-quality-gate-test.XXXXXX")"
 TEMPLATE_REPO="$TMP_ROOT/template"
