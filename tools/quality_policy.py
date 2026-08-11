@@ -24,8 +24,8 @@ SOURCE_PATH = re.compile(r"^app/Sources/[A-Za-z0-9_./-]+\.swift$")
 REQUIREMENT_ID = re.compile(r"^QC-[A-Z0-9-]+$")
 JOURNEY_ID = re.compile(r"^J-[A-Z0-9-]+$")
 SCENARIO_ID = re.compile(r"^SC-[A-Z0-9-]+$")
+SUITE_NAME = re.compile(r"^[A-Za-z0-9]+\.[A-Za-z0-9]+$")
 POSITIVE_INTEGER = re.compile(r"^[1-9][0-9]*$")
-NUMBER = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
 
 
 class PolicyError(Exception):
@@ -98,7 +98,8 @@ class Policy:
         self.capabilities: dict[str, tuple[str, str, str]] = {}
         self.journeys: dict[str, tuple[str, str, str, str]] = {}
         self.scenarios: dict[str, tuple[str, str, str]] = {}
-        self.critical: list[tuple[str, str, str]] = []
+        self.critical: list[tuple[str, str]] = []
+        self.required_suites: list[str] = []
         self.requirements: dict[str, tuple[str, str]] = {}
         self._parse()
         self._validate_references()
@@ -255,18 +256,22 @@ class Policy:
                 self._unique(self.scenarios, identifier, "scenario", line_number)
                 self.scenarios[identifier] = (stage, status, command)
             elif kind == "critical":
-                self._expect_count(kind, values, 3, line_number)
-                source, requirement, floor = values
+                self._expect_count(kind, values, 2, line_number)
+                source, requirement = values
                 if (
                     not SOURCE_PATH.fullmatch(source)
                     or not REQUIREMENT_ID.fullmatch(requirement)
-                    or not NUMBER.fullmatch(floor)
-                    or float(floor) > 100
                     or source in critical_paths
                 ):
                     raise PolicyError(f"line {line_number}: invalid or duplicate critical source")
                 critical_paths.add(source)
-                self.critical.append((source, requirement, floor))
+                self.critical.append((source, requirement))
+            elif kind == "suite":
+                self._expect_count(kind, values, 1, line_number)
+                suite = values[0]
+                if not SUITE_NAME.fullmatch(suite) or suite in self.required_suites:
+                    raise PolicyError(f"line {line_number}: invalid or duplicate required suite")
+                self.required_suites.append(suite)
             elif kind == "requirement":
                 self._expect_count(kind, values, 3, line_number)
                 identifier, spec, summary = values
@@ -325,10 +330,12 @@ class Policy:
                 raise PolicyError(f"route references unknown test domain: {route.test_domain}")
             if route.release_domain not in self.release_domains:
                 raise PolicyError(f"route references unknown release domain: {route.release_domain}")
-        for source, requirement, _ in self.critical:
+        for source, requirement in self.critical:
             if requirement not in self.requirements:
                 raise PolicyError(f"critical source {source} references unknown requirement: {requirement}")
-        referenced_requirements: set[str] = {requirement for _, requirement, _ in self.critical}
+        if not self.required_suites:
+            raise PolicyError("at least one required Swift suite is required")
+        referenced_requirements: set[str] = {requirement for _, requirement in self.critical}
         referenced_journeys: set[str] = set()
         referenced_scenarios: set[str] = set()
         for capability, (_, requirements, journeys) in self.capabilities.items():
@@ -490,9 +497,10 @@ class Policy:
                 for identifier, (stage, status, command) in self.scenarios.items()
             ],
             "critical_sources": [
-                {"path": path, "requirement": requirement, "coverage_floor": float(floor)}
-                for path, requirement, floor in self.critical
+                {"path": path, "requirement": requirement}
+                for path, requirement in self.critical
             ],
+            "required_suites": self.required_suites,
             "requirements": [
                 {"id": identifier, "spec": spec, "summary": summary}
                 for identifier, (spec, summary) in self.requirements.items()
@@ -517,6 +525,7 @@ def usage(stream: object = sys.stdout) -> None:
        scripts/quality-policy capabilities
        scripts/quality-policy journeys
        scripts/quality-policy scenarios
+       scripts/quality-policy suites
        scripts/quality-policy render-json
        scripts/quality-policy generate [--check]
        scripts/quality-policy check-paths [PATH ...]""",
@@ -572,8 +581,8 @@ def main(arguments: list[str]) -> int:
         print(policy.classify(values[0]).tsv())
     elif command == "critical":
         require_count(values, 0, "critical takes no arguments")
-        for source, requirement, floor in policy.critical:
-            print(f"{source}\t{requirement}\t{floor}")
+        for source, requirement in policy.critical:
+            print(f"{source}\t{requirement}")
     elif command == "requirements":
         require_count(values, 0, "requirements takes no arguments")
         for identifier, (spec, summary) in policy.requirements.items():
@@ -590,6 +599,10 @@ def main(arguments: list[str]) -> int:
         require_count(values, 0, "scenarios takes no arguments")
         for identifier, (stage, status, scenario_command) in policy.scenarios.items():
             print(f"{identifier}\t{stage}\t{status}\t{scenario_command}")
+    elif command == "suites":
+        require_count(values, 0, "suites takes no arguments")
+        for suite in policy.required_suites:
+            print(suite)
     elif command == "render-json":
         require_count(values, 0, "render-json takes no arguments")
         print(json.dumps(policy.document(), indent=2, sort_keys=True))

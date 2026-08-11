@@ -9,6 +9,7 @@ on:
       - "detach-release/**"
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -25,6 +26,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+      - name: Restore last green main quality metrics
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          baseline_root="$(scripts/quality-baseline)"
+          printf 'DETACH_QUALITY_BASELINE_ROOT=%s\n' "$baseline_root" >>"$GITHUB_ENV"
+          printf 'DETACH_QUALITY_ALLOW_POLICY_13_BOOTSTRAP=1\n' >>"$GITHUB_ENV"
       - name: Restore Swift and tmux caches
         id: swift-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -95,6 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
+      actions: read
       contents: read
       pages: write
       id-token: write
@@ -108,12 +117,24 @@ jobs:
         with:
           name: quality-gate-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: app/build/quality-gates
+      - id: mutation-evidence
+        name: Restore latest mutation score when available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          summary="$(scripts/quality-mutation latest --optional)"
+          printf 'summary=%s\n' "$summary" >>"$GITHUB_OUTPUT"
       - name: Generate quality dashboard
-        run: >-
-          scripts/quality-dashboard generate
-          --result-root app/build/quality-gates
-          --output app/build/quality-dashboard
-          --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          mutation_args=()
+          if [ -n "${{ steps.mutation-evidence.outputs.summary }}" ]; then
+            mutation_args+=(--mutation-summary "${{ steps.mutation-evidence.outputs.summary }}")
+          fi
+          scripts/quality-dashboard generate \
+            --result-root app/build/quality-gates \
+            --output app/build/quality-dashboard \
+            --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "${mutation_args[@]}"
       - name: Configure Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Upload Pages artifact

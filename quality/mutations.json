@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "mutants": [
+    {
+      "id": "foreign-tmux-must-collide",
+      "requirement": "QC-HEALTH-FRESHNESS",
+      "source": "app/Sources/DetachKit/SessionHealth.swift",
+      "before": "status: .collision,",
+      "after": "status: .corrupt,",
+      "test_suite": "DetachKitTests.SessionHealthTests",
+      "failure_regex": "Test Suite 'Selected tests' failed"
+    },
+    {
+      "id": "empty-run-token-must-fail",
+      "requirement": "QC-POWER-LEASE",
+      "source": "app/Sources/DetachKit/PowerHelperLeaseService.swift",
+      "before": "!identity.runToken.isEmpty,",
+      "after": "identity.runToken.isEmpty,",
+      "test_suite": "DetachKitTests.PowerHelperLeaseServiceTests",
+      "failure_regex": "Test Suite 'Selected tests' failed"
+    },
+    {
+      "id": "provider-root-must-not-be-symlink",
+      "requirement": "QC-RUNTIME-STORAGE",
+      "source": "app/Sources/DetachKit/Storage.swift",
+      "before": "!isSymbolicLink(providerMetadata),",
+      "after": "isSymbolicLink(providerMetadata),",
+      "test_suite": "DetachKitTests.DetachStateCommandTests",
+      "failure_regex": "Test Suite 'Selected tests' failed"
+    }
+  ]
+}

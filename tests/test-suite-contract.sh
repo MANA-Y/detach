@@ -61,10 +61,8 @@ done
   fail 'unit suite must run every Swift test without packaging'
 [[ "$coverage" = *'swift test --enable-code-coverage --disable-sandbox'* ]] ||
   fail 'coverage suite must collect Swift coverage'
-[[ "$coverage" = *'tests/quality-ratchet.sh'* ]] ||
-  fail 'coverage suite must enforce locked coverage floors'
 [[ "$coverage" = *'tests/quality-contracts.sh'* ]] ||
-  fail 'coverage suite must enforce quality contracts'
+  fail 'coverage suite must evaluate automatic quality metrics'
 
 for command in \
   app/scripts/make-app.sh \

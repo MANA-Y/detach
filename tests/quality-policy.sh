@@ -26,7 +26,7 @@ expect_route() {
 
 "$ROOT/scripts/quality-policy" validate >/dev/null
 "$ROOT/scripts/quality-policy" generate --check
-[ "$("$ROOT/scripts/quality-policy" version)" = 13 ] || fail 'unexpected policy version'
+[ "$("$ROOT/scripts/quality-policy" version)" = 14 ] || fail 'unexpected policy version'
 [ "$("$ROOT/scripts/quality-policy" stages all | wc -l | tr -d ' ')" = 14 ] || \
   fail 'unexpected stage count'
 [ "$("$ROOT/scripts/quality-policy" stages release | tail -1)" = release-budget ] || \
@@ -36,6 +36,8 @@ expect_route() {
   fail 'packaged UI dependency is missing'
 [ "$("$ROOT/scripts/quality-policy" critical | wc -l | tr -d ' ')" = 13 ] || \
   fail 'critical source inventory is incomplete'
+[ "$("$ROOT/scripts/quality-policy" suites | wc -l | tr -d ' ')" = 12 ] || \
+  fail 'required Swift suite inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" requirements | wc -l | tr -d ' ')" = 20 ] || \
   fail 'critical requirement inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" capabilities | wc -l | tr -d ' ')" = 11 ] || \
@@ -55,6 +57,8 @@ expect_route app/Sources/DetachKit/TerminalLauncher.swift runtime-source safe fa
 expect_route app/Sources/DetachApp/OnboardingView.swift onboarding-source install false
 expect_route app/Sources/DetachApp/FutureFlow.swift swift-source unknown true
 expect_route scripts/release-lid-probe release-tool lid false
+expect_route scripts/quality-metrics policy safe false
+expect_route scripts/quality-mutation policy safe false
 
 onboarding="$("$ROOT/scripts/quality-policy" classify app/Sources/DetachApp/OnboardingView.swift)"
 [ "$(field "$onboarding" 10)" = onboarding ] || fail 'onboarding capability impact is missing'
@@ -90,6 +94,15 @@ if DETACH_QUALITY_POLICY="$TMP_ROOT/missing-stage.tsv" \
 fi
 grep -F 'references unknown stage: missing-stage' "$TMP_ROOT/missing-stage.out" >/dev/null || \
   fail 'unresolved stage failure is unclear'
+
+awk -F '\t' '$1 != "suite" {print}' "$ROOT/quality/policy.tsv" \
+  >"$TMP_ROOT/missing-suites.tsv"
+if DETACH_QUALITY_POLICY="$TMP_ROOT/missing-suites.tsv" \
+    "$ROOT/scripts/quality-policy" validate >"$TMP_ROOT/missing-suites.out" 2>&1; then
+  fail 'an empty required Swift suite inventory was accepted'
+fi
+grep -F 'at least one required Swift suite is required' \
+  "$TMP_ROOT/missing-suites.out" >/dev/null || fail 'missing suite failure is unclear'
 
 awk -F '\t' -v OFS='\t' \
   '!($1 == "requirement" && $2 == "QC-POWER-CLI") {print}' \

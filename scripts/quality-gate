@@ -474,9 +474,12 @@ write_artifact_inventory() {
     case "$relative" in *$'\t'*|*$'\n'*|/*|../*|*/../*) die 'diagnostic artifact path is unsafe' ;; esac
     digest="$(shasum -a 256 "$file" | awk '{print $1}')"
     printf 'file\t%s\t%s\n' "$relative" "$digest" >>"$temporary"
-  done < <(find "$RUN_DIR" -mindepth 2 -maxdepth 2 -type f \
-    \( -path '*/ui-e2e-artifacts/*' -o -path '*/codex-artifacts/*' -o -path '*/claude-artifacts/*' \) \
-    -print | LC_ALL=C sort)
+  done < <({
+    [ ! -f "$RUN_DIR/quality-metrics.json" ] || printf '%s\n' "$RUN_DIR/quality-metrics.json"
+    find "$RUN_DIR" -mindepth 2 -maxdepth 2 -type f \
+      \( -path '*/ui-e2e-artifacts/*' -o -path '*/codex-artifacts/*' -o -path '*/claude-artifacts/*' \) \
+      -print
+  } | LC_ALL=C sort)
   chmod 0600 "$temporary"
   mv -f "$temporary" "$ARTIFACTS"
 }
@@ -639,7 +642,7 @@ validate_resume() {
     [ "$artifact_kind" = schema ] && continue
     [ "$artifact_kind" = file ] || die 'resume artifact inventory contains an unknown record'
     case "$artifact_path" in /*|../*|*/../*|*$'\n'*|*$'\t'*) die 'resume artifact inventory path is unsafe' ;; esac
-    case "$artifact_path" in ui-e2e-artifacts/*|codex-artifacts/*|claude-artifacts/*) ;; *) die 'resume artifact inventory path is unapproved' ;; esac
+    case "$artifact_path" in quality-metrics.json|ui-e2e-artifacts/*|codex-artifacts/*|claude-artifacts/*) ;; *) die 'resume artifact inventory path is unapproved' ;; esac
     [[ "$artifact_sha256" =~ ^[0-9a-f]{64}$ ]] || die 'resume artifact inventory digest is invalid'
     [ -f "$RESUME_DIR/$artifact_path" ] && [ ! -L "$RESUME_DIR/$artifact_path" ] || die 'resume diagnostic artifact is missing or unsafe'
     actual_artifact_sha256="$(shasum -a 256 "$RESUME_DIR/$artifact_path" | awk '{print $1}')"
@@ -822,7 +825,7 @@ run_static() {
   while IFS= read -r -d '' file; do
     [ -f "$ROOT/$file" ] || continue
     case "$file" in
-      *.sh|bin/detach|bin/detach-core|scripts/quality-gate|scripts/quality-policy|scripts/release-version|scripts/release-impact|scripts/release-lid-probe)
+      *.sh|bin/detach|bin/detach-core|scripts/quality-gate|scripts/quality-policy|scripts/quality-metrics|scripts/quality-mutation|scripts/quality-baseline|scripts/release-version|scripts/release-impact|scripts/release-lid-probe)
         /bin/bash -n "$ROOT/$file"
         ;;
     esac
@@ -832,7 +835,6 @@ run_static() {
   fi
   git -C "$ROOT" diff --check HEAD
   "$ROOT/tests/docs-contract.sh"
-  "$ROOT/tests/quality-ratchet.sh"
   "$ROOT/tests/release-budget-ratchet.sh"
   "$ROOT/tests/shell-safety.sh"
   "$ROOT/tests/test-suite-contract.sh"
@@ -861,10 +863,18 @@ run_stage_command() {
   export SWIFTPM_MODULECACHE_OVERRIDE="$ROOT/app/.build/module-cache"
   if [ "$TEST_MODE" = 1 ] && { [ "$stage" != static ] || [ "$TEST_REAL_STATIC" != 1 ]; }; then
     [ -x "$ROOT/tests/quality-gate-fixtures/$stage" ] || die "missing test fixture for $stage"
-    env -u DETACH_VERSION -u DETACH_BUILD_VERSION -u DETACH_BUILD_ARCHS \
-      -u DETACH_CODESIGN_IDENTITY -u DETACH_RELEASE_BUILD -u DETACH_SPARKLE_VERSION \
-      -u DETACH_SPARKLE_FEED_URL -u DETACH_SPARKLE_PUBLIC_ED_KEY -u DETACH_DOWNLOAD_URL \
-      "$ROOT/tests/quality-gate-fixtures/$stage"
+    if [ "$stage" = quality-contracts ]; then
+      DETACH_QUALITY_METRICS_OUTPUT="$RUN_DIR/quality-metrics.json" \
+        env -u DETACH_VERSION -u DETACH_BUILD_VERSION -u DETACH_BUILD_ARCHS \
+          -u DETACH_CODESIGN_IDENTITY -u DETACH_RELEASE_BUILD -u DETACH_SPARKLE_VERSION \
+          -u DETACH_SPARKLE_FEED_URL -u DETACH_SPARKLE_PUBLIC_ED_KEY -u DETACH_DOWNLOAD_URL \
+          "$ROOT/tests/quality-gate-fixtures/$stage"
+    else
+      env -u DETACH_VERSION -u DETACH_BUILD_VERSION -u DETACH_BUILD_ARCHS \
+        -u DETACH_CODESIGN_IDENTITY -u DETACH_RELEASE_BUILD -u DETACH_SPARKLE_VERSION \
+        -u DETACH_SPARKLE_FEED_URL -u DETACH_SPARKLE_PUBLIC_ED_KEY -u DETACH_DOWNLOAD_URL \
+        "$ROOT/tests/quality-gate-fixtures/$stage"
+    fi
     return
   fi
   case "$stage" in
@@ -898,9 +908,19 @@ run_stage_command() {
       ) >"$contract_root/orchestrator-evidence-runtime.log" 2>&1 &
       contract_pids+=("$!")
       (
-        "$ROOT/tests/quality-ratchet-contract.sh" |
-          grep -Fx 'Quality ratchet contract tests passed'
-      ) >"$contract_root/quality-ratchet.log" 2>&1 &
+        "$ROOT/tests/quality-metrics.sh" |
+          grep -Fx 'Quality metrics contracts passed'
+      ) >"$contract_root/quality-metrics.log" 2>&1 &
+      contract_pids+=("$!")
+      (
+        "$ROOT/tests/quality-baseline.sh" |
+          grep -Fx 'Quality baseline contracts passed'
+      ) >"$contract_root/quality-baseline.log" 2>&1 &
+      contract_pids+=("$!")
+      (
+        "$ROOT/tests/quality-mutation.sh" |
+          grep -Fx 'Quality mutation contracts passed'
+      ) >"$contract_root/quality-mutation.log" 2>&1 &
       contract_pids+=("$!")
       (
         "$ROOT/tests/release-budget-ratchet-contract.sh" |
@@ -949,7 +969,13 @@ run_stage_command() {
           swift test --enable-code-coverage --disable-sandbox
       )
       ;;
-    quality-contracts) DETACH_SWIFT_TEST_LOG="$RUN_DIR/swift.log" "$ROOT/tests/quality-contracts.sh" ;;
+    quality-contracts)
+      DETACH_SWIFT_TEST_LOG="$RUN_DIR/swift.log" \
+        DETACH_QUALITY_METRICS_OUTPUT="$RUN_DIR/quality-metrics.json" \
+        DETACH_QUALITY_SOURCE_COMMIT="$SOURCE_COMMIT" \
+        DETACH_QUALITY_AUTHORITY="$AUTHORITY" \
+        "$ROOT/tests/quality-contracts.sh"
+      ;;
     app)
       env -u DETACH_VERSION -u DETACH_BUILD_VERSION -u DETACH_BUILD_ARCHS \
         -u DETACH_CODESIGN_IDENTITY -u DETACH_RELEASE_BUILD -u DETACH_SPARKLE_VERSION \
@@ -1035,6 +1061,13 @@ launch_stage() {
       reused_log="$stage.reused.log"
       cp "$RESUME_DIR/$prior_log" "$RUN_DIR/$reused_log"
       chmod 0600 "$RUN_DIR/$reused_log"
+    fi
+    if [ "$stage" = quality-contracts ]; then
+      [ -f "$RESUME_DIR/quality-metrics.json" ] && \
+        [ ! -L "$RESUME_DIR/quality-metrics.json" ] || \
+        die 'reused quality-contracts evidence has no safe quality metrics'
+      cp "$RESUME_DIR/quality-metrics.json" "$RUN_DIR/quality-metrics.json"
+      chmod 0600 "$RUN_DIR/quality-metrics.json"
     fi
     write_stage_result "$stage" reused "$prior_duration" "$reused_log" 0 "$prior_origin"
     return 0

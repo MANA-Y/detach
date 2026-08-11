@@ -56,7 +56,6 @@ plan_unit() {
 plan_coverage() {
   printf '%s\n' \
     'coverage: cd app && swift test --enable-code-coverage --disable-sandbox' \
-    'coverage: tests/quality-ratchet.sh' \
     'coverage: tests/quality-contracts.sh'
 }
 
@@ -109,7 +108,6 @@ case "$SUITE" in
       LLVM_PROFILE_FILE="$ROOT/app/.build/quality-codecov/%p-%m.profraw" \
         swift test --enable-code-coverage --disable-sandbox
     )
-    "$ROOT/tests/quality-ratchet.sh"
     "$ROOT/tests/quality-contracts.sh"
     ;;
   smoke)

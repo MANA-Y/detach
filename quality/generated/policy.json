@@ -135,67 +135,54 @@
   ],
   "critical_sources": [
     {
-      "coverage_floor": 99.1,
       "path": "app/Sources/DetachKit/SessionHealth.swift",
       "requirement": "QC-HEALTH-FRESHNESS"
     },
     {
-      "coverage_floor": 99.03,
       "path": "app/Sources/DetachKit/DetachState.swift",
       "requirement": "QC-RUNTIME-STATE"
     },
     {
-      "coverage_floor": 96.7,
       "path": "app/Sources/DetachKit/DetachStateCommand.swift",
       "requirement": "QC-RUNTIME-STATE"
     },
     {
-      "coverage_floor": 95.28,
       "path": "app/Sources/DetachKit/Storage.swift",
       "requirement": "QC-RUNTIME-STORAGE"
     },
     {
-      "coverage_floor": 100.0,
       "path": "app/Sources/DetachKit/StorageStore.swift",
       "requirement": "QC-RUNTIME-STORAGE"
     },
     {
-      "coverage_floor": 100.0,
       "path": "app/Sources/DetachKit/Tip.swift",
       "requirement": "QC-APP-TIPS"
     },
     {
-      "coverage_floor": 95.21,
       "path": "app/Sources/DetachKit/DetachPowerCommand.swift",
       "requirement": "QC-POWER-CLI"
     },
     {
-      "coverage_floor": 100.0,
       "path": "app/Sources/DetachKit/DetachPowerExecutable.swift",
       "requirement": "QC-POWER-CLI"
     },
     {
-      "coverage_floor": 98.21,
       "path": "app/Sources/DetachKit/PowerHelperLeaseService.swift",
       "requirement": "QC-POWER-LEASE"
     },
     {
-      "coverage_floor": 82.23,
       "path": "app/Sources/DetachKit/PowerHelperXPC.swift",
       "requirement": "QC-POWER-XPC"
     },
     {
-      "coverage_floor": 84.54,
       "path": "app/Sources/DetachKit/PowerHelperPlatform.swift",
       "requirement": "QC-POWER-PLATFORM"
     },
     {
-      "coverage_floor": 98.11,
       "path": "app/Sources/DetachKit/SessionStore.swift",
       "requirement": "QC-RUNTIME-OWNERSHIP"
     },
     {
-      "coverage_floor": 100.0,
       "path": "app/Sources/DetachKit/DoctorReport.swift",
       "requirement": "QC-APP-DOCTOR"
     }
@@ -506,13 +493,16 @@
     }
   ],
   "limits": {
+    "changed_line_coverage_percent": 90,
     "local_feedback_seconds": 120,
     "max_repair_loops": 2,
     "merge_wait_seconds": 300,
+    "mutation_score_percent": 100,
+    "mutation_timeout_seconds": 240,
     "pr_feedback_seconds": 600,
     "review_seconds": 180
   },
-  "policy": 13,
+  "policy": 14,
   "release_domains": [
     {
       "gates": "-",
@@ -539,6 +529,20 @@
       "id": "unknown",
       "unknown": true
     }
+  ],
+  "required_suites": [
+    "DetachAppTests.InstallationStorePowerStateTests",
+    "DetachAppTests.MenuBarPresentationTests",
+    "DetachAppTests.SetupGuidanceTests",
+    "DetachAppTests.TextSizeTests",
+    "DetachAppTests.UIE2EConfigurationTests",
+    "DetachAppTests.WatchdogServiceTests",
+    "DetachKitTests.DetachCLITests",
+    "DetachKitTests.DetachStateCommandTests",
+    "DetachKitTests.DetachStateTests",
+    "DetachKitTests.PowerHelperLeaseServiceTests",
+    "DetachKitTests.SessionHealthTests",
+    "DetachKitTests.StorageStoreTests"
   ],
   "requirements": [
     {
@@ -693,6 +697,55 @@
       "test_domain": "policy"
     },
     {
+      "pattern": "scripts/quality-metrics",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tools/quality_metrics.py",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "scripts/quality-baseline",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tools/quality_baseline.py",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "scripts/quality-mutation",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tools/quality_mutation.py",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": ".github/workflows/quality-mutations.yml",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
       "pattern": "scripts/quality-dashboard",
       "priority": 1000,
       "release_domain": "safe",
@@ -722,6 +775,13 @@
     },
     {
       "pattern": "tests/quality-*",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tests/quality_*",
       "priority": 1000,
       "release_domain": "safe",
       "spec": "docs/specs/documentation.md",
