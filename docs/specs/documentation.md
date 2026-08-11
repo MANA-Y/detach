@@ -27,9 +27,10 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   Claude expands imports eagerly.
 - Ignored `presentations/` contains internal presentation sources. Git and the
   quality gate do not treat these files as repository inputs.
-- Shell is only the process-orchestration boundary for quality tooling. Stdlib
-  Python owns structured policy, evidence, comparison, mutation, and dashboard
-  logic. Each Python tool has deterministic contract tests.
+- Shell is limited to public command wrappers and tests where shell or macOS
+  process behavior is the subject. Stdlib Python owns quality planning,
+  scheduling, policy, evidence, comparison, mutation, and dashboard logic.
+  Each Python tool has deterministic contract tests.
 - Fast local diagnostics close the edit loop. They never claim merge readiness.
   Hosted pull-request CI runs the full repository gate on the exact change and
   is the sole ordinary merge-readiness authority.

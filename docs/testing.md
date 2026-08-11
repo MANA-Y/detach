@@ -125,9 +125,10 @@
 
 There is no third-party linter dependency. The static stage runs shell syntax,
 the repository-specific shell safety contract, documentation checks, the
-timing-policy ratchet, and `git diff --check`. Shell starts processes and passes
-exit status. Stdlib Python owns structured quality data and policy decisions.
-Behavioral shell integrations remain runtime evidence for shell products.
+timing-policy ratchet, and `git diff --check`. Stdlib Python owns quality-gate
+planning, scheduling, evidence, and policy decisions. Shell entry points only
+locate Python. Behavioral shell integrations remain runtime evidence for shell
+products and macOS processes.
 
 `tests/docs-contract.sh` is the focused check for agent instructions, durable
 specs, and the documentation workflow. It does not replace the selected gate.
