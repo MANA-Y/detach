@@ -12,6 +12,13 @@ fail() {
 [ "$(cat "$ROOT/CLAUDE.md")" = '@AGENTS.md' ] ||
   fail 'CLAUDE.md must contain only @AGENTS.md'
 
+[ "$(wc -l <"$ROOT/scripts/quality-gate" | tr -d ' ')" -le 12 ] ||
+  fail 'scripts/quality-gate must stay a thin wrapper'
+grep -F 'exec python3 "$ROOT/tools/quality_gate.py" "$@"' \
+  "$ROOT/scripts/quality-gate" >/dev/null ||
+  fail 'scripts/quality-gate must delegate to the Python orchestrator'
+[ -f "$ROOT/tools/quality_gate.py" ] || fail 'quality-gate Python orchestrator is missing'
+
 agent_files=()
 while IFS= read -r -d '' file; do
   agent_files+=("$file")

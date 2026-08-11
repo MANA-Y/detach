@@ -1,5 +1,5 @@
 schema	1
-policy	16
+policy	17
 limit	pr_feedback_seconds	600
 limit	local_feedback_seconds	120
 limit	review_seconds	180
@@ -61,6 +61,7 @@ route	1000	.github/workflows/quality-gates.yml	policy	safe	docs/specs/documentat
 route	1000	docs/quality-gates.md	policy	safe	docs/specs/documentation.md
 route	1000	docs/testing.md	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-gate	policy	safe	docs/specs/documentation.md
+route	1000	tools/quality_gate.py	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-policy	policy	safe	docs/specs/documentation.md
 route	1000	tools/quality_policy.py	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-metrics	policy	safe	docs/specs/documentation.md

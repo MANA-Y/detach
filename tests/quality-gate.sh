@@ -47,6 +47,7 @@ prepare_template() {
   install -m 0755 "$ROOT/scripts/quality-baseline" "$TEMPLATE_REPO/scripts/quality-baseline"
   install -m 0755 "$ROOT/scripts/quality-dashboard" "$TEMPLATE_REPO/scripts/quality-dashboard"
   install -m 0755 "$ROOT/scripts/release-impact" "$TEMPLATE_REPO/scripts/release-impact"
+  install -m 0644 "$ROOT/tools/quality_gate.py" "$TEMPLATE_REPO/tools/quality_gate.py"
   install -m 0644 "$ROOT/tools/quality_policy.py" "$TEMPLATE_REPO/tools/quality_policy.py"
   install -m 0644 "$ROOT/tools/quality_metrics.py" "$TEMPLATE_REPO/tools/quality_metrics.py"
   install -m 0644 "$ROOT/tools/quality_dashboard.py" "$TEMPLATE_REPO/tools/quality_dashboard.py"

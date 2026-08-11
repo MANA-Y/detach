@@ -46,6 +46,7 @@ setup_fixture() {
   install -m 0755 "$ROOT/scripts/release-lid-probe" "$REPO/scripts/release-lid-probe"
   install -m 0755 "$ROOT/scripts/quality-gate" "$REPO/scripts/quality-gate"
   install -m 0755 "$ROOT/scripts/quality-policy" "$REPO/scripts/quality-policy"
+  install -m 0644 "$ROOT/tools/quality_gate.py" "$REPO/tools/quality_gate.py"
   install -m 0644 "$ROOT/tools/quality_policy.py" "$REPO/tools/quality_policy.py"
   install -m 0644 "$ROOT/quality/policy.tsv" "$REPO/quality/policy.tsv"
   install -m 0755 "$ROOT/app/scripts/verify-appcast.sh" \

@@ -502,7 +502,7 @@
     "pr_feedback_seconds": 600,
     "review_seconds": 180
   },
-  "policy": 16,
+  "policy": 17,
   "release_domains": [
     {
       "gates": "-",
@@ -677,6 +677,13 @@
     },
     {
       "pattern": "scripts/quality-gate",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tools/quality_gate.py",
       "priority": 1000,
       "release_domain": "safe",
       "spec": "docs/specs/documentation.md",
