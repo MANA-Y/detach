@@ -48,6 +48,7 @@ prepare_template() {
   install -m 0755 "$ROOT/scripts/quality-dashboard" "$TEMPLATE_REPO/scripts/quality-dashboard"
   install -m 0755 "$ROOT/scripts/release-impact" "$TEMPLATE_REPO/scripts/release-impact"
   install -m 0644 "$ROOT/tools/quality_gate.py" "$TEMPLATE_REPO/tools/quality_gate.py"
+  install -m 0644 "$ROOT/tools/quality_scenarios.py" "$TEMPLATE_REPO/tools/quality_scenarios.py"
   install -m 0644 "$ROOT/tools/quality_policy.py" "$TEMPLATE_REPO/tools/quality_policy.py"
   install -m 0644 "$ROOT/tools/quality_metrics.py" "$TEMPLATE_REPO/tools/quality_metrics.py"
   install -m 0644 "$ROOT/tools/quality_dashboard.py" "$TEMPLATE_REPO/tools/quality_dashboard.py"
@@ -791,8 +792,14 @@ grep -F $'architecture\t' "$run_dir/environment.tsv" >/dev/null
 grep -F $'xcode\t' "$run_dir/environment.tsv" >/dev/null
 grep -F $'swift\t' "$run_dir/environment.tsv" >/dev/null
 grep -F $'schema\t1' "$run_dir/artifacts.tsv" >/dev/null
+grep -F $'scenarios.jsonl\t' "$run_dir/artifacts.tsv" >/dev/null
+grep -F $'scenarios.junit.xml\t' "$run_dir/artifacts.tsv" >/dev/null
+grep -F '"id":"SC-DOCS-CONTRACT"' "$run_dir/scenarios.jsonl" >/dev/null
+grep -F '"journeys":["J-DOCS-CONSISTENCY"]' "$run_dir/scenarios.jsonl" >/dev/null
+grep -F '<testsuite name="detach-quality-scenarios"' "$run_dir/scenarios.junit.xml" >/dev/null
 grep -F '# Quality gate' "$run_dir/summary.md" >/dev/null
 grep -F '| `static` | passed |' "$run_dir/summary.md" >/dev/null
+grep -F '| `SC-DOCS-CONTRACT` | `static` | passed |' "$run_dir/summary.md" >/dev/null
 grep -F 'markdown=' "$REPO/evidence.out" >/dev/null
 
 setup_fixture result-symlink

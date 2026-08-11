@@ -1,5 +1,5 @@
 schema	1
-policy	17
+policy	18
 limit	pr_feedback_seconds	600
 limit	local_feedback_seconds	120
 limit	review_seconds	180
@@ -62,6 +62,8 @@ route	1000	docs/quality-gates.md	policy	safe	docs/specs/documentation.md
 route	1000	docs/testing.md	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-gate	policy	safe	docs/specs/documentation.md
 route	1000	tools/quality_gate.py	policy	safe	docs/specs/documentation.md
+route	1000	scripts/quality-scenarios	policy	safe	docs/specs/documentation.md
+route	1000	tools/quality_scenarios.py	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-policy	policy	safe	docs/specs/documentation.md
 route	1000	tools/quality_policy.py	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-metrics	policy	safe	docs/specs/documentation.md
@@ -212,43 +214,45 @@ journey	J-ONBOARD-PROVIDER	onboarding	QC-APP-ONBOARDING	SC-UI-ONBOARD-PROVIDER	O
 journey	J-ONBOARD-APPROVAL	onboarding	QC-APP-ONBOARDING	SC-UI-ONBOARD-APPROVAL	Onboarding explains and observes required macOS approvals.
 journey	J-SETTINGS-CHANGE	settings	QC-APP-SETTINGS	SC-UI-SETTINGS	A user changes a setting and observes the persisted result.
 journey	J-UPDATE-CHECK	update	QC-APP-UPDATE	SC-UPDATE-CHECK	A user receives a typed update state.
-journey	J-UPDATE-APPLY	update	QC-APP-UPDATE	SC-UPDATE-APPLY	A valid update preserves the arm64 and signature contract.
+journey	J-UPDATE-APPLY	update	QC-APP-UPDATE	SC-UPDATE-APPLY,SC-RELEASE-WORKFLOW	A valid update preserves the arm64 and signature contract.
 journey	J-DOCTOR-REPORT	diagnostics	QC-APP-DOCTOR	SC-DOCTOR-REPORT	A user receives a typed actionable doctor report.
-journey	J-INSTALL-CLEAN	installation	QC-RELEASE-INSTALL	SC-INSTALL-CLEAN	A user installs one immutable self-contained payload.
+journey	J-INSTALL-CLEAN	installation	QC-RELEASE-INSTALL	SC-INSTALL-CLEAN,SC-RUNTIME-PACKAGE	A user installs one immutable self-contained payload.
 journey	J-INSTALL-REPAIR	installation	QC-RELEASE-INSTALL	SC-INSTALL-REPAIR	Repair restores the exact immutable payload.
 journey	J-INSTALL-UNINSTALL	installation	QC-RELEASE-INSTALL	SC-INSTALL-UNINSTALL	Uninstall removes only Detach-owned data selected by the user.
 journey	J-PUBLISH-ARTIFACTS	publication	QC-RELEASE-PUBLISH	SC-PUBLISH-CONTRACT	Publication exposes only verified allowlisted artifacts.
 scenario	SC-POLICY-CONTRACT	gate-contract	automated	tests/quality-policy.sh
 scenario	SC-DOCS-CONTRACT	static	automated	tests/docs-contract.sh
-scenario	SC-SESSION-CREATE-CODEX	codex	legacy-stage	tests/run.sh
-scenario	SC-SESSION-CREATE-CLAUDE	claude	legacy-stage	tests/run-claude.sh
-scenario	SC-SESSION-PERSIST-CODEX	codex	legacy-stage	tests/run.sh
-scenario	SC-SESSION-PERSIST-CLAUDE	claude	legacy-stage	tests/run-claude.sh
-scenario	SC-SESSION-RECOVER-CODEX	codex	legacy-stage	tests/run.sh
-scenario	SC-SESSION-RECOVER-CLAUDE	claude	legacy-stage	tests/run-claude.sh
-scenario	SC-SESSION-STOP-CODEX	codex	legacy-stage	tests/run.sh
-scenario	SC-SESSION-STOP-CLAUDE	claude	legacy-stage	tests/run-claude.sh
-scenario	SC-SESSION-DELETE-CODEX	codex	legacy-stage	tests/run.sh
-scenario	SC-SESSION-DELETE-CLAUDE	claude	legacy-stage	tests/run-claude.sh
+scenario	SC-SESSION-CREATE-CODEX	codex	instrumented	tests/run.sh
+scenario	SC-SESSION-CREATE-CLAUDE	claude	instrumented	tests/run-claude.sh
+scenario	SC-SESSION-PERSIST-CODEX	codex	instrumented	tests/run.sh
+scenario	SC-SESSION-PERSIST-CLAUDE	claude	instrumented	tests/run-claude.sh
+scenario	SC-SESSION-RECOVER-CODEX	codex	instrumented	tests/run.sh
+scenario	SC-SESSION-RECOVER-CLAUDE	claude	instrumented	tests/run-claude.sh
+scenario	SC-SESSION-STOP-CODEX	codex	instrumented	tests/run.sh
+scenario	SC-SESSION-STOP-CLAUDE	claude	instrumented	tests/run-claude.sh
+scenario	SC-SESSION-DELETE-CODEX	codex	instrumented	tests/run.sh
+scenario	SC-SESSION-DELETE-CLAUDE	claude	instrumented	tests/run-claude.sh
 scenario	SC-POWER-UNIT	swift	legacy-stage	cd app && swift test --filter Power
 scenario	SC-POWER-LOW-BATTERY	swift	legacy-stage	cd app && swift test --filter PowerProtection
 scenario	SC-POWER-HELPER	swift	legacy-stage	cd app && swift test --filter PowerHelper
 scenario	SC-POWER-CLOSED-LID	release-budget	manual-release	scripts/release-lid-probe
-scenario	SC-UI-DASHBOARD	ui-e2e	legacy-stage	tests/ui-e2e.sh
-scenario	SC-UI-EMPTY	ui-e2e	legacy-stage	tests/ui-e2e.sh
+scenario	SC-UI-DASHBOARD	ui-e2e	instrumented	tests/ui-e2e.sh
+scenario	SC-UI-EMPTY	ui-e2e	instrumented	tests/ui-e2e.sh
 scenario	SC-UI-FAILURE	ui-e2e	planned	pending out-of-process UI journey
-scenario	SC-UI-FOCUS	ui-e2e	legacy-stage	tests/ui-e2e.sh
+scenario	SC-UI-FOCUS	ui-e2e	instrumented	tests/ui-e2e.sh
 scenario	SC-UI-ONBOARD-FIRST-RUN	ui-e2e	planned	pending out-of-process UI journey
 scenario	SC-UI-ONBOARD-PROVIDER	ui-e2e	planned	pending out-of-process UI journey
 scenario	SC-UI-ONBOARD-APPROVAL	ui-e2e	planned	pending out-of-process UI journey
 scenario	SC-UI-SETTINGS	ui-e2e	planned	pending out-of-process UI journey
-scenario	SC-UPDATE-CHECK	release-preflight	legacy-stage	tests/release-preflight.sh
-scenario	SC-UPDATE-APPLY	publish-preflight	legacy-stage	tests/publish-preflight.sh
-scenario	SC-DOCTOR-REPORT	distribution	legacy-stage	tests/distribution.sh
-scenario	SC-INSTALL-CLEAN	distribution	legacy-stage	tests/distribution.sh
-scenario	SC-INSTALL-REPAIR	distribution	legacy-stage	tests/distribution.sh
-scenario	SC-INSTALL-UNINSTALL	distribution	legacy-stage	tests/distribution.sh
-scenario	SC-PUBLISH-CONTRACT	publish-preflight	legacy-stage	tests/publish-preflight.sh
+scenario	SC-UPDATE-CHECK	release-preflight	instrumented	tests/release-preflight.sh
+scenario	SC-UPDATE-APPLY	publish-preflight	instrumented	tests/publish-preflight.sh
+scenario	SC-RELEASE-WORKFLOW	release-workflow	instrumented	tests/release-workflow.sh
+scenario	SC-DOCTOR-REPORT	distribution	instrumented	tests/distribution.sh
+scenario	SC-INSTALL-CLEAN	distribution	instrumented	tests/distribution.sh
+scenario	SC-INSTALL-REPAIR	distribution	instrumented	tests/distribution.sh
+scenario	SC-INSTALL-UNINSTALL	distribution	instrumented	tests/distribution.sh
+scenario	SC-RUNTIME-PACKAGE	tmux-runtime	instrumented	tests/tmux-runtime.sh
+scenario	SC-PUBLISH-CONTRACT	publish-preflight	instrumented	tests/publish-preflight.sh
 suite	DetachAppTests.InstallationStorePowerStateTests
 suite	DetachAppTests.MenuBarPresentationTests
 suite	DetachAppTests.SetupGuidanceTests

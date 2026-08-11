@@ -432,7 +432,8 @@
         "QC-APP-UPDATE"
       ],
       "scenarios": [
-        "SC-UPDATE-APPLY"
+        "SC-UPDATE-APPLY",
+        "SC-RELEASE-WORKFLOW"
       ],
       "summary": "A valid update preserves the arm64 and signature contract."
     },
@@ -454,7 +455,8 @@
         "QC-RELEASE-INSTALL"
       ],
       "scenarios": [
-        "SC-INSTALL-CLEAN"
+        "SC-INSTALL-CLEAN",
+        "SC-RUNTIME-PACKAGE"
       ],
       "summary": "A user installs one immutable self-contained payload."
     },
@@ -502,7 +504,7 @@
     "pr_feedback_seconds": 600,
     "review_seconds": 180
   },
-  "policy": 17,
+  "policy": 18,
   "release_domains": [
     {
       "gates": "-",
@@ -684,6 +686,20 @@
     },
     {
       "pattern": "tools/quality_gate.py",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "scripts/quality-scenarios",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tools/quality_scenarios.py",
       "priority": 1000,
       "release_domain": "safe",
       "spec": "docs/specs/documentation.md",
@@ -1540,61 +1556,61 @@
       "command": "tests/run.sh",
       "id": "SC-SESSION-CREATE-CODEX",
       "stage": "codex",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/run-claude.sh",
       "id": "SC-SESSION-CREATE-CLAUDE",
       "stage": "claude",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/run.sh",
       "id": "SC-SESSION-PERSIST-CODEX",
       "stage": "codex",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/run-claude.sh",
       "id": "SC-SESSION-PERSIST-CLAUDE",
       "stage": "claude",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/run.sh",
       "id": "SC-SESSION-RECOVER-CODEX",
       "stage": "codex",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/run-claude.sh",
       "id": "SC-SESSION-RECOVER-CLAUDE",
       "stage": "claude",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/run.sh",
       "id": "SC-SESSION-STOP-CODEX",
       "stage": "codex",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/run-claude.sh",
       "id": "SC-SESSION-STOP-CLAUDE",
       "stage": "claude",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/run.sh",
       "id": "SC-SESSION-DELETE-CODEX",
       "stage": "codex",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/run-claude.sh",
       "id": "SC-SESSION-DELETE-CLAUDE",
       "stage": "claude",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "cd app && swift test --filter Power",
@@ -1624,13 +1640,13 @@
       "command": "tests/ui-e2e.sh",
       "id": "SC-UI-DASHBOARD",
       "stage": "ui-e2e",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/ui-e2e.sh",
       "id": "SC-UI-EMPTY",
       "stage": "ui-e2e",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "pending out-of-process UI journey",
@@ -1642,7 +1658,7 @@
       "command": "tests/ui-e2e.sh",
       "id": "SC-UI-FOCUS",
       "stage": "ui-e2e",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "pending out-of-process UI journey",
@@ -1672,43 +1688,55 @@
       "command": "tests/release-preflight.sh",
       "id": "SC-UPDATE-CHECK",
       "stage": "release-preflight",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/publish-preflight.sh",
       "id": "SC-UPDATE-APPLY",
       "stage": "publish-preflight",
-      "status": "legacy-stage"
+      "status": "instrumented"
+    },
+    {
+      "command": "tests/release-workflow.sh",
+      "id": "SC-RELEASE-WORKFLOW",
+      "stage": "release-workflow",
+      "status": "instrumented"
     },
     {
       "command": "tests/distribution.sh",
       "id": "SC-DOCTOR-REPORT",
       "stage": "distribution",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/distribution.sh",
       "id": "SC-INSTALL-CLEAN",
       "stage": "distribution",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/distribution.sh",
       "id": "SC-INSTALL-REPAIR",
       "stage": "distribution",
-      "status": "legacy-stage"
+      "status": "instrumented"
     },
     {
       "command": "tests/distribution.sh",
       "id": "SC-INSTALL-UNINSTALL",
       "stage": "distribution",
-      "status": "legacy-stage"
+      "status": "instrumented"
+    },
+    {
+      "command": "tests/tmux-runtime.sh",
+      "id": "SC-RUNTIME-PACKAGE",
+      "stage": "tmux-runtime",
+      "status": "instrumented"
     },
     {
       "command": "tests/publish-preflight.sh",
       "id": "SC-PUBLISH-CONTRACT",
       "stage": "publish-preflight",
-      "status": "legacy-stage"
+      "status": "instrumented"
     }
   ],
   "schema": 1,

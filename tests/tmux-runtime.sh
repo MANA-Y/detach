@@ -4,6 +4,7 @@ set -eu
 set -o pipefail
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
+"$ROOT/scripts/quality-scenarios" event begin SC-RUNTIME-PACKAGE
 BUILDER="$ROOT/scripts/build-tmux.sh"
 MAKE_APP="$ROOT/app/scripts/make-app.sh"
 VERIFY_APP="$ROOT/app/scripts/verify-app.sh"
@@ -439,4 +440,5 @@ for plist in \
   ! plutil -p "$plist" | grep -Fi Amphetamine >/dev/null
 done
 
+"$ROOT/scripts/quality-scenarios" event pass SC-RUNTIME-PACKAGE
 printf 'Bundled runtime packaging contract tests passed\n'

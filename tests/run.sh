@@ -555,11 +555,17 @@ DETACH="$SCRIPT"
 marker="$TMP_ROOT/must-not-exist"
 literal_prompt="spaces ; \$(touch $marker) * \"quotes\""
 export FAKE_CODEX_SLEEP=12
+"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-CREATE-CODEX
+"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-PERSIST-CODEX
+"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-RECOVER-CODEX
+"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-STOP-CODEX
+"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-DELETE-CODEX
 run_codex --name integration --detach -- "$literal_prompt"
 
 wait_for_tmux_option "$SESSION" @detach_status running
 tmux -L "$SOCKET" has-session -t "=$SESSION"
 "$DETACH" list | grep -F 'codex' | grep -F "$SESSION" >/dev/null
+"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-CREATE-CODEX
 mkdir -p "$TMP_ROOT/unrelated-tmux-tmpdir"
 TMUX_TMPDIR="$TMP_ROOT/unrelated-tmux-tmpdir" \
   "$DETACH" list | grep -F 'codex' | grep -F "$SESSION" >/dev/null
@@ -573,6 +579,7 @@ pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_pane_id)"
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_status)" = "running" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -w -t "$pane_id" remain-on-exit)" = off ]
 [ "$(tmux -L "$SOCKET" show-options -qv -p -t "$pane_id" remain-on-exit)" = on ]
+"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-PERSIST-CODEX
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_tmux_style)" = "1" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_style_snapshot)" = "1" ]
 session_color="$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_color)"
@@ -890,6 +897,7 @@ run_codex stop integration
 [ -n "$("$STATE_HELPER" meta get "$meta" stopped_at)" ]
 grep -Fx "release --session $SESSION --run-token $stopped_run_token" \
   "$FAKE_POWER_RELEASES_FILE" >/dev/null
+"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-STOP-CODEX
 
 # Simulate losing the primary metadata in a power failure. Auto-recovery must
 # use the checkpoint metadata and resume the exact saved UUID.
@@ -913,6 +921,7 @@ case "$worker_pid" in
   ''|*[!0-9]*) printf 'recovered pane has invalid worker PID: %s\n' "$worker_pid" >&2; exit 1 ;;
 esac
 worker_pgid="$(wait_for_process_group_id "$worker_pid")"
+"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-RECOVER-CODEX
 
 run_codex stop integration
 ! kill -0 "$worker_pid" 2>/dev/null
@@ -1499,4 +1508,5 @@ fi
 grep -Fx 'do not delete' "$unsafe_target/$SESSION/sentinel" >/dev/null
 [ ! -e "$FAKE_GIT_MARKER" ]
 
+"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-DELETE-CODEX
 printf 'Codex detach integration tests passed\n'

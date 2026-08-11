@@ -249,7 +249,13 @@ class Policy:
                 if (
                     not SCENARIO_ID.fullmatch(identifier)
                     or not IDENTIFIER.fullmatch(stage)
-                    or status not in ("automated", "legacy-stage", "planned", "manual-release")
+                    or status not in (
+                        "instrumented",
+                        "automated",
+                        "legacy-stage",
+                        "planned",
+                        "manual-release",
+                    )
                     or not command
                 ):
                     raise PolicyError(f"line {line_number}: invalid scenario")
