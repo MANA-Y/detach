@@ -4,6 +4,7 @@ set -eu
 set -o pipefail
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
+"$ROOT/scripts/quality-scenarios" event begin SC-UPDATE-APPLY
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-publish-preflight-test.XXXXXX")"
 TEST_REPO="$TMP_ROOT/repo"
 TEST_APP="$TEST_REPO/app"
@@ -376,6 +377,8 @@ grep -F 'hdiutil|attach -readonly -nobrowse -owners on -mountpoint ' \
   "$TMP_ROOT/validation.log" >/dev/null
 grep -F 'spctl|--assess --type open --context context:primary-signature --verbose=2' \
   "$TMP_ROOT/validation.log" >/dev/null
+"$ROOT/scripts/quality-scenarios" event pass SC-UPDATE-APPLY
+"$ROOT/scripts/quality-scenarios" event begin SC-PUBLISH-CONTRACT
 
 # The release orchestrator can continue from a clean tooling descendant while
 # the tag and manifest stay bound to the built release commit. Direct use keeps
@@ -526,4 +529,5 @@ PATH="$FAKE_BIN:/usr/bin:/bin" \
 [ "$(grep -c '^release upload' "$GH_LOG")" = 1 ]
 grep -F 'Published Detach 1.2.3' "$TMP_ROOT/resume-published.stdout" >/dev/null
 
+"$ROOT/scripts/quality-scenarios" event pass SC-PUBLISH-CONTRACT
 printf 'Detach publish preflight tests passed\n'

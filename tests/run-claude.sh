@@ -265,6 +265,11 @@ literal_prompt="spaces ; \$(touch $marker) * \"quotes\""
 mkdir -p "$TMP_ROOT/extra-a" "$TMP_ROOT/extra-b"
 # The display label stays out of tmux and filesystem identifiers, remains
 # usable for every lifecycle command, and survives resume/recovery.
+"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-CREATE-CLAUDE
+"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-PERSIST-CLAUDE
+"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-RECOVER-CLAUDE
+"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-STOP-CLAUDE
+"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-DELETE-CLAUDE
 reset_fake_claude_ready
 "$SCRIPT" claude --name "$human_label" --detach -- \
   --name display-name "$literal_prompt" --add-dir "$TMP_ROOT/extra-a" "$TMP_ROOT/extra-b"
@@ -293,6 +298,7 @@ session="$("$STATE_HELPER" meta get "$meta" session_name)"
 [ "$("$STATE_HELPER" meta get "$meta" display_name)" = "$human_label" ]
 "$SCRIPT" claude status "$human_label" | \
   grep -F "Name:           $human_label" >/dev/null
+"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-CREATE-CLAUDE
 session_dir="$(dirname "$meta")"
 checkpoint="$session_dir/checkpoint"
 
@@ -311,6 +317,7 @@ live_pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_pane_
 [ "$(tmux -L "$SOCKET" display-message -p -t "$live_pane_id" '#{pane_dead}')" = "0" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -w -t "$live_pane_id" remain-on-exit)" = off ]
 [ "$(tmux -L "$SOCKET" show-options -qv -p -t "$live_pane_id" remain-on-exit)" = on ]
+"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-PERSIST-CLAUDE
 session_color="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_color)"
 [[ "$session_color" =~ ^#[[:xdigit:]]{6}$ ]]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_status)" = "running" ]
@@ -527,6 +534,7 @@ stopped_run_token="$("$STATE_HELPER" meta get "$meta" run_token)"
 [ -n "$("$STATE_HELPER" meta get "$meta" stopped_at)" ]
 grep -Fx "release --session $session --run-token $stopped_run_token" \
   "$FAKE_POWER_RELEASES_FILE" >/dev/null
+"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-STOP-CLAUDE
 
 # Simulate losing primary metadata during a power failure. Recovery must use
 # checkpoint metadata and resume the exact Claude session UUID.
@@ -614,6 +622,7 @@ grep -Fx -- "$TMP_ROOT/extra-b" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 [ -s "$CLAUDE_CONFIG_DIR/tasks/$session_id/task.json" ]
 [ -s "$CLAUDE_CONFIG_DIR/tasks/session-${session_id:0:8}/task.json" ]
 [ -s "$CLAUDE_CONFIG_DIR/teams/session-${session_id:0:8}/config.json" ]
+"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-RECOVER-CLAUDE
 
 "$SCRIPT" claude stop "$human_label"
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
@@ -743,4 +752,5 @@ done
 "$SCRIPT" claude delete --force "$second_default_session"
 [ ! -e "$FAKE_GIT_MARKER" ]
 
+"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-DELETE-CLAUDE
 printf 'Claude detach integration tests passed\n'

@@ -42,6 +42,12 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
 - Resume evidence retains stage timing and digest-bound logs, binds its parent,
   requires the same authority, and cannot turn a prior time-budget regression
   into authoritative evidence.
+- Quality policy files contain only the current policy version and state. Git
+  is the policy history. Runtime tools do not keep migration decoders for old
+  policy schemas.
+- Instrumented user scenarios emit addressable begin and pass events. Gate
+  evidence records their requirement and journey links, duration, result, and
+  bounded rerun command. A passed stage with missing scenario events fails.
 - A local timing-budget failure creates performance work. Warm-cache or
   variance reruns cannot turn it into readiness; an unchanged rerun is allowed
   only for an evidenced unrelated external transient whose cause is recorded.

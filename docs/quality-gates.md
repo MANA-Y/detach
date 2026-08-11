@@ -25,6 +25,10 @@ the only ordinary merge authority. Unknown paths select the full plan.
   `--resume latest` selects the newest compatible local run.
 - `scripts/quality-gate --stage <name>` reruns one diagnostic stage. It is not
   readiness evidence.
+- `scripts/quality-scenarios rerun SC-ID` runs the owning diagnostic stage for
+  an instrumented scenario, or its direct policy command otherwise. The owning
+  stage process deadline bounds both forms. The helper has 30 seconds for
+  evidence finalization and process-group cleanup.
 - `scripts/quality-history [RESULT_ROOT]` reports run and failure counts plus
   p50 and p95 wall and stage durations. It cannot produce readiness evidence.
 - `scripts/quality-dashboard generate` writes deterministic static HTML and
@@ -49,8 +53,11 @@ Every manifest records one authority:
 
 The repository gate writes private evidence under
 `app/build/quality-gates/`. One run contains a schema-versioned TSV summary,
-JUnit, Markdown, stage logs, safe environment facts, a provenance manifest,
-and a digest inventory. Coverage runs also contain `quality-metrics.json`.
+gate and scenario JUnit, scenario JSONL, Markdown, stage logs, safe environment
+facts, a provenance manifest, and a digest inventory. Coverage runs also
+contain `quality-metrics.json`. A failed scenario adds a bounded
+`repair-bundle.json` with its requirement and journey links, exact rerun, and
+at most the last 100 log lines.
 
 The manifest binds the evidence to the policy, authority, source and base
 commits, exact input and plan fingerprints, selected capabilities, journeys,
@@ -58,6 +65,12 @@ stages, timestamps, inherited timing, parent evidence, environment, artifacts,
 summary, and every stage log. A failure, timeout, interruption, blocked
 dependency, unsafe file, malformed record, or digest mismatch cannot produce
 PASS. Failure output gives the exact diagnostic rerun.
+
+An instrumented scenario writes one begin event and one pass event. Missing,
+duplicate, reordered, unknown, or cross-stage events fail closed. Legacy stage
+records remain explicit until the owning suite gets markers. Planned scenario
+records remain visible gaps. Only the supervised closed-lid release gate is
+manual because it needs physical evidence.
 
 Resume requires the same policy, authority, source commit, base commit, and
 input fingerprint. The old plan must contain every selected stage. Reused logs

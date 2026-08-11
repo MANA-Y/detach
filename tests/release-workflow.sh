@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
+"$ROOT/scripts/quality-scenarios" event begin SC-RELEASE-WORKFLOW
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-release-workflow-test.XXXXXX")"
 PUBLIC_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 IDENTITY='Developer ID Application: Detach Tests (TESTTEAM)'
@@ -47,6 +48,7 @@ setup_fixture() {
   install -m 0755 "$ROOT/scripts/quality-gate" "$REPO/scripts/quality-gate"
   install -m 0755 "$ROOT/scripts/quality-policy" "$REPO/scripts/quality-policy"
   install -m 0644 "$ROOT/tools/quality_gate.py" "$REPO/tools/quality_gate.py"
+  install -m 0644 "$ROOT/tools/quality_scenarios.py" "$REPO/tools/quality_scenarios.py"
   install -m 0644 "$ROOT/tools/quality_policy.py" "$REPO/tools/quality_policy.py"
   install -m 0644 "$ROOT/quality/policy.tsv" "$REPO/quality/policy.tsv"
   install -m 0755 "$ROOT/app/scripts/verify-appcast.sh" \
@@ -664,4 +666,5 @@ for release_case_index in "${!release_case_pids[@]}"; do
 done
 [ "$release_case_status" -eq 0 ] || exit 1
 
+"$ROOT/scripts/quality-scenarios" event pass SC-RELEASE-WORKFLOW
 printf 'Detach release workflow tests passed\n'

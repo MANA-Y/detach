@@ -21,6 +21,12 @@ from datetime import datetime, timezone
 from typing import Iterable, NoReturn, TextIO
 
 from quality_policy import POLICY_FILE, Policy, PolicyError
+from quality_scenarios import (
+    ScenarioError,
+    assemble as assemble_scenarios,
+    finalize_stage as finalize_scenario_stage,
+    record_event as record_scenario_event,
+)
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -303,6 +309,7 @@ class QualityGate:
         self.failure_count = 0
         self.prior_manifest: dict[str, str | None] = {}
         self.prior_results: dict[str, StageResult] = {}
+        self.scenario_records: list[dict[str, object]] = []
 
     def validate_options(self) -> None:
         if self.test_real_static and not self.test_mode:
@@ -579,6 +586,8 @@ class QualityGate:
         write_private(self.summary, RESULT_HEADER)
         write_private(self.environment, self.environment_document())
         write_private(self.artifacts, "schema\t1\n")
+        (self.run_dir / "scenario-events").mkdir(mode=0o700)
+        (self.run_dir / "stage-scenarios").mkdir(mode=0o700)
         self.write_static_files()
 
     def command_version(self, arguments: list[str], *, first_line: bool = False) -> str:
@@ -642,10 +651,15 @@ class QualityGate:
         metrics = self.run_dir / "quality-metrics.json"
         if metrics.exists():
             files.append(metrics)
+        for name in ("scenarios.jsonl", "scenarios.junit.xml", "repair-bundle.json"):
+            path = self.run_dir / name
+            if path.exists():
+                files.append(path)
         for directory_name in (
             "ui-e2e-artifacts",
             "codex-artifacts",
             "claude-artifacts",
+            "stage-scenarios",
         ):
             directory = self.run_dir / directory_name
             if directory.is_dir() and not directory.is_symlink():
@@ -873,6 +887,10 @@ class QualityGate:
                 raise GateError("resume artifact inventory path is unsafe")
             if not (
                 relative == "quality-metrics.json"
+                or relative == "scenarios.jsonl"
+                or relative == "scenarios.junit.xml"
+                or relative == "repair-bundle.json"
+                or relative.startswith("stage-scenarios/")
                 or relative.startswith("ui-e2e-artifacts/")
                 or relative.startswith("codex-artifacts/")
                 or relative.startswith("claude-artifacts/")
@@ -953,7 +971,38 @@ class QualityGate:
     def stage_result_path(self, stage: str) -> Path:
         return self.run_dir / f".stage-{stage}.result"
 
-    def record_result(self, stage: str, result: StageResult) -> None:
+    def record_result(
+        self,
+        stage: str,
+        result: StageResult,
+        *,
+        scenario_source: Path | None = None,
+    ) -> None:
+        scenario_output = self.run_dir / "stage-scenarios" / f"{stage}.jsonl"
+        if scenario_source is not None:
+            if not scenario_source.is_file() or scenario_source.is_symlink():
+                raise GateError(f"reused scenario evidence is missing or unsafe: {stage}")
+            shutil.copyfile(scenario_source, scenario_output)
+            scenario_output.chmod(0o600)
+        else:
+            errors = finalize_scenario_stage(
+                policy=self.policy,
+                stage=stage,
+                stage_status=result.status,
+                stage_duration_seconds=result.duration,
+                stage_log=result.log,
+                event_path=self.run_dir / "scenario-events" / f"{stage}.jsonl",
+                output_path=scenario_output,
+            )
+            if errors and result.status in ("passed", "reused"):
+                log = result.log
+                if log == "-":
+                    log = f"{stage}.log"
+                    write_private(self.run_dir / log, "")
+                with (self.run_dir / log).open("a", encoding="utf-8") as output:
+                    for error in errors:
+                        output.write(f"scenario evidence: {error}\n")
+                result = StageResult("failed", result.duration, log, 1, result.origin_run)
         self.results[stage] = result
         write_private(
             self.stage_result_path(stage),
@@ -993,7 +1042,7 @@ class QualityGate:
             raise GateError(f"timeout for {stage} must be a positive integer")
         return int(value)
 
-    def stage_environment(self) -> dict[str, str]:
+    def stage_environment(self, stage: str) -> dict[str, str]:
         environment = os.environ.copy()
         for name in (
             "DETACH_RELEASE_TIMING_OVERRIDE",
@@ -1027,6 +1076,10 @@ class QualityGate:
                 "DETACH_QUALITY_GATE_TEST_REAL_STATIC": str(
                     int(self.test_real_static)
                 ),
+                "DETACH_QUALITY_SCENARIO_STAGE": stage,
+                "DETACH_QUALITY_SCENARIO_EVENTS": str(
+                    self.run_dir / "scenario-events" / f"{stage}.jsonl"
+                ),
             }
         )
         if not self.test_direct:
@@ -1055,7 +1108,9 @@ class QualityGate:
                 shutil.copyfile(metrics, self.run_dir / "quality-metrics.json")
                 (self.run_dir / "quality-metrics.json").chmod(0o600)
             self.record_result(
-                stage, StageResult("reused", prior.duration, reused_log, 0, origin)
+                stage,
+                StageResult("reused", prior.duration, reused_log, 0, origin),
+                scenario_source=self.resume_dir / "stage-scenarios" / f"{stage}.jsonl",
             )
             return
         if self.prerequisite_failed(stage):
@@ -1074,7 +1129,7 @@ class QualityGate:
             process = subprocess.Popen(
                 [sys.executable, str(Path(__file__).resolve()), "__run-stage", stage],
                 cwd=ROOT,
-                env=self.stage_environment(),
+                env=self.stage_environment(stage),
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
@@ -1364,6 +1419,23 @@ class QualityGate:
             )
         write_private(self.summary, "\n".join(lines) + "\n")
 
+    def write_scenario_outputs(self) -> None:
+        self.scenario_records = assemble_scenarios(
+            stage_paths=(
+                self.run_dir / "stage-scenarios" / f"{stage}.jsonl"
+                for stage in self.selected
+            ),
+            output_jsonl=self.run_dir / "scenarios.jsonl",
+            output_junit=self.run_dir / "scenarios.junit.xml",
+            repair_bundle=self.run_dir / "repair-bundle.json",
+            run_dir=self.run_dir,
+            expected_stages=self.selected,
+        )
+        event_directory = self.run_dir / "scenario-events"
+        if not event_directory.is_dir() or event_directory.is_symlink():
+            raise GateError("scenario event directory is missing or unsafe")
+        shutil.rmtree(event_directory)
+
     def write_junit(self) -> None:
         tests = len(self.selected)
         failures = sum(
@@ -1424,6 +1496,20 @@ class QualityGate:
                 f"| `{stage}` | {result.status} | {result.duration} | "
                 f"`{result.log}` | `{result.origin_run}` |"
             )
+        lines.extend(
+            [
+                "",
+                "## Scenarios",
+                "",
+                "| Scenario | Stage | Status | Granularity | Milliseconds | Rerun |",
+                "| --- | --- | --- | --- | ---: | --- |",
+            ]
+        )
+        for record in self.scenario_records:
+            lines.append(
+                f"| `{record['id']}` | `{record['stage']}` | {record['status']} | "
+                f"{record['granularity']} | {record['duration_ms']} | `{record['rerun']}` |"
+            )
         write_private(self.markdown, "\n".join(lines) + "\n")
 
     def interrupt(self) -> NoReturn:
@@ -1442,7 +1528,11 @@ class QualityGate:
                 stage, StageResult("interrupted", duration, f"{stage}.log", 130)
             )
         self.active.clear()
+        for stage in self.selected:
+            if stage not in self.results:
+                self.record_result(stage, StageResult("interrupted", 0, "-", 130))
         self.assemble_summary()
+        self.write_scenario_outputs()
         self.write_manifest("interrupted")
         self.write_junit()
         self.write_markdown()
@@ -1498,6 +1588,7 @@ class QualityGate:
                 signal.signal(signum, handler)
 
         self.assemble_summary()
+        self.write_scenario_outputs()
         self.write_junit()
         self.write_markdown()
         if self.overall_status:
@@ -1549,6 +1640,7 @@ def run_static_stage(root: Path, run_dir: Path, mode: str, resolved_base: str) -
         "bin/detach",
         "bin/detach-core",
         "scripts/quality-gate",
+        "scripts/quality-scenarios",
         "scripts/quality-policy",
         "scripts/quality-metrics",
         "scripts/quality-mutation",
@@ -1662,6 +1754,12 @@ def run_gate_contract_stage(root: Path) -> int:
             "Quality gate Python contracts passed",
         ),
         (
+            "quality-scenarios.log",
+            [sys.executable, str(root / "tests/quality_scenarios_contract.py")],
+            {},
+            "Quality scenario contracts passed",
+        ),
+        (
             "quality-policy.log",
             [str(root / "tests/quality-policy.sh")],
             {},
@@ -1773,7 +1871,19 @@ def run_stage_worker(stage: str) -> int:
                     "DETACH_QUALITY_AUTHORITY": authority,
                 }
             )
-        return child_run([str(fixture)], cwd=root, env=environment)
+        policy = Policy(POLICY_FILE)
+        instrumented = [
+            scenario_id
+            for scenario_id, (scenario_stage, status, _) in policy.scenarios.items()
+            if scenario_stage == stage and status == "instrumented"
+        ]
+        for scenario_id in instrumented:
+            record_scenario_event("begin", scenario_id)
+        status = child_run([str(fixture)], cwd=root, env=environment)
+        if status == 0:
+            for scenario_id in instrumented:
+                record_scenario_event("pass", scenario_id)
+        return status
 
     if stage == "static":
         return run_static_stage(root, run_dir, mode, resolved_base)
@@ -1877,5 +1987,12 @@ def main(arguments: list[str]) -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main(sys.argv[1:]))
-    except (GateError, PolicyError, OSError, UnicodeError, ValueError) as error:
+    except (
+        GateError,
+        PolicyError,
+        ScenarioError,
+        OSError,
+        UnicodeError,
+        ValueError,
+    ) as error:
         fail(str(error))

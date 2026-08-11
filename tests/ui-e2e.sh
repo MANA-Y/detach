@@ -131,6 +131,10 @@ printf '#!/bin/bash\nprintf breach >%q\nexit 91\n' "$BREACH" \
   >"$TEST_HOME/.local/bin/detach"
 chmod 0755 "$TEST_HOME/.local/bin/detach"
 
+"$ROOT/scripts/quality-scenarios" event begin SC-UI-DASHBOARD
+"$ROOT/scripts/quality-scenarios" event begin SC-UI-EMPTY
+"$ROOT/scripts/quality-scenarios" event begin SC-UI-FOCUS
+
 HOME="$TEST_HOME" \
 CFFIXED_USER_HOME="$TEST_HOME" \
 XDG_STATE_HOME="$TEST_ROOT/state" \
@@ -220,6 +224,17 @@ for check in \
       "$check_index" "$actual" "$check" >&2
     exit 1
   }
+  case "$check" in
+    dashboard-accessible)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-DASHBOARD
+      ;;
+    empty-dashboard-state)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-EMPTY
+      ;;
+    installed-app-focus-undisturbed)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-FOCUS
+      ;;
+  esac
   check_index=$((check_index + 1))
 done
 

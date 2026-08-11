@@ -54,8 +54,8 @@ if DETACH_RELEASE_BUDGET_RATCHET_TEST_MODE=1 DETACH_RELEASE_BUDGET="$current" "$
 fi
 grep -F 'increased above locked-ceiling' "$TMP_ROOT/ui-e2e.out" >/dev/null
 
-# Policy 7 adds the UI stage without invalidating an otherwise valid policy 6
-# merge-base budget. The new stage is still held to its locked ceiling above.
+# A new UI stage does not invalidate an otherwise valid merge-base budget. The
+# new stage is still held to its locked ceiling above.
 cp "$SOURCE" "$current"
 cp "$SOURCE" "$prior"
 set_value "$prior" schema 1

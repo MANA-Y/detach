@@ -30,6 +30,12 @@
   its policy, exact source/base commits, input fingerprint, and stage coverage
   still match. `--keep-going` improves diagnosis but never turns a failed or
   blocked stage into readiness evidence.
+- `scripts/quality-scenarios rerun SC-ID` runs the owning diagnostic stage for
+  an instrumented scenario, or its direct policy command otherwise. The stage
+  process deadline bounds both forms. The helper has 30 seconds for evidence
+  finalization and process-group cleanup. Instrumented suites also write
+  scenario-level durations. A monolithic legacy suite reports only stage
+  granularity until it gets scenario markers.
 - `scripts/quality-history [RESULT_ROOT]` reports p50/p95 wall and stage timing,
   ordinary failures, and execution-environment failures across retained local
   or downloaded gate evidence. It is telemetry, not readiness evidence.
@@ -53,21 +59,13 @@
   owner-confirmed `DETACH_RELEASE_IGNORE_TIMING=1 scripts/release-version X.Y.Z`
   path may omit them for one intentionally busy-machine release, with the
   waiver recorded in private evidence. `--stage` is diagnostic only and is not
-  proof that a change is ready. Policy 4 keeps SwiftPM work exclusive, then
-  runs the isolated Codex and Claude suites concurrently against the verified
-  bundled tmux and state helper. Policy 5 additionally rejects wall time above
-  180 seconds, individual stage regressions, and any attempt to lower quality
-  floors or raise time budgets relative to their merge-base values. Policy 6
-  adds the fast documentation/context contract to the existing static stage.
-  Policy 7 adds the mandatory packaged-app `ui-e2e` stage after every selected app
-  build, without raising the 180-second wall budget. Policy 8 makes resume
-  inherit timing and parent provenance, preserves bounded failure diagnostics,
-  classifies known execution-environment denials without weakening FAIL,
-  applies stage budgets to ordinary local partial plans, exempts only the
-  explicit GitHub-only budget-free plan, and raises the established UI floors.
-  Policy 9 adds contract-locked `critical`, `unit`, `coverage`, `smoke`, and
-  `full` operator entry points. Policy 10 adds the exact-owner-confirmed busy-machine
-  release timing waiver without removing any functional or hardware gate.
+  proof that a change is ready. The current policy keeps SwiftPM work
+  exclusive, then runs the isolated Codex and Claude suites concurrently
+  against the verified bundled tmux and state helper. It rejects reference-Mac
+  wall or stage regressions and rejects attempts to lower quality floors or
+  raise time budgets relative to their merge-base values. Resume inherits
+  timing and parent provenance. It preserves bounded failure diagnostics and
+  classifies known execution-environment denials without weakening FAIL.
 
 - `DETACH_TEST_TMUX_BIN="$PWD/app/build/Detach.app/Contents/Resources/DetachCLI/tmux" tests/run.sh`
   — hermetic Codex integration with a fake provider, private tmux
@@ -129,6 +127,14 @@ timing-policy ratchet, and `git diff --check`. Stdlib Python owns quality-gate
 planning, scheduling, evidence, and policy decisions. Shell entry points only
 locate Python. Behavioral shell integrations remain runtime evidence for shell
 products and macOS processes.
+
+Each selected stage writes scenario evidence to `scenarios.jsonl` and
+`scenarios.junit.xml`. Instrumented scenarios fail closed when their begin or
+pass event is missing. Failed scenario records also produce
+`repair-bundle.json`. The bundle contains requirement and journey links, the
+exact bounded rerun, and at most the last 100 log lines. Planned scenarios stay
+visible as gaps. The closed-lid scenario remains a supervised release-only
+gate because software automation cannot prove physical lid behavior.
 
 `tests/docs-contract.sh` is the focused check for agent instructions, durable
 specs, and the documentation workflow. It does not replace the selected gate.

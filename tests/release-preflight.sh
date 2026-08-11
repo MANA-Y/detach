@@ -4,6 +4,7 @@ set -eu
 set -o pipefail
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
+"$ROOT/scripts/quality-scenarios" event begin SC-UPDATE-CHECK
 APPCAST_VERIFIER="$ROOT/app/scripts/verify-appcast.sh"
 MAKE_DMG="$ROOT/app/scripts/make-dmg.sh"
 BUNDLE_MODE_POLICY="$ROOT/app/scripts/bundle-modes.sh"
@@ -291,4 +292,5 @@ grep -Fx 'source-mode 755' "$TMP_ROOT/hdiutil.log" >/dev/null || {
   shasum -a 256 -c "$(basename "$HOSTILE_DMG").sha256" >/dev/null
 )
 
+"$ROOT/scripts/quality-scenarios" event pass SC-UPDATE-CHECK
 printf 'Detach release preflight tests passed\n'
