@@ -109,7 +109,7 @@ fi
 grep -F 'references unknown scenario: SC-UI-SETTINGS' \
   "$TMP_ROOT/missing-scenario.out" >/dev/null || fail 'missing scenario failure is unclear'
 
-! rg -F 'case "$path" in' "$ROOT/scripts/quality-gate" "$ROOT/scripts/release-impact" >/dev/null || \
+! grep -F 'case "$path" in' "$ROOT/scripts/quality-gate" "$ROOT/scripts/release-impact" >/dev/null || \
   fail 'a second path classifier remains in a production script'
 
 printf 'Quality policy contracts passed\n'

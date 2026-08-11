@@ -432,6 +432,7 @@ run_workflow() {
       DETACH_RELEASE_TEST_LID_MIN_SECONDS=0 \
       DETACH_RELEASE_TEST_FAIL_AFTER="$fail_after" \
       DETACH_RELEASE_IGNORE_TIMING="$ignore_timing" \
+      DETACH_QUALITY_AUTHORITY= \
       DETACH_CONFIRM_RELEASE="$release_confirmation" \
       DETACH_CONFIRM_INSTALL_MATRIX="$install_confirmation" \
       DETACH_CONFIRM_LID_TEST="$lid_confirmation" \
