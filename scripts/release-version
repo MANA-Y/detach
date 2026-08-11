@@ -491,7 +491,13 @@ file_line() {
 }
 
 run_full_tests() {
+  local baseline_root=""
   note 'running the complete pre-release test suite before Git changes'
+  if [ "$TEST_MODE" != 1 ]; then
+    baseline_root="$(DETACH_QUALITY_REPOSITORY="$REPOSITORY" \
+      "$ROOT/scripts/quality-baseline")"
+    export DETACH_QUALITY_BASELINE_ROOT="$baseline_root"
+  fi
   if [ "$IGNORE_TIMING" = 1 ]; then
     exact_confirmation DETACH_CONFIRM_RELEASE \
       'Ignoring reference-machine timing budgets for this release'

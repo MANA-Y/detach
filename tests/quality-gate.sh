@@ -42,19 +42,21 @@ prepare_template() {
     "$TEMPLATE_REPO/app/build" "$TEMPLATE_REPO/quality/generated" "$TEMPLATE_REPO/tools"
   install -m 0755 "$ROOT/scripts/quality-gate" "$TEMPLATE_REPO/scripts/quality-gate"
   install -m 0755 "$ROOT/scripts/quality-policy" "$TEMPLATE_REPO/scripts/quality-policy"
+  install -m 0755 "$ROOT/scripts/quality-metrics" "$TEMPLATE_REPO/scripts/quality-metrics"
+  install -m 0755 "$ROOT/scripts/quality-baseline" "$TEMPLATE_REPO/scripts/quality-baseline"
   install -m 0755 "$ROOT/scripts/quality-dashboard" "$TEMPLATE_REPO/scripts/quality-dashboard"
   install -m 0755 "$ROOT/scripts/release-impact" "$TEMPLATE_REPO/scripts/release-impact"
   install -m 0644 "$ROOT/tools/quality_policy.py" "$TEMPLATE_REPO/tools/quality_policy.py"
+  install -m 0644 "$ROOT/tools/quality_metrics.py" "$TEMPLATE_REPO/tools/quality_metrics.py"
   install -m 0644 "$ROOT/tools/quality_dashboard.py" "$TEMPLATE_REPO/tools/quality_dashboard.py"
   install -m 0755 "$ROOT/scripts/test" "$TEMPLATE_REPO/scripts/test"
   install -m 0644 "$ROOT/quality/policy.tsv" "$TEMPLATE_REPO/quality/policy.tsv"
   install -m 0644 "$ROOT/quality/generated/policy.json" \
     "$TEMPLATE_REPO/quality/generated/policy.json"
-  install -m 0755 "$ROOT/tests/quality-ratchet.sh" "$ROOT/tests/release-budget-ratchet.sh" \
+  install -m 0755 "$ROOT/tests/release-budget-ratchet.sh" \
     "$ROOT/tests/shell-safety.sh" "$ROOT/tests/quality-policy.sh" \
     "$ROOT/tests/quality-dashboard.sh" "$TEMPLATE_REPO/tests/"
-  install -m 0644 "$ROOT/tests/quality-baseline.tsv" "$ROOT/tests/quality-file-baseline.tsv" \
-    "$ROOT/tests/release-budget.tsv" \
+  install -m 0644 "$ROOT/tests/release-budget.tsv" \
     "$TEMPLATE_REPO/tests/"
   printf '#!/bin/bash\nexit 0\n' >"$TEMPLATE_REPO/tests/docs-contract.sh"
   chmod 0755 "$TEMPLATE_REPO/tests/docs-contract.sh"
@@ -67,6 +69,11 @@ prepare_template() {
       >"$TEMPLATE_REPO/tests/quality-gate-fixtures/$stage"
     chmod 0755 "$TEMPLATE_REPO/tests/quality-gate-fixtures/$stage"
   done
+  printf '%s\n' \
+    '[ -n "${DETACH_QUALITY_SOURCE_COMMIT:-}" ] || { printf "quality source commit missing\\n" >&2; exit 1; }' \
+    '[ -n "${DETACH_QUALITY_AUTHORITY:-}" ] || { printf "quality authority missing\\n" >&2; exit 1; }' \
+    '[ -z "${DETACH_QUALITY_METRICS_OUTPUT:-}" ] || printf "{}\\n" >"$DETACH_QUALITY_METRICS_OUTPUT"' \
+    >>"$TEMPLATE_REPO/tests/quality-gate-fixtures/quality-contracts"
   git -C "$TEMPLATE_REPO" init -q
   git -C "$TEMPLATE_REPO" config user.name 'Detach Tests'
   git -C "$TEMPLATE_REPO" config user.email 'detach-tests@example.invalid'
@@ -218,12 +225,6 @@ printf '%s\n' docs >>"$REPO/README.md"
 plan="$(gate --base "$BASE" --plan)"
 [[ "$plan" = *'stages=static,swift,quality-contracts,app,ui-e2e,release-budget' ]]
 
-setup_fixture quality-file-baseline
-printf 'Sources/DetachKit/NewCritical.swift\t95.00\n' \
-  >>"$REPO/tests/quality-file-baseline.tsv"
-plan="$(gate --plan)"
-[[ "$plan" = *'stages=static,gate-contract' ]]
-
 setup_fixture unknown
 printf '%s\n' unknown >"$REPO/new-contract.data"
 plan="$(gate --plan 2>&1)"
@@ -281,7 +282,7 @@ if ! gate --mode release >"$REPO/release.out" 2>&1; then
 fi
 ! grep -Fx release-workflow "$ACTION_LOG" >/dev/null
 [ "$(wc -l <"$ACTION_LOG" | tr -d ' ')" = 12 ]
-grep -F 'quality-gate: PASS policy=13 authority=release' "$REPO/release.out" >/dev/null
+grep -F 'quality-gate: PASS policy=14 authority=release' "$REPO/release.out" >/dev/null
 
 setup_fixture github-budget
 plan="$(GITHUB_ACTIONS=true DETACH_QUALITY_AUTHORITY=ci-merge \
@@ -722,7 +723,11 @@ if DETACH_QUALITY_GATE_TEST_WALL_SECONDS=0 gate --mode repository --resume "$res
   printf 'quality gate erased a wall-time regression through resume\n' >&2
   exit 1
 fi
-grep -F $'inherited_wall_seconds\t2' "$RESULT_ROOT"/*/release-budget.log >/dev/null
+grep -F $'inherited_wall_seconds\t2' "$RESULT_ROOT"/*/release-budget.log >/dev/null || {
+  cat "$REPO/resumed-budget-second.out" >&2
+  printf 'resumed quality gate did not retain inherited timing evidence\n' >&2
+  exit 1
+}
 grep -F 'wall time regressed: 2s > 1s' "$RESULT_ROOT"/*/release-budget.log >/dev/null
 
 setup_fixture static-only-budget
@@ -746,7 +751,7 @@ if ! GITHUB_ACTIONS=true DETACH_QUALITY_AUTHORITY=ci-merge \
   exit 1
 fi
 ! grep -F 'stage budget:' "$REPO/github-no-budgets.out" >/dev/null
-grep -F 'quality-gate: PASS policy=13 authority=ci-merge' \
+grep -F 'quality-gate: PASS policy=14 authority=ci-merge' \
   "$REPO/github-no-budgets.out" >/dev/null
 grep -F $'authority\tci-merge' "$RESULT_ROOT"/*/manifest.tsv >/dev/null
 grep -F $'swift\tpassed' "$RESULT_ROOT"/*/summary.tsv >/dev/null

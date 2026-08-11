@@ -1,10 +1,13 @@
 schema	1
-policy	13
+policy	14
 limit	pr_feedback_seconds	600
 limit	local_feedback_seconds	120
 limit	review_seconds	180
 limit	merge_wait_seconds	300
 limit	max_repair_loops	2
+limit	changed_line_coverage_percent	90
+limit	mutation_score_percent	100
+limit	mutation_timeout_seconds	240
 stage	10	static	120	true
 stage	20	gate-contract	300	true
 stage	30	swift	1200	true
@@ -60,11 +63,19 @@ route	1000	docs/testing.md	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-gate	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-policy	policy	safe	docs/specs/documentation.md
 route	1000	tools/quality_policy.py	policy	safe	docs/specs/documentation.md
+route	1000	scripts/quality-metrics	policy	safe	docs/specs/documentation.md
+route	1000	tools/quality_metrics.py	policy	safe	docs/specs/documentation.md
+route	1000	scripts/quality-baseline	policy	safe	docs/specs/documentation.md
+route	1000	tools/quality_baseline.py	policy	safe	docs/specs/documentation.md
+route	1000	scripts/quality-mutation	policy	safe	docs/specs/documentation.md
+route	1000	tools/quality_mutation.py	policy	safe	docs/specs/documentation.md
+route	1000	.github/workflows/quality-mutations.yml	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-dashboard	policy	safe	docs/specs/documentation.md
 route	1000	tools/quality_dashboard.py	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-history	policy	safe	docs/specs/documentation.md
 route	1000	scripts/test	policy	safe	docs/specs/documentation.md
 route	1000	tests/quality-*	policy	safe	docs/specs/documentation.md
+route	1000	tests/quality_*	policy	safe	docs/specs/documentation.md
 route	1000	tests/release-budget*	policy	safe	docs/specs/documentation.md
 route	1000	tests/shell-safety*	policy	safe	docs/specs/documentation.md
 route	1000	tests/test-suite-contract.sh	policy	safe	docs/specs/documentation.md
@@ -237,19 +248,31 @@ scenario	SC-INSTALL-CLEAN	distribution	legacy-stage	tests/distribution.sh
 scenario	SC-INSTALL-REPAIR	distribution	legacy-stage	tests/distribution.sh
 scenario	SC-INSTALL-UNINSTALL	distribution	legacy-stage	tests/distribution.sh
 scenario	SC-PUBLISH-CONTRACT	publish-preflight	legacy-stage	tests/publish-preflight.sh
-critical	app/Sources/DetachKit/SessionHealth.swift	QC-HEALTH-FRESHNESS	99.10
-critical	app/Sources/DetachKit/DetachState.swift	QC-RUNTIME-STATE	99.03
-critical	app/Sources/DetachKit/DetachStateCommand.swift	QC-RUNTIME-STATE	96.70
-critical	app/Sources/DetachKit/Storage.swift	QC-RUNTIME-STORAGE	95.28
-critical	app/Sources/DetachKit/StorageStore.swift	QC-RUNTIME-STORAGE	100.00
-critical	app/Sources/DetachKit/Tip.swift	QC-APP-TIPS	100.00
-critical	app/Sources/DetachKit/DetachPowerCommand.swift	QC-POWER-CLI	95.21
-critical	app/Sources/DetachKit/DetachPowerExecutable.swift	QC-POWER-CLI	100.00
-critical	app/Sources/DetachKit/PowerHelperLeaseService.swift	QC-POWER-LEASE	98.21
-critical	app/Sources/DetachKit/PowerHelperXPC.swift	QC-POWER-XPC	82.23
-critical	app/Sources/DetachKit/PowerHelperPlatform.swift	QC-POWER-PLATFORM	84.54
-critical	app/Sources/DetachKit/SessionStore.swift	QC-RUNTIME-OWNERSHIP	98.11
-critical	app/Sources/DetachKit/DoctorReport.swift	QC-APP-DOCTOR	100.00
+suite	DetachAppTests.InstallationStorePowerStateTests
+suite	DetachAppTests.MenuBarPresentationTests
+suite	DetachAppTests.SetupGuidanceTests
+suite	DetachAppTests.TextSizeTests
+suite	DetachAppTests.UIE2EConfigurationTests
+suite	DetachAppTests.WatchdogServiceTests
+suite	DetachKitTests.DetachCLITests
+suite	DetachKitTests.DetachStateCommandTests
+suite	DetachKitTests.DetachStateTests
+suite	DetachKitTests.PowerHelperLeaseServiceTests
+suite	DetachKitTests.SessionHealthTests
+suite	DetachKitTests.StorageStoreTests
+critical	app/Sources/DetachKit/SessionHealth.swift	QC-HEALTH-FRESHNESS
+critical	app/Sources/DetachKit/DetachState.swift	QC-RUNTIME-STATE
+critical	app/Sources/DetachKit/DetachStateCommand.swift	QC-RUNTIME-STATE
+critical	app/Sources/DetachKit/Storage.swift	QC-RUNTIME-STORAGE
+critical	app/Sources/DetachKit/StorageStore.swift	QC-RUNTIME-STORAGE
+critical	app/Sources/DetachKit/Tip.swift	QC-APP-TIPS
+critical	app/Sources/DetachKit/DetachPowerCommand.swift	QC-POWER-CLI
+critical	app/Sources/DetachKit/DetachPowerExecutable.swift	QC-POWER-CLI
+critical	app/Sources/DetachKit/PowerHelperLeaseService.swift	QC-POWER-LEASE
+critical	app/Sources/DetachKit/PowerHelperXPC.swift	QC-POWER-XPC
+critical	app/Sources/DetachKit/PowerHelperPlatform.swift	QC-POWER-PLATFORM
+critical	app/Sources/DetachKit/SessionStore.swift	QC-RUNTIME-OWNERSHIP
+critical	app/Sources/DetachKit/DoctorReport.swift	QC-APP-DOCTOR
 requirement	QC-RUNTIME-STATE	docs/specs/runtime.md	Typed state is the only shared state mutation boundary.
 requirement	QC-RUNTIME-OWNERSHIP	docs/specs/runtime.md	Session operations prove the exact run token and process ownership.
 requirement	QC-RUNTIME-STORAGE	docs/specs/runtime.md	Restores validate path, symlink, identity, and JSONL data before replacement.

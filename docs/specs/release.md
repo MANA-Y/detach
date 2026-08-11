@@ -62,6 +62,9 @@ change real power state, upload assets, or claim publication.
   timing enforcement. Every functional, artifact, signing, power, lid, and
   publication gate remains mandatory, and the waiver is recorded in private
   gate and workflow evidence.
+- Before the pre-release gate, the orchestrator downloads the evidence from the
+  last green `main` run. Test identities and measured coverage must not regress
+  from that artifact. Missing or invalid baseline evidence stops the release.
 - Resume state is private under `app/build/`. Resume is allowed only when
   source, durable stage evidence, and existing asset digests still match.
 - A resume after the artifact stage requires only credentials for the remaining

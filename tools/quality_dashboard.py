@@ -13,7 +13,10 @@ from pathlib import Path
 import statistics
 import sys
 import threading
-from typing import Any, NoReturn
+from typing import Any, NoReturn, Optional
+
+from quality_metrics import MetricsError, validate_metrics
+from quality_mutation import MutationError, validate_summary
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -118,6 +121,41 @@ def read_summary(run_dir: Path, manifest: dict[str, str]) -> list[dict[str, Any]
     return stages
 
 
+def read_metrics(run_dir: Path, manifest: dict[str, str]) -> Optional[dict[str, Any]]:
+    metrics_path = run_dir / "quality-metrics.json"
+    if not metrics_path.exists():
+        return None
+    artifacts_path = safe_file(run_dir / "artifacts.tsv", "artifact inventory")
+    artifacts_digest = hashlib.sha256(artifacts_path.read_bytes()).hexdigest()
+    if artifacts_digest != manifest["artifacts_sha256"]:
+        raise DashboardError("artifact inventory digest does not match the manifest")
+    metric_digests: list[str] = []
+    for line_number, line in enumerate(
+        artifacts_path.read_text(encoding="utf-8").splitlines(), 1
+    ):
+        fields = line.split("\t")
+        if fields == ["schema", "1"]:
+            continue
+        if len(fields) != 3 or fields[0] != "file":
+            raise DashboardError(f"artifact inventory line {line_number} is malformed")
+        if fields[1] == "quality-metrics.json":
+            metric_digests.append(fields[2])
+    if len(metric_digests) != 1:
+        raise DashboardError("quality metrics digest is missing or duplicated")
+    actual_digest = hashlib.sha256(safe_file(metrics_path, "quality metrics").read_bytes()).hexdigest()
+    if actual_digest != metric_digests[0]:
+        raise DashboardError("quality metrics digest does not match the inventory")
+    try:
+        metrics = validate_metrics(json.loads(metrics_path.read_text(encoding="utf-8")))
+    except (MetricsError, json.JSONDecodeError, UnicodeError) as error:
+        raise DashboardError(f"quality metrics are invalid: {error}") from error
+    if metrics["policy"] != int(manifest["policy"]):
+        raise DashboardError("quality metrics policy does not match the run")
+    if metrics["source_commit"] != manifest["source_commit"]:
+        raise DashboardError("quality metrics source does not match the run")
+    return metrics
+
+
 def read_policy() -> dict[str, Any]:
     policy_path = safe_file(POLICY_JSON, "generated policy")
     try:
@@ -127,6 +165,18 @@ def read_policy() -> dict[str, Any]:
     if policy.get("schema") != 1 or not isinstance(policy.get("policy"), int):
         raise DashboardError("generated policy schema is invalid")
     return policy
+
+
+def read_mutation_summary(
+    path: Optional[Path], expected_policy: int
+) -> Optional[dict[str, Any]]:
+    if path is None:
+        return None
+    try:
+        document = json.loads(safe_file(path, "mutation summary").read_text(encoding="utf-8"))
+        return validate_summary(document, expected_policy)
+    except (MutationError, json.JSONDecodeError, UnicodeError) as error:
+        raise DashboardError(f"mutation summary is invalid: {error}") from error
 
 
 def split_csv(value: str) -> list[str]:
@@ -179,7 +229,12 @@ def latest_run(result_root: Path) -> Path:
     return candidates[-1]
 
 
-def build_data(run_dir: Path, result_root: Path, run_url: str) -> dict[str, Any]:
+def build_data(
+    run_dir: Path,
+    result_root: Path,
+    run_url: str,
+    mutation_summary: Optional[Path] = None,
+) -> dict[str, Any]:
     manifest = read_manifest(run_dir)
     stages = read_summary(run_dir, manifest)
     policy = read_policy()
@@ -237,6 +292,8 @@ def build_data(run_dir: Path, result_root: Path, run_url: str) -> dict[str, Any]
     trends = collect_trends(result_root, run_dir)
     trend_walls = [trend["wall_seconds"] for trend in trends]
     slowest = max(stages, key=lambda stage: stage["duration_seconds"], default=None)
+    metrics = read_metrics(run_dir, manifest)
+    mutation = read_mutation_summary(mutation_summary, int(manifest["policy"]))
     return {
         "schema": 1,
         "run": {
@@ -268,8 +325,8 @@ def build_data(run_dir: Path, result_root: Path, run_url: str) -> dict[str, Any]
             "stage_duration_p50_seconds": round(statistics.median(durations)) if durations else 0,
             "run_wall_p50_seconds": percentile(trend_walls, 50),
             "run_wall_p95_seconds": percentile(trend_walls, 95),
-            "coverage": "not-yet-emitted",
-            "mutation": "not-yet-emitted",
+            "coverage": metrics if metrics is not None else "not-yet-emitted",
+            "mutation": mutation if mutation is not None else "not-yet-emitted",
             "review": "not-yet-emitted",
             "security": "not-yet-emitted",
         },
@@ -328,6 +385,25 @@ def render_html(data: dict[str, Any]) -> str:
         for trend in reversed(data["trends"])
     ) or '<tr><td colspan="5">No retained trend evidence.</td></tr>'
     capability_text = ", ".join(data["capabilities"]) or "none"
+    coverage = quality["coverage"]
+    if isinstance(coverage, dict):
+        ui_coverage = coverage["suites"]["ui"]["line_coverage"]["percent"]
+        business_coverage = coverage["suites"]["business"]["line_coverage"]["percent"]
+        changed_coverage = coverage["changed_lines"]["line_coverage"]["percent"]
+        coverage_text = (
+            f"UI {ui_coverage:.2f}% · business {business_coverage:.2f}% · "
+            f"changed lines {changed_coverage:.2f}%"
+        )
+    else:
+        coverage_text = str(coverage)
+    mutation = quality["mutation"]
+    if isinstance(mutation, dict):
+        mutation_text = (
+            f'{mutation["score_percent"]}% · {mutation["killed"]}/{mutation["total"]} killed · '
+            f'{mutation["status"]}'
+        )
+    else:
+        mutation_text = str(mutation)
     return f'''<!doctype html>
 <html lang="en">
 <head>
@@ -391,9 +467,9 @@ def render_html(data: dict[str, Any]) -> str:
     </div>
     <section><h2>Stages</h2><div class="table-wrap"><table><thead><tr><th>Stage</th><th>Status</th><th class="number">Seconds</th><th>Log</th></tr></thead><tbody>{stage_rows}</tbody></table></div></section>
     <section><h2>User journeys</h2><div class="journeys">{journey_sections}</div></section>
-    <section><h2>Evidence still to add</h2><div class="gaps">
-      <div class="gap"><span class="eyebrow">Coverage</span><p>{quality["coverage"]}</p></div>
-      <div class="gap"><span class="eyebrow">Mutation</span><p>{quality["mutation"]}</p></div>
+    <section><h2>Quality signals</h2><div class="gaps">
+      <div class="gap"><span class="eyebrow">Coverage</span><p>{html.escape(coverage_text)}</p></div>
+      <div class="gap"><span class="eyebrow">Mutation</span><p>{html.escape(mutation_text)}</p></div>
       <div class="gap"><span class="eyebrow">Agent review</span><p>{quality["review"]}</p></div>
       <div class="gap"><span class="eyebrow">Security</span><p>{quality["security"]}</p></div>
     </div></section>
@@ -423,7 +499,8 @@ def generate(arguments: argparse.Namespace) -> int:
     run_dir = arguments.run.resolve() if arguments.run else latest_run(result_root)
     if run_dir.parent != result_root:
         raise DashboardError("run must be directly under the selected result root")
-    data = build_data(run_dir, result_root, arguments.run_url)
+    mutation_summary = arguments.mutation_summary.resolve() if arguments.mutation_summary else None
+    data = build_data(run_dir, result_root, arguments.run_url, mutation_summary)
     output = arguments.output.resolve()
     if output == Path("/") or output == ROOT:
         raise DashboardError("dashboard output path is too broad")
@@ -467,6 +544,7 @@ def parser() -> argparse.ArgumentParser:
     generate_parser.add_argument("--run", type=Path)
     generate_parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     generate_parser.add_argument("--run-url", default="")
+    generate_parser.add_argument("--mutation-summary", type=Path)
     generate_parser.set_defaults(function=generate)
     serve_parser = commands.add_parser("serve", help="serve a generated dashboard for a bounded time")
     serve_parser.add_argument("--directory", type=Path, default=DEFAULT_OUTPUT)

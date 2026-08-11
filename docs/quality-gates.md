@@ -1,7 +1,7 @@
 # Quality gates
 
 `scripts/quality-gate` is the tracked quality contract for local agents, CI,
-and releases. Policy version 13 derives local diagnostics from one typed
+and releases. Policy version 14 derives local diagnostics from one typed
 manifest and selects the full repository gate for unknown paths. Hosted pull-
 request CI runs every functional stage once and is the sole ordinary merge
 authority. The resource-aware scheduler
@@ -56,6 +56,9 @@ share the same build directory.
   and summary digest, then writes deterministic static HTML and JSON under
   `app/build/quality-dashboard/`. `scripts/quality-dashboard serve` binds only
   loopback and stops after its bounded deadline.
+- `scripts/quality-mutation` validates and runs the deterministic mutation
+  corpus. The weekly and manual workflow runs each mutant in a separate job.
+  Mutation results are not part of pull-request latency.
 
 The stages are `static`, the gate orchestrator's own contract tests, `swift`,
 `quality-contracts`, development app build/verification, packaged-app
@@ -69,7 +72,8 @@ written privately under `app/build/quality-gates/`. The schema-4 manifest binds
 evidence to the policy, authority, source commit, resolved base commit, selected stages,
 input and plan fingerprints, timestamps, inherited timing, parent evidence,
 environment and artifact inventories, and SHA-256 digests of the summary and
-every stage log. Failure, environment failure, timeout, interruption, blocked
+every stage log. The artifact inventory also binds `quality-metrics.json` when
+coverage runs. Failure, environment failure, timeout, interruption, blocked
 dependencies, malformed evidence, or mismatched resume evidence cannot produce
 PASS. The failure output names the exact diagnostic rerun. A red gate must be
 diagnosed, not made green by blind retries.
@@ -91,9 +95,38 @@ freshly bundled tmux and `detach-state`; none of these stages invokes SwiftPM.
 The gate therefore does not depend on writable user caches, ambient tmux,
 provider session state, or the installed Detach app.
 
-There are no quarantined tests in policy version 13. A future quarantine must be
+There are no quarantined tests in policy version 14. A future quarantine must be
 tracked here with an owner, expiry, and reason, and may not remove a release
 contract check.
+
+## Policy version 14: automatic quality facts
+
+Policy 14 removes manually edited coverage floors.
+
+1. CI downloads the exact evidence artifact from the last successful `main`
+   run before it starts the gate.
+2. The coverage-enabled Swift stage still runs once. A stdlib-only Python tool
+   reads LLVM coverage and Swift test evidence. Shell only starts the tools.
+3. The new artifact records exact UI and business test identities, aggregate
+   line coverage, all critical-source coverage, and changed executable lines.
+4. CI rejects a removed test, a lower aggregate percentage, or a lower
+   critical-source percentage relative to the last green `main` artifact.
+5. Changed executable Swift lines need at least 90 percent coverage. A new
+   critical source needs 100 percent coverage for its first baseline.
+6. Missing, malformed, stale, unbound, or non-`ci-main` baseline evidence fails
+   an authoritative run. A local diagnostic can record metrics without a
+   baseline but cannot claim readiness.
+7. The dashboard validates the metrics digest and shows UI, business, and
+   changed-line coverage from the exact run.
+8. A weekly and manually dispatchable workflow runs three deterministic safety
+   mutants in parallel. Each test has a 240-second deadline. The score must be
+   100 percent. A timeout, survivor, or non-test failure fails closed.
+9. A green mutation run updates the same GitHub Pages dashboard. A later
+   `main` run restores the latest valid mutation artifact before it deploys.
+10. Policy 14 has one transition exception. The first run can read the removed
+   policy-13 floors from the verified previous-main commit because that
+   artifact predates metrics. Remove this exception after the first policy-14
+   `main` artifact exists.
 
 ## Policy version 13: one policy and explicit authority
 

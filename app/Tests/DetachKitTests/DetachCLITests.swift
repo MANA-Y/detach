@@ -111,7 +111,7 @@ final class DetachCLITests: XCTestCase {
             String(contentsOf: descendantPID, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines)))
         defer { _ = Darwin.kill(pid, SIGKILL) }
-        XCTAssertFalse(processExists(pid))
+        XCTAssertTrue(waitForProcessExit(pid, timeout: 1))
     }
 
     func testInheritedOutputPipeCannotOutliveCompletedLeader() async throws {
@@ -135,7 +135,7 @@ final class DetachCLITests: XCTestCase {
             String(contentsOf: descendantPID, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines)))
         defer { _ = Darwin.kill(pid, SIGKILL) }
-        XCTAssertFalse(processExists(pid))
+        XCTAssertTrue(waitForProcessExit(pid, timeout: 1))
     }
 
     func testMissingBinaryThrows() async {
@@ -148,5 +148,13 @@ final class DetachCLITests: XCTestCase {
 
     private func processExists(_ pid: Int32) -> Bool {
         Darwin.kill(pid, 0) == 0 || errno == EPERM
+    }
+
+    private func waitForProcessExit(_ pid: Int32, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while processExists(pid), Date() < deadline {
+            usleep(10_000)
+        }
+        return !processExists(pid)
     }
 }

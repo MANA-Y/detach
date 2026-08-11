@@ -27,6 +27,9 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   Claude expands imports eagerly.
 - Ignored `presentations/` contains internal presentation sources. Git and the
   quality gate do not treat these files as repository inputs.
+- Shell is only the process-orchestration boundary for quality tooling. Stdlib
+  Python owns structured policy, evidence, comparison, mutation, and dashboard
+  logic. Each Python tool has deterministic contract tests.
 - Fast local diagnostics close the edit loop. They never claim merge readiness.
   Hosted pull-request CI runs the full repository gate on the exact change and
   is the sole ordinary merge-readiness authority.
@@ -44,9 +47,19 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
 - Pull-request CI runs every functional check once and the timing-policy
   ratchets. It does not enforce reference-machine wall or per-stage timing
   ceilings. The workflow has a ten-minute overall deadline.
+- CI gets quality metrics from the last green `main` artifact. Test identities,
+  aggregate coverage, and critical-source coverage cannot decrease. Changed
+  executable Swift lines need at least 90 percent coverage. A person does not
+  edit or raise coverage floors.
+- A scheduled, manually dispatchable mutation workflow checks a small
+  deterministic safety corpus. It runs mutants in parallel, gives each test a
+  240-second deadline, and requires a 100-percent score. Mutation work does not
+  extend pull-request feedback time.
 - A deterministic static dashboard reads only validated gate evidence. The
   same artifact opens locally and deploys to GitHub Pages only after a green
-  `main` repository run. Its deploy job alone has Pages write permission.
+  `main` repository run or a green scheduled mutation run. It shows measured
+  coverage and the latest valid mutation score when they exist. Only deploy
+  jobs have Pages write permission.
 - The active GitHub ruleset for `main` has no bypass actors. It requires the
   GitHub Actions `quality-gates` job. An administrator cannot use an unchecked
   push as a substitute for CI. A release commit first gets the same check on
@@ -72,6 +85,6 @@ only for a rule needed on most tasks.
 
 ## Verification
 
-Run `tests/docs-contract.sh` and `tests/test-suite-contract.sh`, inspect the
-context map for the affected area, and run the focused local diagnostics. The
-required pull-request job supplies final merge evidence.
+Run `tests/docs-contract.sh`, `tests/test-suite-contract.sh`, and the focused
+contracts for changed quality tools. Inspect the context map for the affected
+area. The required pull-request job supplies final merge evidence.

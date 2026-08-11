@@ -7,11 +7,11 @@
   `scripts/test --plan critical` to inspect the pinned suites.
 - `scripts/test unit` — every Swift unit test without packaging or coverage
   analysis; use it after a wider Swift edit when `critical` is too narrow.
-- `scripts/test coverage` — every coverage-enabled Swift test followed by the
-  locked-floor ratchet and the enforced test-count, critical-suite, aggregate
-  line-coverage, and safety-critical per-file coverage contracts. It deletes
-  only the active SwiftPM build path's prior coverage profile before measuring,
-  so stale or unrelated build-tree evidence cannot satisfy the command.
+- `scripts/test coverage` — every coverage-enabled Swift test followed by
+  automatic test-identity, aggregate, critical-source, and changed-line
+  metrics. Local use records diagnostic facts. Hosted CI compares them with
+  the last green `main` artifact. It deletes only the active SwiftPM build
+  path's prior profile, so stale build evidence cannot satisfy the command.
 - `scripts/test smoke` — builds a fresh app, validates and runs the isolated
   packaged-app Accessibility flow, then verifies the bundled runtime. It needs
   a logged-in WindowServer session and an environment that permits the private
@@ -38,11 +38,17 @@
   evidence. `scripts/quality-dashboard serve --seconds 300` serves it only on
   loopback and stops at the deadline. A green `main` workflow publishes the
   same static files to `https://iltsarev.github.io/detach/`.
+- `scripts/quality-mutation validate` checks the deterministic safety corpus.
+  `scripts/quality-mutation run --id <id> --output <json> --log <log>` runs one
+  mutant and restores its source. The weekly hosted workflow runs all mutants
+  in parallel and requires a 100-percent score. Each mutant has a 240-second
+  deadline. This workflow does not run on pull requests. A successful run
+  updates the GitHub Pages dashboard with its score.
 - `scripts/quality-gate --mode repository` — every automated repository check.
   Local use is diagnostic. Pull-request CI uses the same entry point once with
   `ci-merge` authority and `--without-release-budget`, disabling local
   reference-machine wall and stage timing enforcement while retaining every
-  functional stage and the static budget ratchets. A normal release enforces
+  functional stage and the static timing-budget ratchet. A normal release enforces
   the budgets; only the
   owner-confirmed `DETACH_RELEASE_IGNORE_TIMING=1 scripts/release-version X.Y.Z`
   path may omit them for one intentionally busy-machine release, with the
@@ -93,17 +99,17 @@
   resume after every durable stage, dirty/diverged source rejection, duplicate
   tag/release rejection, hardware-gate failure, and remote hash mismatch.
 - `cd app && swift test --enable-code-coverage --disable-sandbox`, followed by
-  `tests/quality-contracts.sh` — unit tests plus fail-closed UI/business test
-  count, critical-suite presence, and exact line-coverage floors. The current
-  floors are 221 UI tests, 433 business tests, 25.80% UI line coverage, and
-  94.38% stable business-core line coverage. Thirteen safety-critical source
-  files also have independent measured floors, including 99.03-100% for typed
-  state, storage adapters, the power executable, tips, and doctor reporting.
-  The static
-  policy branch runs the monotonic baseline ratchets in parallel with SwiftPM.
-  `tests/quality-ratchet-contract.sh` and
-  `tests/release-budget-ratchet-contract.sh` are fast negative diagnostics for
-  attempted policy weakening.
+  `tests/quality-contracts.sh` — unit tests plus measured UI and business test
+  identities, aggregate coverage, and coverage for the 13 critical sources.
+  CI rejects a reduction from the last green `main` artifact. It also rejects
+  changed executable Swift-line coverage below 90 percent. New critical
+  sources start at 100 percent. `tests/quality-metrics.sh` covers missing,
+  malformed, removed-test, aggregate, critical-file, and changed-line
+  regressions. `tests/release-budget-ratchet-contract.sh` protects timing.
+- `tests/quality-mutation.sh` checks source restoration, timeout handling,
+  failure classification, score enforcement, remote evidence restore, and the
+  scheduled workflow contract. A nonzero compiler exit without the declared
+  test-failure marker does not count as a killed mutant.
 - `cd app && swift test` — a faster diagnostic unit-test rerun for DetachKit,
   app services, typed state
   operations, power lifecycle, lease policy, XPC policy, and presentation.
@@ -118,9 +124,10 @@
   closed-lid behavior.
 
 There is no third-party linter dependency. The static stage runs shell syntax,
-the repository-specific shell safety contract, documentation checks, monotonic
-ratchets, and `git diff --check`; behavioral shell integrations remain the main
-runtime evidence.
+the repository-specific shell safety contract, documentation checks, the
+timing-policy ratchet, and `git diff --check`. Shell starts processes and passes
+exit status. Stdlib Python owns structured quality data and policy decisions.
+Behavioral shell integrations remain runtime evidence for shell products.
 
 `tests/docs-contract.sh` is the focused check for agent instructions, durable
 specs, and the documentation workflow. It does not replace the selected gate.
