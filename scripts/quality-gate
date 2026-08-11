@@ -865,6 +865,8 @@ run_stage_command() {
     [ -x "$ROOT/tests/quality-gate-fixtures/$stage" ] || die "missing test fixture for $stage"
     if [ "$stage" = quality-contracts ]; then
       DETACH_QUALITY_METRICS_OUTPUT="$RUN_DIR/quality-metrics.json" \
+        DETACH_QUALITY_SOURCE_COMMIT="$SOURCE_COMMIT" \
+        DETACH_QUALITY_AUTHORITY="$AUTHORITY" \
         env -u DETACH_VERSION -u DETACH_BUILD_VERSION -u DETACH_BUILD_ARCHS \
           -u DETACH_CODESIGN_IDENTITY -u DETACH_RELEASE_BUILD -u DETACH_SPARKLE_VERSION \
           -u DETACH_SPARKLE_FEED_URL -u DETACH_SPARKLE_PUBLIC_ED_KEY -u DETACH_DOWNLOAD_URL \
@@ -1011,7 +1013,8 @@ run_stage_command() {
   esac
 }
 
-export ROOT QUALITY_POLICY BASE_REF RESOLVED_BASE MODE DIAGNOSTIC_STAGE TEST_MODE TEST_REAL_STATIC TEST_DIRECT RUN_DIR
+export ROOT QUALITY_POLICY BASE_REF RESOLVED_BASE SOURCE_COMMIT AUTHORITY MODE \
+  DIAGNOSTIC_STAGE TEST_MODE TEST_REAL_STATIC TEST_DIRECT RUN_DIR
 export -f die changed_entries static_shell_files run_static run_tmux_socket_preflight run_stage_command
 
 stage_result_file() {

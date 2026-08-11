@@ -70,6 +70,8 @@ prepare_template() {
     chmod 0755 "$TEMPLATE_REPO/tests/quality-gate-fixtures/$stage"
   done
   printf '%s\n' \
+    '[ -n "${DETACH_QUALITY_SOURCE_COMMIT:-}" ] || { printf "quality source commit missing\\n" >&2; exit 1; }' \
+    '[ -n "${DETACH_QUALITY_AUTHORITY:-}" ] || { printf "quality authority missing\\n" >&2; exit 1; }' \
     '[ -z "${DETACH_QUALITY_METRICS_OUTPUT:-}" ] || printf "{}\\n" >"$DETACH_QUALITY_METRICS_OUTPUT"' \
     >>"$TEMPLATE_REPO/tests/quality-gate-fixtures/quality-contracts"
   git -C "$TEMPLATE_REPO" init -q
