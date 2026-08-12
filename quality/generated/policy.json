@@ -146,9 +146,19 @@
       "pattern": "app/Sources/DetachApp/UIE2E*.swift",
       "scenarios": [
         "SC-UI-DASHBOARD",
-        "SC-UI-SESSION-STOP"
+        "SC-UI-SESSION-DETAIL",
+        "SC-UI-SESSION-DELETE",
+        "SC-UI-SESSION-STOP",
+        "SC-UI-NEW-SESSION",
+        "SC-UI-EMPTY",
+        "SC-UI-FAILURE",
+        "SC-UI-FOCUS",
+        "SC-UI-ONBOARD-FIRST-RUN",
+        "SC-UI-ONBOARD-PROVIDER",
+        "SC-UI-ONBOARD-APPROVAL",
+        "SC-UI-SETTINGS"
       ],
-      "summary": "The packaged real-control journey owns this test harness."
+      "summary": "The packaged real-control journeys own this test harness."
     },
     {
       "group": "business",
@@ -177,31 +187,6 @@
     }
   ],
   "coverage_regions": [
-    {
-      "group": "ui",
-      "path": "app/Sources/DetachApp/DetachApp.swift",
-      "region": "ui-e2e-instrumentation",
-      "scenarios": [
-        "SC-UI-DASHBOARD",
-        "SC-UI-FAILURE",
-        "SC-UI-ONBOARD-FIRST-RUN",
-        "SC-UI-ONBOARD-PROVIDER",
-        "SC-UI-ONBOARD-APPROVAL",
-        "SC-UI-SETTINGS"
-      ],
-      "summary": "Packaged journeys own the validated scenario selector."
-    },
-    {
-      "group": "ui",
-      "path": "app/Sources/DetachApp/InstallationStore.swift",
-      "region": "ui-e2e-instrumentation",
-      "scenarios": [
-        "SC-UI-ONBOARD-FIRST-RUN",
-        "SC-UI-ONBOARD-PROVIDER",
-        "SC-UI-ONBOARD-APPROVAL"
-      ],
-      "summary": "Packaged onboarding journeys own isolated fixture state."
-    },
     {
       "group": "ui",
       "path": "app/Sources/DetachApp/NewSessionSheet.swift",

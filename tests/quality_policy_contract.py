@@ -116,8 +116,8 @@ def main() -> None:
             "scenario\tSC-UI-SETTINGS\tui-e2e\tplanned\t",
             1,
         ).replace(
-            ",SC-UI-SETTINGS\tPackaged journeys own the validated scenario selector.",
-            "\tPackaged journeys own the validated scenario selector.",
+            ",SC-UI-SETTINGS\tThe packaged real-control journeys own this test harness.",
+            "\tThe packaged real-control journeys own this test harness.",
             1,
         ).replace(
             "\tSC-UI-SETTINGS\tThe packaged Settings journey covers its semantic control.",

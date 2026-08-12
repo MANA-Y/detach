@@ -20,8 +20,8 @@ final class UIE2EConfigurationTests: XCTestCase {
     func testAcceptsOnlyKnownScenarios() throws {
         try withFixture { fixture in
             for scenario in [
-                "main", "onboarding-first-run", "onboarding-provider",
-                "onboarding-approval",
+                "main", "failure", "settings", "onboarding-first-run",
+                "onboarding-provider", "onboarding-approval",
             ] {
                 var environment = fixture.environment
                 environment["DETACH_UI_E2E_SCENARIO"] = scenario

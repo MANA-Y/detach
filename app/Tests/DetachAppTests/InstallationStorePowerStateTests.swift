@@ -34,6 +34,7 @@ final class InstallationStorePowerStateTests: XCTestCase {
         XCTAssertEqual(checks["watchdog_heartbeat"]?.status, .unknown)
         XCTAssertFalse(checks["watchdog_heartbeat"]?.required ?? true)
         XCTAssertFalse(store.providerCheckPassed)
+        XCTAssertFalse(store.presentsUIE2EOnboarding)
     }
 
     func testAppContextHeartbeatCheckPublishesFreshReportedPowerState() throws {

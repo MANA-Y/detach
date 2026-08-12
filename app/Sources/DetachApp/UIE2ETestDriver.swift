@@ -62,6 +62,10 @@ enum UIE2ETestDriver {
         installation: InstallationStore
     ) async -> Report {
         switch configuration.scenario {
+        case "failure":
+            return await runFailurePresentation()
+        case "settings":
+            return await runSettings()
         case "onboarding-first-run":
             return await runOnboardingFirstRun(
                 configuration: configuration,
@@ -210,28 +214,6 @@ enum UIE2ETestDriver {
             checks.append("empty-dashboard-state")
             trace("empty dashboard visible")
 
-            try Data("error\n".utf8).write(
-                to: configuration.fixtureState, options: .atomic)
-            let errorStatus = try await element(identifier: "session-status-error")
-            try requireGeometry(errorStatus, name: "actionable session failure")
-            checks.append("actionable-failure-presentation")
-            trace("actionable failure visible")
-
-            try await keyPress(",", keyCode: 43, modifiers: [.command])
-            let tipsToggle = try await element(identifier: "settings-show-tips")
-            try requireSemanticControl(tipsToggle, name: "settings tips toggle")
-            let priorTips = AppSettings.defaults.bool(
-                forKey: AppSettings.tipsEnabledKey)
-            try await clickUntil(
-                tipsToggle,
-                name: "settings tips toggle",
-                outcome: "settings value persists") {
-                    AppSettings.defaults.bool(
-                        forKey: AppSettings.tipsEnabledKey) != priorTips
-                }
-            checks.append("settings-change-persists")
-            trace("settings change persisted")
-
             try await restoreFocus(
                 to: previousFrontmost, policy: previousActivationPolicy)
             checks.append("installed-app-focus-restored")
@@ -249,6 +231,54 @@ enum UIE2ETestDriver {
                 schema: 1,
                 passed: false,
                 checks: checks,
+                error: error.localizedDescription,
+                accessibilityTree: snapshots())
+        }
+    }
+
+    private static func runFailurePresentation() async -> Report {
+        var checks: [String] = []
+        do {
+            let mainWindow = try testWindow()
+            try await activate(mainWindow)
+            let errorStatus = try await element(identifier: "session-status-error")
+            try requireGeometry(errorStatus, name: "actionable session failure")
+            checks.append("actionable-failure-presentation")
+            return Report(
+                schema: 1, passed: true, checks: checks, error: nil,
+                accessibilityTree: snapshots())
+        } catch {
+            return Report(
+                schema: 1, passed: false, checks: checks,
+                error: error.localizedDescription,
+                accessibilityTree: snapshots())
+        }
+    }
+
+    private static func runSettings() async -> Report {
+        var checks: [String] = []
+        do {
+            let mainWindow = try testWindow()
+            try await activate(mainWindow)
+            try await keyPress(",", keyCode: 43, modifiers: [.command])
+            let tipsToggle = try await element(identifier: "settings-show-tips")
+            try requireSemanticControl(tipsToggle, name: "settings tips toggle")
+            let priorTips = AppSettings.defaults.bool(
+                forKey: AppSettings.tipsEnabledKey)
+            try await clickUntil(
+                tipsToggle,
+                name: "settings tips toggle",
+                outcome: "settings value persists") {
+                    AppSettings.defaults.bool(
+                        forKey: AppSettings.tipsEnabledKey) != priorTips
+                }
+            checks.append("settings-change-persists")
+            return Report(
+                schema: 1, passed: true, checks: checks, error: nil,
+                accessibilityTree: snapshots())
+        } catch {
+            return Report(
+                schema: 1, passed: false, checks: checks,
                 error: error.localizedDescription,
                 accessibilityTree: snapshots())
         }
@@ -580,6 +610,18 @@ enum UIE2ETestDriver {
         try await waitUntil("test app activation") {
             NSApp.isActive && mainWindow.isKeyWindow
         }
+    }
+
+    private static func testWindow() throws -> NSWindow {
+        guard let mainWindow = NSApp.windows.first(where: {
+            $0.identifier?.rawValue == "main"
+        }) else {
+            throw Failure(message: "main test window is missing")
+        }
+        guard NSApp.setActivationPolicy(.regular) else {
+            throw Failure(message: "cannot enable test app activation")
+        }
+        return mainWindow
     }
 
     private static func find(identifier: String) -> (any NSAccessibilityProtocol)? {

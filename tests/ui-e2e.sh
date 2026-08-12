@@ -271,9 +271,9 @@ run_app_scenario main sessions 20 \
   safe-action-reaches-fake-cli \
   new-session-sheet-semantics \
   empty-dashboard-state \
-  actionable-failure-presentation \
-  settings-change-persists \
   installed-app-focus-restored
+run_app_scenario failure error 5 actionable-failure-presentation
+run_app_scenario settings empty 5 settings-change-persists
 run_app_scenario onboarding-first-run empty 5 onboarding-first-run-completes
 run_app_scenario onboarding-provider empty 5 onboarding-detects-provider
 run_app_scenario onboarding-approval empty 5 onboarding-explains-approval
