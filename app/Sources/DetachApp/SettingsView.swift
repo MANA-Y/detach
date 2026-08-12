@@ -429,12 +429,13 @@ struct SettingsView: View {
 // quality-coverage:begin ui-e2e-instrumentation
                     .accessibilityIdentifier("settings-show-tips")
 #if !DEBUG
-                    .background {
+                    .overlay(alignment: .trailing) {
                         if AppSettings.uiE2E != nil {
                             UIE2EGeometryProbe(
                                 identifier: "settings-show-tips",
                                 semanticLabel: L10n.string("Show tips"),
                                 semanticRole: .checkBox)
+                                .frame(width: 38, height: 18)
                         }
                     }
 #endif
