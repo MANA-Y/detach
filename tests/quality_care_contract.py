@@ -91,11 +91,12 @@ def assert_workflows() -> None:
 
 def history(wall_p95: int) -> dict[str, object]:
     return {
-        "schema": 1,
+        "schema": 2,
         "runs": 4,
         "passed": 4,
         "failed_or_interrupted": 0,
         "invalid_evidence": 0,
+        "latest": {"environment_failure": False, "result": "passed"},
         "wall": {"samples": 4, "p50_seconds": 300, "p95_seconds": wall_p95},
         "stages": [
             {
@@ -175,7 +176,7 @@ def main() -> int:
             ]
         )
         healthy = json.loads(healthy_summary.read_text(encoding="utf-8"))
-        assert healthy["schema"] == 2
+        assert healthy["schema"] == 3
         assert healthy["status"] == "passed"
         assert healthy["latency"]["alert_seconds"] == 480
         assert len(healthy["source_commit"]) == 40
@@ -211,10 +212,27 @@ def main() -> int:
                 "--history-summary", str(failed_history),
                 "--output", str(failed_summary),
             ],
+        )
+        failed_care = json.loads(failed_summary.read_text(encoding="utf-8"))
+        assert failed_care["status"] == "passed"
+        assert failed_care["runs"]["failed_or_interrupted"] == 1
+        assert failed_care["runs"]["unresolved_failure"] is False
+
+        failed_history_value["latest"] = {
+            "environment_failure": True, "result": "failed"
+        }
+        write_json(failed_history, failed_history_value)
+        invoke(
+            [
+                "assess", "--eval-summary", str(eval_path),
+                "--history-summary", str(failed_history),
+                "--output", str(failed_summary),
+            ],
             expected=1,
         )
         failed_care = json.loads(failed_summary.read_text(encoding="utf-8"))
-        assert "a retained gate run failed or was interrupted" in failed_care["reasons"]
+        assert "the latest gate run failed or was interrupted" in failed_care["reasons"]
+        assert failed_care["runs"]["unresolved_failure"] is True
 
         fake_gh = root / "fake-gh.py"
         fake_gh.write_text(

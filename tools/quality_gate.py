@@ -1697,8 +1697,9 @@ def run_static_stage(root: Path, run_dir: Path, mode: str, resolved_base: str) -
     return 0
 
 
-def run_gate_contract_stage(root: Path) -> int:
-    orchestrator_limit = 2
+def gate_contract_definitions(
+    root: Path, *, include_orchestrators: bool
+) -> list[tuple[str, list[str], dict[str, str], str]]:
     contracts = [
         (
             "orchestrator-selection.log",
@@ -1833,6 +1834,24 @@ def run_gate_contract_stage(root: Path) -> int:
             "Quality dashboard contracts passed",
         ),
     ]
+    if include_orchestrators:
+        return contracts
+    return [
+        contract
+        for contract in contracts
+        if not contract[0].startswith("orchestrator-")
+    ]
+
+
+def include_gate_orchestrators(mode: str, diagnostic_stage: str) -> bool:
+    return mode != "change" or bool(diagnostic_stage)
+
+
+def run_gate_contract_stage(root: Path, *, include_orchestrators: bool) -> int:
+    orchestrator_limit = 2
+    contracts = gate_contract_definitions(
+        root, include_orchestrators=include_orchestrators
+    )
     contract_root = Path(tempfile.mkdtemp(prefix="detach-gate-contract."))
     processes: list[tuple[Path, subprocess.Popen[bytes], TextIO, str, float]] = []
     try:
@@ -1972,7 +1991,13 @@ def run_stage_worker(stage: str) -> int:
     if stage == "static":
         return run_static_stage(root, run_dir, mode, resolved_base)
     if stage == "gate-contract":
-        return run_gate_contract_stage(root)
+        include_orchestrators = include_gate_orchestrators(
+            mode,
+            os.environ.get("DETACH_QUALITY_GATE_DIAGNOSTIC_STAGE", ""),
+        )
+        return run_gate_contract_stage(
+            root, include_orchestrators=include_orchestrators
+        )
     if stage == "swift":
         app = root / "app"
         (app / ".build/quality-codecov").mkdir(parents=True, exist_ok=True)

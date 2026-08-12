@@ -17,6 +17,8 @@ from quality_gate import (  # noqa: E402
     EXECUTION_PREREQUISITES,
     GateError,
     QualityGate,
+    gate_contract_definitions,
+    include_gate_orchestrators,
     parse_name_status,
 )
 from quality_policy import POLICY_FILE, Policy  # noqa: E402
@@ -49,6 +51,25 @@ class QualityGateContract(unittest.TestCase):
         stages = set(Policy(POLICY_FILE).stages_by_name)
         self.assertLessEqual(set(EXECUTION_PREREQUISITES), stages)
         self.assertLessEqual(set(EXECUTION_PREREQUISITES.values()), stages)
+
+    def test_local_change_contracts_skip_repository_orchestrator_shards(self) -> None:
+        all_contracts = gate_contract_definitions(ROOT, include_orchestrators=True)
+        focused = gate_contract_definitions(ROOT, include_orchestrators=False)
+        focused_names = {contract[0] for contract in focused}
+        self.assertTrue(focused_names)
+        self.assertFalse(any(name.startswith("orchestrator-") for name in focused_names))
+        self.assertEqual(
+            focused_names,
+            {
+                contract[0]
+                for contract in all_contracts
+                if not contract[0].startswith("orchestrator-")
+            },
+        )
+        self.assertLess(len(focused), len(all_contracts))
+        self.assertFalse(include_gate_orchestrators("change", ""))
+        self.assertTrue(include_gate_orchestrators("repository", ""))
+        self.assertTrue(include_gate_orchestrators("change", "gate-contract"))
 
     def test_public_shell_entry_point_is_thin(self) -> None:
         wrapper = (ROOT / "scripts/quality-gate").read_text(encoding="utf-8")

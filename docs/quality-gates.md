@@ -10,6 +10,9 @@ state. Git stores its history. Generated data must match the source.
 `scripts/quality-gate` applies the policy. Local runs are diagnostics. Hosted
 pull request CI runs every functional stage on the current merge commit and is
 the only ordinary merge authority. Unknown paths select the full plan.
+For a normal local change, `gate-contract` runs direct self-contracts only.
+`--mode repository` runs the full orchestrator shards. An explicit local
+`--stage gate-contract` also runs all shards for diagnosis.
 
 ## Commands
 
@@ -194,9 +197,10 @@ that internal presentations, work plans, and credential paths stay ignored.
 
 The quality-care workflow has a five-minute deadline. It reads up to 10 gate
 artifacts from the last 13 days. Each download has a 20-second deadline. A
-missing artifact fails the care run. The workflow creates one open issue for an eval
-regression, failed or invalid evidence, an environment failure, or wall p95 at
-or above 480 seconds. The documentation-care workflow has the same overall
+missing artifact fails the care run. The workflow creates one open issue for
+an eval regression, invalid evidence, an unresolved latest gate result, or wall p95 at
+or above 480 seconds. Repaired failures remain in run and stage telemetry. The
+documentation-care workflow has the same overall
 deadline. It can create one repair pull request only when deterministic
 generated policy views drift. Both workflows cancel superseded runs and never
 run release tools.

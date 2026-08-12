@@ -90,8 +90,10 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   extend pull-request feedback time.
 - A bounded quality-care workflow evaluates the workflow corpus and recent
   current-schema gate evidence twice each week. It opens one issue when an eval
-  changes, evidence is invalid, or pull-request wall p95 reaches 80 percent of
-  the ten-minute SLO. A separate bounded documentation-care workflow can open
+  changes, evidence is invalid, the latest gate result is unresolved, or
+  pull-request wall p95 reaches 80 percent of the ten-minute SLO. Repaired
+  failures remain flake and latency telemetry but do not keep the issue open.
+  A separate bounded documentation-care workflow can open
   a pull request only for deterministic files under `quality/generated/`.
   Neither workflow can enter a release path. Code review stays a read-only step
   in the active agent workflow. It is not a second merge authority and does not
