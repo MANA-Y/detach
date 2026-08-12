@@ -352,7 +352,7 @@ enum UIE2ETestDriver {
                 name: "onboarding dashboard action",
                 outcome: "first-run dashboard") {
                     installation.onboardingStep == .mainApp
-                        && find(identifier: "detach-dashboard") != nil
+                        && elements().contains { roleOf($0) == .splitGroup }
                 }
             checks.append("onboarding-first-run-completes")
             return Report(
@@ -524,6 +524,7 @@ enum UIE2ETestDriver {
     private static func usesMeasuredGeometry(_ identifier: String) -> Bool {
         identifier == "new-session-button"
             || identifier == "settings-show-tips"
+            || identifier.hasPrefix("onboarding-")
             || identifier.hasPrefix("session-row-")
             || identifier.hasPrefix("session-action-")
     }

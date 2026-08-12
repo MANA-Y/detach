@@ -102,6 +102,10 @@ struct OnboardingView: View {
 // quality-coverage:begin ui-e2e-instrumentation
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(onboardingIdentifier)
+        .uiE2ESemanticProbe(
+            identifier: onboardingIdentifier,
+            label: title,
+            role: .group)
 // quality-coverage:end ui-e2e-instrumentation
         .task(id: step) { poller.update(for: step) }
         .onDisappear { poller.stop() }
@@ -350,6 +354,10 @@ struct OnboardingView: View {
                         text: L10n.string("Detected — verifying…"))
 // quality-coverage:begin ui-e2e-instrumentation
                         .accessibilityIdentifier("onboarding-provider-detected")
+                        .uiE2ESemanticProbe(
+                            identifier: "onboarding-provider-detected",
+                            label: L10n.string("Detected — verifying…"),
+                            role: .staticText)
 // quality-coverage:end ui-e2e-instrumentation
                 } else if let startedAt = guidedInstallStartedAt,
                           Date().timeIntervalSince(startedAt) > 120 {
@@ -429,6 +437,10 @@ struct OnboardingView: View {
                     .buttonStyle(.link)
 // quality-coverage:begin ui-e2e-instrumentation
                     .accessibilityIdentifier("onboarding-open-system-settings")
+                    .uiE2ESemanticProbe(
+                        identifier: "onboarding-open-system-settings",
+                        label: L10n.string("Open System Settings"),
+                        role: .button)
 // quality-coverage:end ui-e2e-instrumentation
                 } else {
                     Button(L10n.string("Open System Settings")) {
@@ -438,6 +450,10 @@ struct OnboardingView: View {
                     .tint(Brand.indigo)
 // quality-coverage:begin ui-e2e-instrumentation
                     .accessibilityIdentifier("onboarding-open-system-settings")
+                    .uiE2ESemanticProbe(
+                        identifier: "onboarding-open-system-settings",
+                        label: L10n.string("Open System Settings"),
+                        role: .button)
 // quality-coverage:end ui-e2e-instrumentation
                 }
                 Button(L10n.string("What exactly is enabled and why?")) {
@@ -484,6 +500,10 @@ struct OnboardingView: View {
                 .disabled(!poller.heartbeatHealthy)
 // quality-coverage:begin ui-e2e-instrumentation
                 .accessibilityIdentifier("onboarding-open-dashboard")
+                .uiE2ESemanticProbe(
+                    identifier: "onboarding-open-dashboard",
+                    label: L10n.string("Open Dashboard"),
+                    role: .button)
 // quality-coverage:end ui-e2e-instrumentation
             }
 
@@ -495,6 +515,10 @@ struct OnboardingView: View {
             .tint(Brand.teal)
 // quality-coverage:begin ui-e2e-instrumentation
             .accessibilityIdentifier("onboarding-open-dashboard")
+            .uiE2ESemanticProbe(
+                identifier: "onboarding-open-dashboard",
+                label: L10n.string("Open Dashboard"),
+                role: .button)
 // quality-coverage:end ui-e2e-instrumentation
         }
     }
@@ -777,3 +801,27 @@ struct OnboardingView: View {
         }
     }
 }
+
+// quality-coverage:begin ui-e2e-instrumentation
+private extension View {
+    @ViewBuilder
+    func uiE2ESemanticProbe(
+        identifier: String,
+        label: String,
+        role: NSAccessibility.Role
+    ) -> some View {
+#if !DEBUG
+        background {
+            if AppSettings.uiE2E != nil {
+                UIE2EGeometryProbe(
+                    identifier: identifier,
+                    semanticLabel: label,
+                    semanticRole: role)
+            }
+        }
+#else
+        self
+#endif
+    }
+}
+// quality-coverage:end ui-e2e-instrumentation
