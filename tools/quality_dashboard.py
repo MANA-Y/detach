@@ -15,6 +15,11 @@ import sys
 import threading
 from typing import Any, NoReturn, Optional
 
+from quality_care import (
+    CareError,
+    validate_input_bindings as validate_care_inputs,
+    validate_summary as validate_care_summary,
+)
 from quality_metrics import MetricsError, validate_metrics
 from quality_mutation import MutationError, validate_summary
 from quality_promote import PromotionError, validate_promotion
@@ -184,6 +189,23 @@ def read_mutation_summary(
         raise DashboardError(f"mutation summary is invalid: {error}") from error
 
 
+def read_care_summary(
+    path: Optional[Path], expected_policy: int, expected_slo_seconds: int
+) -> Optional[dict[str, Any]]:
+    if path is None:
+        return None
+    try:
+        care_path = safe_file(path, "care summary")
+        document = json.loads(care_path.read_text(encoding="utf-8"))
+        summary = validate_care_summary(
+            document, expected_policy, expected_slo_seconds
+        )
+        validate_care_inputs(care_path, summary)
+        return summary
+    except (CareError, json.JSONDecodeError, UnicodeError) as error:
+        raise DashboardError(f"care summary is invalid: {error}") from error
+
+
 def split_csv(value: str) -> list[str]:
     return [item for item in value.split(",") if item]
 
@@ -252,6 +274,7 @@ def build_data(
     result_root: Path,
     run_url: str,
     mutation_summary: Optional[Path] = None,
+    care_summary: Optional[Path] = None,
 ) -> dict[str, Any]:
     manifest = read_manifest(run_dir)
     effective_commit, effective_authority, promotion = effective_identity(
@@ -322,6 +345,11 @@ def build_data(
     slowest = max(stages, key=lambda stage: stage["duration_seconds"], default=None)
     metrics = read_metrics(run_dir, manifest)
     mutation = read_mutation_summary(mutation_summary, int(manifest["policy"]))
+    care = read_care_summary(
+        care_summary,
+        int(manifest["policy"]),
+        int(policy["limits"]["pr_feedback_seconds"]),
+    )
     return {
         "schema": 1,
         "run": {
@@ -358,7 +386,8 @@ def build_data(
             "run_wall_p95_seconds": percentile(trend_walls, 95),
             "coverage": metrics if metrics is not None else "not-yet-emitted",
             "mutation": mutation if mutation is not None else "not-yet-emitted",
-            "review": "not-yet-emitted",
+            "care": care if care is not None else "not-yet-emitted",
+            "review": care["autonomy"]["review"] if care is not None else "not-yet-emitted",
             "security": "not-yet-emitted",
         },
         "trends": trends,
@@ -446,6 +475,20 @@ def render_html(data: dict[str, Any]) -> str:
         )
     else:
         mutation_text = str(mutation)
+    care = quality["care"]
+    if isinstance(care, dict):
+        eval_text = (
+            f'{care["evals"]["passed"]}/{care["evals"]["total"]} passed · '
+            f'{care["status"]} · source {care["source_commit"][:10]}'
+        )
+        latency_text = (
+            f'p95 {care["latency"]["wall_p95_seconds"]}s · '
+            f'alert {care["latency"]["alert_seconds"]}s · '
+            f'SLO {care["latency"]["slo_seconds"]}s · '
+            f'{care["latency"]["status"]}'
+        )
+    else:
+        eval_text = latency_text = str(care)
     return f'''<!doctype html>
 <html lang="en">
 <head>
@@ -479,7 +522,7 @@ def render_html(data: dict[str, Any]) -> str:
     .journey {{ display:grid; grid-template-columns:1fr auto; gap:16px; padding:17px; background:var(--panel); border:1px solid var(--line); border-top:3px solid var(--accent); }}
     .journey ul {{ grid-column:1/-1; list-style:none; margin:4px 0 0; padding:0; border-top:1px solid var(--line); }}
     .journey li {{ display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid var(--line); }} .journey li:last-child {{ border:0; }}
-    .gaps {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); }} .gap {{ padding:14px; background:var(--panel); }}
+    .gaps {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); }} .gap {{ padding:14px; background:var(--panel); }}
     .empty {{ padding:20px; border:1px dashed var(--line); }}
     footer {{ padding:20px 0 36px; border-top:1px solid var(--line); color:var(--muted); }}
     #freshness.stale {{ color:var(--bad); font-weight:700; }}
@@ -514,8 +557,10 @@ def render_html(data: dict[str, Any]) -> str:
     <section><h2>Quality signals</h2><div class="gaps">
       <div class="gap"><span class="eyebrow">Coverage</span><p>{html.escape(coverage_text)}</p></div>
       <div class="gap"><span class="eyebrow">Mutation</span><p>{html.escape(mutation_text)}</p></div>
-      <div class="gap"><span class="eyebrow">Agent review</span><p>{quality["review"]}</p></div>
-      <div class="gap"><span class="eyebrow">Security</span><p>{quality["security"]}</p></div>
+      <div class="gap"><span class="eyebrow">Workflow evals</span><p>{html.escape(eval_text)}</p></div>
+      <div class="gap"><span class="eyebrow">Feedback latency</span><p>{html.escape(latency_text)}</p></div>
+      <div class="gap"><span class="eyebrow">Agent review</span><p>{html.escape(str(quality["review"]))}</p></div>
+      <div class="gap"><span class="eyebrow">Security</span><p>{html.escape(str(quality["security"]))}</p></div>
     </div></section>
     <section><h2>Recent runs</h2><div class="table-wrap"><table><thead><tr><th>Commit</th><th>Authority</th><th>Result</th><th class="number">Wall</th><th>Finished</th></tr></thead><tbody>{trend_rows}</tbody></table></div></section>
   </main>
@@ -544,7 +589,10 @@ def generate(arguments: argparse.Namespace) -> int:
     if run_dir.parent != result_root:
         raise DashboardError("run must be directly under the selected result root")
     mutation_summary = arguments.mutation_summary.resolve() if arguments.mutation_summary else None
-    data = build_data(run_dir, result_root, arguments.run_url, mutation_summary)
+    care_summary = arguments.care_summary.resolve() if arguments.care_summary else None
+    data = build_data(
+        run_dir, result_root, arguments.run_url, mutation_summary, care_summary
+    )
     output = arguments.output.resolve()
     if output == Path("/") or output == ROOT:
         raise DashboardError("dashboard output path is too broad")
@@ -589,6 +637,7 @@ def parser() -> argparse.ArgumentParser:
     generate_parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     generate_parser.add_argument("--run-url", default="")
     generate_parser.add_argument("--mutation-summary", type=Path)
+    generate_parser.add_argument("--care-summary", type=Path)
     generate_parser.set_defaults(function=generate)
     serve_parser = commands.add_parser("serve", help="serve a generated dashboard for a bounded time")
     serve_parser.add_argument("--directory", type=Path, default=DEFAULT_OUTPUT)

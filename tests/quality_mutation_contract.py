@@ -104,6 +104,8 @@ def main() -> int:
         "scripts/quality-mutation summarize",
         "fail-fast: false",
         "if: github.ref == 'refs/heads/main'",
+        "scripts/quality-care latest --optional",
+        "care_args+=(--care-summary",
     ):
         if required not in workflow:
             fail(f"mutation workflow is missing: {required}")

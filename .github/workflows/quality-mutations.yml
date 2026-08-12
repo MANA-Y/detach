@@ -96,13 +96,25 @@ jobs:
           baseline_root="$(scripts/quality-baseline)"
           printf 'root=%s\n' "$baseline_root" >>"$GITHUB_OUTPUT"
           printf 'run_id=%s\n' "${baseline_root##*/}" >>"$GITHUB_OUTPUT"
+      - id: care-evidence
+        name: Restore latest quality-care summary when available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          summary="$(scripts/quality-care latest --optional)"
+          printf 'summary=%s\n' "$summary" >>"$GITHUB_OUTPUT"
       - name: Generate dashboard with mutation score
-        run: >-
-          scripts/quality-dashboard generate
-          --result-root "${{ steps.main-evidence.outputs.root }}"
-          --output app/build/quality-dashboard
-          --mutation-summary app/build/quality-mutations/summary.json
-          --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ steps.main-evidence.outputs.run_id }}"
+        run: |
+          care_args=()
+          if [ -n "${{ steps.care-evidence.outputs.summary }}" ]; then
+            care_args+=(--care-summary "${{ steps.care-evidence.outputs.summary }}")
+          fi
+          scripts/quality-dashboard generate \
+            --result-root "${{ steps.main-evidence.outputs.root }}" \
+            --output app/build/quality-dashboard \
+            --mutation-summary app/build/quality-mutations/summary.json \
+            --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ steps.main-evidence.outputs.run_id }}" \
+            "${care_args[@]}"
       - name: Configure Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Upload Pages artifact

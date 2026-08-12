@@ -145,17 +145,29 @@ jobs:
         run: |
           summary="$(scripts/quality-mutation latest --optional)"
           printf 'summary=%s\n' "$summary" >>"$GITHUB_OUTPUT"
+      - id: care-evidence
+        name: Restore latest quality-care summary when available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          summary="$(scripts/quality-care latest --optional)"
+          printf 'summary=%s\n' "$summary" >>"$GITHUB_OUTPUT"
       - name: Generate quality dashboard
         run: |
           mutation_args=()
+          care_args=()
           if [ -n "${{ steps.mutation-evidence.outputs.summary }}" ]; then
             mutation_args+=(--mutation-summary "${{ steps.mutation-evidence.outputs.summary }}")
+          fi
+          if [ -n "${{ steps.care-evidence.outputs.summary }}" ]; then
+            care_args+=(--care-summary "${{ steps.care-evidence.outputs.summary }}")
           fi
           scripts/quality-dashboard generate \
             --result-root app/build/quality-gates \
             --output app/build/quality-dashboard \
             --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            "${mutation_args[@]}"
+            "${mutation_args[@]}" \
+            "${care_args[@]}"
       - name: Configure Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Upload Pages artifact

@@ -18,9 +18,12 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      attention: ${{ steps.assess.outputs.attention }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Evaluate workflow corpus
+        continue-on-error: true
         run: >-
           scripts/quality-care evaluate
           --output app/build/quality-care/evals.json
@@ -64,13 +67,22 @@ jobs:
           }
           scripts/quality-history --format json "$history" \
             >app/build/quality-care/history.json
-      - name: Assess eval and latency regressions
+      - id: assess
+        name: Assess eval and latency regressions
         if: always()
-        run: >-
-          scripts/quality-care assess
-          --eval-summary app/build/quality-care/evals.json
-          --history-summary app/build/quality-care/history.json
-          --output app/build/quality-care/summary.json
+        run: |
+          set +e
+          scripts/quality-care assess \
+            --eval-summary app/build/quality-care/evals.json \
+            --history-summary app/build/quality-care/history.json \
+            --output app/build/quality-care/summary.json
+          status=$?
+          set -e
+          case "$status" in
+            0) printf 'attention=false\n' >>"$GITHUB_OUTPUT" ;;
+            1) printf 'attention=true\n' >>"$GITHUB_OUTPUT" ;;
+            *) exit "$status" ;;
+          esac
       - name: Upload quality-care evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -80,8 +92,64 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  quality-dashboard:
+    needs: care
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Download current care evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: quality-care-${{ github.run_id }}-${{ github.run_attempt }}
+          path: app/build/quality-care
+      - id: main-evidence
+        name: Restore last green main quality evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          baseline_root="$(scripts/quality-baseline)"
+          printf 'root=%s\n' "$baseline_root" >>"$GITHUB_OUTPUT"
+          printf 'run_id=%s\n' "${baseline_root##*/}" >>"$GITHUB_OUTPUT"
+      - id: mutation-evidence
+        name: Restore latest mutation score when available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          summary="$(scripts/quality-mutation latest --optional)"
+          printf 'summary=%s\n' "$summary" >>"$GITHUB_OUTPUT"
+      - name: Generate dashboard with care evidence
+        run: |
+          mutation_args=()
+          if [ -n "${{ steps.mutation-evidence.outputs.summary }}" ]; then
+            mutation_args+=(--mutation-summary "${{ steps.mutation-evidence.outputs.summary }}")
+          fi
+          scripts/quality-dashboard generate \
+            --result-root "${{ steps.main-evidence.outputs.root }}" \
+            --output app/build/quality-dashboard \
+            --care-summary app/build/quality-care/summary.json \
+            --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ steps.main-evidence.outputs.run_id }}" \
+            "${mutation_args[@]}"
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: app/build/quality-dashboard
+      - name: Deploy quality dashboard
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+
   attention:
-    if: failure()
+    if: always() && (needs.care.result == 'failure' || needs.care.outputs.attention == 'true')
     needs: care
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -107,3 +175,16 @@ jobs:
               --title "$title" \
               --body "The bounded quality-care workflow found an eval, evidence, or latency regression. Inspect $RUN_URL."
           fi
+
+  enforce-attention:
+    if: needs.care.outputs.attention == 'true'
+    needs:
+      - care
+      - quality-dashboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Keep attention visible in workflow status
+        run: |
+          printf 'quality-care: attention evidence was published and requires repair\n' >&2
+          exit 1

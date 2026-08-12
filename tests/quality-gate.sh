@@ -44,6 +44,10 @@ grep -F "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" \
 grep -F 'pages: write' "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'scripts/quality-dashboard generate' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'scripts/quality-care latest --optional' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'care_args+=(--care-summary' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 
 prepare_template() {
   local stage
