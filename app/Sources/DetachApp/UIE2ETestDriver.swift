@@ -7,6 +7,28 @@ enum UIE2EControlFault {
     static var stopActionDisconnected = false
 }
 
+@MainActor
+enum UIE2EEventWindowResolver {
+    static func owner(
+        of element: any NSAccessibilityProtocol
+    ) -> NSWindow? {
+        if let window = element as? NSWindow { return window }
+        if let view = element as? NSView, let window = view.window { return window }
+        return element.accessibilityWindow() as? NSWindow
+    }
+
+    static func resolve(
+        owningWindow: NSWindow?,
+        at screenPoint: CGPoint,
+        candidates: [NSWindow]
+    ) -> NSWindow? {
+        if let owningWindow {
+            return owningWindow.frame.contains(screenPoint) ? owningWindow : nil
+        }
+        return candidates.first { $0.frame.contains(screenPoint) }
+    }
+}
+
 /// A narrowly gated, same-process accessibility driver for the packaged-app
 /// smoke test. Keeping traversal and actions inside the tested process avoids
 /// a second automation executable and its independent identity. This path is
@@ -476,6 +498,7 @@ enum UIE2ETestDriver {
         name: String
     ) async throws {
         var targetFrame = frame(element)
+        let owningWindow = UIE2EEventWindowResolver.owner(of: element)
         if let identifier = identifierOf(element),
            usesMeasuredGeometry(identifier) {
             try await waitUntil("real control geometry for \(name)") {
@@ -486,7 +509,10 @@ enum UIE2ETestDriver {
                 return !measured.isEmpty
             }
         }
-        try await click(frame: targetFrame, name: name)
+        try await click(
+            frame: targetFrame,
+            name: name,
+            owningWindow: owningWindow)
     }
 
     private static func usesMeasuredGeometry(_ identifier: String) -> Bool {
@@ -561,15 +587,27 @@ enum UIE2ETestDriver {
         return result!
     }
 
-    private static func click(frame targetFrame: CGRect, name: String) async throws {
+    private static func click(
+        frame targetFrame: CGRect,
+        name: String,
+        owningWindow: NSWindow? = nil
+    ) async throws {
         let screenPoint = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
         let candidateWindows = NSApp.windows.flatMap(\.sheets) + NSApp.windows
-        guard let window = candidateWindows.first(where: { candidate in
-            candidate.frame.contains(screenPoint)
-        }) else {
-            throw Failure(message: "\(name) is outside every visible test window")
+        guard let window = UIE2EEventWindowResolver.resolve(
+            owningWindow: owningWindow,
+            at: screenPoint,
+            candidates: candidateWindows)
+        else {
+            let scope = owningWindow == nil
+                ? "every visible test window"
+                : "its owning window"
+            throw Failure(message: "\(name) is outside \(scope)")
         }
-        trace("clicking \(name) at \(screenPoint.x),\(screenPoint.y)")
+        let windowName = window.identifier?.rawValue ?? window.title
+        trace(
+            "clicking \(name) at \(screenPoint.x),\(screenPoint.y) "
+                + "in window \(windowName)")
         let windowPoint = window.convertPoint(fromScreen: screenPoint)
         if let contentView = window.contentView {
             let contentPoint = contentView.convert(windowPoint, from: nil)
