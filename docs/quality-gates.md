@@ -249,9 +249,11 @@ rejects a changed head, a weaker ruleset, and an attempt above
 ## Security care
 
 Dependabot checks immutable GitHub Actions pins and Swift package pins each
-week. The bounded security workflow scans both GitHub Actions source and arm64
-Swift source with CodeQL after a `main` change and on a weekly schedule. The
-Swift scan uses an explicit build. These care jobs do not extend pull-request
+week. It groups each ecosystem into at most one open update pull request. This
+keeps update traffic from exhausting the pull-request feedback queue. The
+bounded security workflow scans both GitHub Actions source and arm64 Swift
+source with CodeQL after a `main` change and on a weekly schedule. The Swift
+scan uses an explicit build. These care jobs do not extend pull-request
 feedback and cannot run release commands.
 
 Release readiness also requires the tracked reference-Mac time budgets and the
