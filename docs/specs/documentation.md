@@ -133,10 +133,11 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   version resolution. Three parallel jobs trace `DetachKit`, `DetachApp`, and
   all process entry points. The app and process jobs prepare `DetachKit` before
   tracing. Thus, each repository source belongs to one bounded extraction
-  scope. Target builds match the extractor's three-way concurrency and omit
-  unused index data. Each scope keeps the 15-minute deadline. The workflow runs
-  after `main` changes and each week. It does not add work to pull-request
-  feedback or enter a release path.
+  scope. Traced target builds disable Swift compiler batch mode. Each primary
+  source file gets a bounded extractor task. Target builds match the extractor's
+  three-way concurrency and omit unused index data. Each scope keeps the
+  15-minute deadline. The workflow runs after `main` changes and each week. It
+  does not add work to pull-request feedback or enter a release path.
 - By default, put a ready task-scoped change on a topic branch. Review the
   staged public diff, commit it, and push it. Open a pull request, then give its
   number, exact head, and current repair attempt to `scripts/quality-merge`.

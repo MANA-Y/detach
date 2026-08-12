@@ -63,6 +63,8 @@ def main() -> None:
             "Swift target builds must match the three-thread extractor")
     require(workflow.count("--disable-index-store") == 7,
             "Swift security builds must not pay for unused index data")
+    require(workflow.count("-Xswiftc -disable-batch-mode") == 6,
+            "every traced Swift build must isolate extractor work by primary file")
     require(workflow.count("--target DetachKit") == 2,
             "shared Swift source needs one preparation and one traced build command")
     for target in ("DetachApp", "DetachPower", "DetachPowerHelper",
