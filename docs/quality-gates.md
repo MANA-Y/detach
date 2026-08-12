@@ -259,7 +259,9 @@ bounded security workflow scans both GitHub Actions source and arm64 Swift
 source with CodeQL after a `main` change and on a weekly schedule. The Swift
 scan restores the existing quality-gate dependency graph, resolves the tracked
 lock before tracing, removes cached products, and then uses an explicit fresh
-build. Dependency network and version work cannot consume the CodeQL tracing
+build for the app and every process entry point. Build concurrency matches the
+three-thread extractor, and unused index data is disabled. Dependency network,
+version work, and process oversubscription cannot consume the CodeQL tracing
 budget. These care jobs do not extend pull-request feedback and cannot run
 release commands.
 

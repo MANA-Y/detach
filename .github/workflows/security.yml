@@ -67,8 +67,14 @@ jobs:
           languages: swift
           build-mode: manual
           queries: security-extended
-      - name: Build Swift sources for analysis
-        run: swift build --package-path app --arch arm64 --disable-sandbox --force-resolved-versions
+      - name: Build Swift app source for analysis
+        run: swift build --package-path app --target DetachApp --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions
+      - name: Build Swift process entry points for analysis
+        run: |
+          swift build --package-path app --target DetachPower --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions
+          swift build --package-path app --target DetachPowerHelper --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions
+          swift build --package-path app --target DetachState --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions
+          swift build --package-path app --target DetachWatchdog --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions
       - name: Analyze Swift
         uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
         with:

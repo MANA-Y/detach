@@ -130,8 +130,10 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   macOS. Before tracing, the Swift job restores the quality-gate dependency
   graph and resolves only the tracked lock. It then removes cached products so
   CodeQL observes a fresh repository-source build without tracing dependency
-  fetch or version resolution. It runs after `main` changes and each week. It
-  does not add work to pull-request feedback or enter a release path.
+  fetch or version resolution. Target builds match the extractor's three-way
+  concurrency and omit unused index data. They cover the app and every process
+  entry point. The workflow runs after `main` changes and each week. It does
+  not add work to pull-request feedback or enter a release path.
 - By default, put a ready task-scoped change on a topic branch. Review the
   staged public diff, commit it, and push it. Open a pull request, then give its
   number, exact head, and current repair attempt to `scripts/quality-merge`.

@@ -32,7 +32,7 @@ def main() -> None:
     resolve = workflow.index("Resolve the locked Swift dependencies")
     clean = workflow.index("Remove cached products before tracing")
     swift_init = workflow.index("Initialize Swift analysis")
-    swift_build = workflow.index("Build Swift sources for analysis")
+    swift_build = workflow.index("Build Swift app source for analysis")
     require(cache < resolve < clean < swift_init < swift_build,
             "Swift dependency work must finish before CodeQL tracing")
     require("actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830" in workflow,
@@ -41,8 +41,16 @@ def main() -> None:
             "Swift analysis must resolve the tracked lock before tracing")
     require("swift package --package-path app clean" in workflow,
             "Swift analysis must rebuild repository sources after cache restore")
-    require(workflow.count("--force-resolved-versions") == 2,
-            "Swift resolve and build must both reject lock drift")
+    require(workflow.count("--force-resolved-versions") == 6,
+            "Swift resolve and every target build must reject lock drift")
+    require(workflow.count("--jobs 3") == 5,
+            "Swift target builds must match the three-thread extractor")
+    require(workflow.count("--disable-index-store") == 5,
+            "Swift security builds must not pay for unused index data")
+    for target in ("DetachApp", "DetachPower", "DetachPowerHelper",
+                   "DetachState", "DetachWatchdog"):
+        require(f"--target {target}" in workflow,
+                f"Swift analysis is missing target {target}")
     require("timeout-minutes: 5" in workflow, "workflow analysis deadline is missing")
     require("timeout-minutes: 15" in workflow, "Swift analysis deadline is missing")
     require("security-events: write" in workflow, "CodeQL cannot publish results")
