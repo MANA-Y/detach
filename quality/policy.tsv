@@ -65,10 +65,14 @@ coverage-exclusion	ui	app/Sources/DetachApp/UIE2E*.swift	SC-UI-DASHBOARD,SC-UI-S
 coverage-exclusion	business	app/Sources/DetachKit/BoundedProcessRunner.swift	SC-POWER-UNIT	Process-group behavior uses bounded process integration evidence.
 coverage-exclusion	business	app/Sources/DetachKit/ClamshellLockRunner.swift	SC-POWER-UNIT	Platform lock behavior uses its dedicated process scenario.
 coverage-exclusion	business	app/Sources/DetachKit/DetachCLI.swift	SC-SESSION-CREATE-CODEX,SC-SESSION-CREATE-CLAUDE	Provider integration scenarios exercise the real CLI process boundary.
+coverage-region	ui	app/Sources/DetachApp/DetachApp.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-FAILURE,SC-UI-ONBOARD-FIRST-RUN,SC-UI-ONBOARD-PROVIDER,SC-UI-ONBOARD-APPROVAL,SC-UI-SETTINGS	Packaged journeys own the validated scenario selector.
+coverage-region	ui	app/Sources/DetachApp/InstallationStore.swift	ui-e2e-instrumentation	SC-UI-ONBOARD-FIRST-RUN,SC-UI-ONBOARD-PROVIDER,SC-UI-ONBOARD-APPROVAL	Packaged onboarding journeys own isolated fixture state.
 coverage-region	ui	app/Sources/DetachApp/NewSessionSheet.swift	ui-e2e-instrumentation	SC-UI-NEW-SESSION	The packaged journey covers test-only control geometry.
-coverage-region	ui	app/Sources/DetachApp/RootView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD	The packaged journey covers the test-only semantic locator.
+coverage-region	ui	app/Sources/DetachApp/OnboardingView.swift	ui-e2e-instrumentation	SC-UI-ONBOARD-FIRST-RUN,SC-UI-ONBOARD-PROVIDER,SC-UI-ONBOARD-APPROVAL	Packaged onboarding journeys own their semantic locators and safe poller.
+coverage-region	ui	app/Sources/DetachApp/RootView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-ONBOARD-FIRST-RUN,SC-UI-ONBOARD-PROVIDER,SC-UI-ONBOARD-APPROVAL	Packaged journeys cover the test-only semantic bridge and route.
 coverage-region	ui	app/Sources/DetachApp/SessionDetailView.swift	ui-e2e-instrumentation	SC-UI-SESSION-STOP,SC-UI-SESSION-DELETE	The packaged journey covers action geometry and its negative control.
-coverage-region	ui	app/Sources/DetachApp/SidebarView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-SESSION-DETAIL	The packaged journey covers sidebar control geometry.
+coverage-region	ui	app/Sources/DetachApp/SettingsView.swift	ui-e2e-instrumentation	SC-UI-SETTINGS	The packaged Settings journey covers its semantic control.
+coverage-region	ui	app/Sources/DetachApp/SidebarView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-SESSION-DETAIL,SC-UI-FAILURE	Packaged journeys cover sidebar control geometry and failure status.
 route	1000	quality/*	policy	safe	docs/specs/documentation.md
 route	1000	.github/workflows/quality-gates.yml	policy	safe	docs/specs/documentation.md
 route	1000	.github/workflows/security.yml	policy	safe	docs/specs/documentation.md

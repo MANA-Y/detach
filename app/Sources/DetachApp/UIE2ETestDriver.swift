@@ -575,20 +575,11 @@ enum UIE2ETestDriver {
     }
 
     private static func activate(_ mainWindow: NSWindow) async throws {
-        for _ in 0..<20 {
-            if #available(macOS 14.0, *) {
-                NSApp.activate()
-            } else {
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            _ = NSRunningApplication.current.activate(
-                options: [.activateAllWindows])
-            NSApp.unhide(nil)
-            mainWindow.makeKeyAndOrderFront(nil)
-            if NSApp.isActive && mainWindow.isKeyWindow { return }
-            try await Task.sleep(nanoseconds: 100_000_000)
+        NSApp.activate(ignoringOtherApps: true)
+        mainWindow.makeKeyAndOrderFront(nil)
+        try await waitUntil("test app activation") {
+            NSApp.isActive && mainWindow.isKeyWindow
         }
-        throw Failure(message: "timed out waiting for test app activation")
     }
 
     private static func find(identifier: String) -> (any NSAccessibilityProtocol)? {

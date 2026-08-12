@@ -50,6 +50,7 @@ struct OnboardingView: View {
 
     init(store: InstallationStore) {
         self.store = store
+// quality-coverage:begin ui-e2e-instrumentation
         if AppSettings.uiE2E != nil {
             _poller = State(initialValue: OnboardingLivePoller(
                 refreshStatuses: {},
@@ -63,6 +64,7 @@ struct OnboardingView: View {
         } else {
             _poller = State(initialValue: OnboardingLivePoller(store: store))
         }
+// quality-coverage:end ui-e2e-instrumentation
     }
 
     private var step: OnboardingStep { store.onboardingStep }
@@ -97,8 +99,10 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
+// quality-coverage:begin ui-e2e-instrumentation
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(onboardingIdentifier)
+// quality-coverage:end ui-e2e-instrumentation
         .task(id: step) { poller.update(for: step) }
         .onDisappear { poller.stop() }
     }
@@ -116,6 +120,7 @@ struct OnboardingView: View {
         onboardingFontSize / CGFloat(AppFontSize.defaultValue)
     }
 
+// quality-coverage:begin ui-e2e-instrumentation
     private var onboardingIdentifier: String {
         switch step {
         case .moveToApplications: "onboarding-move"
@@ -125,6 +130,7 @@ struct OnboardingView: View {
         case .done, .mainApp: "onboarding-ready"
         }
     }
+// quality-coverage:end ui-e2e-instrumentation
 
     // MARK: - Progress
 
@@ -342,7 +348,9 @@ struct OnboardingView: View {
                     statusRow(
                         icon: "checkmark.circle.fill", tint: Brand.teal,
                         text: L10n.string("Detected — verifying…"))
+// quality-coverage:begin ui-e2e-instrumentation
                         .accessibilityIdentifier("onboarding-provider-detected")
+// quality-coverage:end ui-e2e-instrumentation
                 } else if let startedAt = guidedInstallStartedAt,
                           Date().timeIntervalSince(startedAt) > 120 {
                     statusRow(
@@ -419,14 +427,18 @@ struct OnboardingView: View {
                         store.openPowerHelperApprovalSettings()
                     }
                     .buttonStyle(.link)
+// quality-coverage:begin ui-e2e-instrumentation
                     .accessibilityIdentifier("onboarding-open-system-settings")
+// quality-coverage:end ui-e2e-instrumentation
                 } else {
                     Button(L10n.string("Open System Settings")) {
                         store.openPowerHelperApprovalSettings()
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Brand.indigo)
+// quality-coverage:begin ui-e2e-instrumentation
                     .accessibilityIdentifier("onboarding-open-system-settings")
+// quality-coverage:end ui-e2e-instrumentation
                 }
                 Button(L10n.string("What exactly is enabled and why?")) {
                     showsPermissionsExplainer.toggle()
@@ -470,7 +482,9 @@ struct OnboardingView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Brand.teal)
                 .disabled(!poller.heartbeatHealthy)
+// quality-coverage:begin ui-e2e-instrumentation
                 .accessibilityIdentifier("onboarding-open-dashboard")
+// quality-coverage:end ui-e2e-instrumentation
             }
 
         case .mainApp:
@@ -479,7 +493,9 @@ struct OnboardingView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Brand.teal)
+// quality-coverage:begin ui-e2e-instrumentation
             .accessibilityIdentifier("onboarding-open-dashboard")
+// quality-coverage:end ui-e2e-instrumentation
         }
     }
 

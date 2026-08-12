@@ -30,10 +30,12 @@ struct RootView: View {
 
     var body: some View {
         Group {
+// quality-coverage:begin ui-e2e-instrumentation
             if (installation.hasDistributionPayload
                     || installation.presentsUIE2EOnboarding)
                 && installation.onboardingStep != .mainApp {
                 OnboardingView(store: installation)
+// quality-coverage:end ui-e2e-instrumentation
             } else if store.state == .cliMissing && store.sessions.isEmpty {
                 ContentUnavailableView(
                     L10n.string("detach CLI not found"),
@@ -103,7 +105,9 @@ struct RootView: View {
             guard AppSettings.uiE2E == nil else { return }
             await notifications.configure(enabled: notificationsEnabled)
         }
+// quality-coverage:begin ui-e2e-instrumentation
         .task { await UIE2ETestDriver.runIfRequested(installation: installation) }
+// quality-coverage:end ui-e2e-instrumentation
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             Task {

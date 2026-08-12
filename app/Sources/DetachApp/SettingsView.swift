@@ -426,7 +426,9 @@ struct SettingsView: View {
                         .frame(minWidth: 44, alignment: .trailing)
                 }
                 Toggle(L10n.string("Show tips"), isOn: $tipsEnabled)
+// quality-coverage:begin ui-e2e-instrumentation
                     .accessibilityIdentifier("settings-show-tips")
+// quality-coverage:end ui-e2e-instrumentation
             }
             Section(L10n.string("Menu Bar")) {
                 Toggle(

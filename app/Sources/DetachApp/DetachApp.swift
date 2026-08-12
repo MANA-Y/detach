@@ -105,6 +105,7 @@ struct UIE2EConfiguration: Sendable {
         guard fileManager.isExecutableFile(atPath: cli.path) else {
             try fail("fake CLI is not executable")
         }
+// quality-coverage:begin ui-e2e-instrumentation
         let scenario = environment["DETACH_UI_E2E_SCENARIO"] ?? "main"
         guard [
             "main", "onboarding-first-run", "onboarding-provider",
@@ -118,6 +119,7 @@ struct UIE2EConfiguration: Sendable {
             result: try requiredURL("DETACH_UI_E2E_RESULT"),
             fixtureState: try requiredURL("DETACH_UI_E2E_FIXTURE_STATE"),
             scenario: scenario)
+// quality-coverage:end ui-e2e-instrumentation
     }
 }
 

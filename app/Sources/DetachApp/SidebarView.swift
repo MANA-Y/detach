@@ -204,7 +204,9 @@ struct StatusBar: View {
             case .error(let message):
                 Label(message, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
+// quality-coverage:begin ui-e2e-instrumentation
                     .accessibilityIdentifier("session-status-error")
+// quality-coverage:end ui-e2e-instrumentation
             }
             Spacer()
         }

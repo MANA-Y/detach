@@ -179,6 +179,31 @@
   "coverage_regions": [
     {
       "group": "ui",
+      "path": "app/Sources/DetachApp/DetachApp.swift",
+      "region": "ui-e2e-instrumentation",
+      "scenarios": [
+        "SC-UI-DASHBOARD",
+        "SC-UI-FAILURE",
+        "SC-UI-ONBOARD-FIRST-RUN",
+        "SC-UI-ONBOARD-PROVIDER",
+        "SC-UI-ONBOARD-APPROVAL",
+        "SC-UI-SETTINGS"
+      ],
+      "summary": "Packaged journeys own the validated scenario selector."
+    },
+    {
+      "group": "ui",
+      "path": "app/Sources/DetachApp/InstallationStore.swift",
+      "region": "ui-e2e-instrumentation",
+      "scenarios": [
+        "SC-UI-ONBOARD-FIRST-RUN",
+        "SC-UI-ONBOARD-PROVIDER",
+        "SC-UI-ONBOARD-APPROVAL"
+      ],
+      "summary": "Packaged onboarding journeys own isolated fixture state."
+    },
+    {
+      "group": "ui",
       "path": "app/Sources/DetachApp/NewSessionSheet.swift",
       "region": "ui-e2e-instrumentation",
       "scenarios": [
@@ -188,12 +213,26 @@
     },
     {
       "group": "ui",
+      "path": "app/Sources/DetachApp/OnboardingView.swift",
+      "region": "ui-e2e-instrumentation",
+      "scenarios": [
+        "SC-UI-ONBOARD-FIRST-RUN",
+        "SC-UI-ONBOARD-PROVIDER",
+        "SC-UI-ONBOARD-APPROVAL"
+      ],
+      "summary": "Packaged onboarding journeys own their semantic locators and safe poller."
+    },
+    {
+      "group": "ui",
       "path": "app/Sources/DetachApp/RootView.swift",
       "region": "ui-e2e-instrumentation",
       "scenarios": [
-        "SC-UI-DASHBOARD"
+        "SC-UI-DASHBOARD",
+        "SC-UI-ONBOARD-FIRST-RUN",
+        "SC-UI-ONBOARD-PROVIDER",
+        "SC-UI-ONBOARD-APPROVAL"
       ],
-      "summary": "The packaged journey covers the test-only semantic locator."
+      "summary": "Packaged journeys cover the test-only semantic bridge and route."
     },
     {
       "group": "ui",
@@ -207,13 +246,23 @@
     },
     {
       "group": "ui",
+      "path": "app/Sources/DetachApp/SettingsView.swift",
+      "region": "ui-e2e-instrumentation",
+      "scenarios": [
+        "SC-UI-SETTINGS"
+      ],
+      "summary": "The packaged Settings journey covers its semantic control."
+    },
+    {
+      "group": "ui",
       "path": "app/Sources/DetachApp/SidebarView.swift",
       "region": "ui-e2e-instrumentation",
       "scenarios": [
         "SC-UI-DASHBOARD",
-        "SC-UI-SESSION-DETAIL"
+        "SC-UI-SESSION-DETAIL",
+        "SC-UI-FAILURE"
       ],
-      "summary": "The packaged journey covers sidebar control geometry."
+      "summary": "Packaged journeys cover sidebar control geometry and failure status."
     }
   ],
   "critical_sources": [
