@@ -38,8 +38,14 @@
   granularity until it gets scenario markers.
 - `scripts/quality-history [RESULT_ROOT]` reports p50/p95 wall and stage timing,
   ordinary failures, and execution-environment failures across retained local
-  or downloaded gate evidence. It is run telemetry, not policy history or
-  readiness evidence.
+  or downloaded current-schema gate evidence. Add `--format json` for care
+  automation. It is run telemetry, not policy history or readiness evidence.
+- `scripts/quality-care validate` checks the four required eval categories.
+  `scripts/quality-care evaluate --output <json>` grades exact diff impact and
+  private-scope outcomes. `scripts/quality-care assess` fails before the
+  pull-request wall p95 reaches the ten-minute SLO. Scheduled quality care opens
+  one scoped issue. Scheduled documentation care can open a pull request only
+  for deterministic files under `quality/generated/`.
 - `scripts/quality-policy generate --check` checks both generated policy JSON
   and the readable current-spec traceability table.
 - `scripts/quality-promote` is the hosted post-merge path. It downloads the

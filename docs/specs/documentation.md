@@ -54,6 +54,11 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   match the policy.
 - Retained gate results contain execution history for timing and quality
   trends. They are not policy history and cannot restore an old policy state.
+- `quality/evals.json` keeps current expected outcomes for historical changes,
+  escaped defects, policy mutations, and scope violations. Its stable graders
+  compare selected stages, specifications, capabilities, user journeys,
+  release gates, and ignored private paths. A policy change must update an
+  expectation only when the intended observable outcome changes.
 - Instrumented user scenarios emit addressable begin and pass events. Gate
   evidence records their requirement and journey links, duration, result, and
   bounded rerun command. A passed stage with missing scenario events fails.
@@ -76,6 +81,14 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   deterministic safety corpus. It runs mutants in parallel, gives each test a
   240-second deadline, and requires a 100-percent score. Mutation work does not
   extend pull-request feedback time.
+- A bounded quality-care workflow evaluates the workflow corpus and recent
+  current-schema gate evidence twice each week. It opens one issue when an eval
+  changes, evidence is invalid, or pull-request wall p95 reaches 80 percent of
+  the ten-minute SLO. A separate bounded documentation-care workflow can open
+  a pull request only for deterministic files under `quality/generated/`.
+  Neither workflow can enter a release path. Care evidence reports agent review
+  as not configured until an independent provider binds a review to the exact
+  commit.
 - A deterministic static dashboard reads only validated gate evidence. The
   same artifact opens locally and deploys to GitHub Pages only after a green
   `main` run with direct or promoted evidence, or a green scheduled mutation

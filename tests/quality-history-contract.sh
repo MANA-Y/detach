@@ -4,32 +4,52 @@ set -euo pipefail
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-quality-history-contract.XXXXXX")"
-
-cleanup() {
-  rm -rf "$TMP_ROOT"
-}
-trap cleanup EXIT
+trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
 
 write_run() {
   local name="$1" result="$2" wall="$3" static_status="$4" static_duration="$5"
-  mkdir -p "$TMP_ROOT/$name"
-  printf 'schema\t3\ntiming_wall_seconds\t%s\nresult\t%s\n' "$wall" "$result" \
-    >"$TMP_ROOT/$name/manifest.tsv"
+  local run="$TMP_ROOT/$name" summary_digest
+  mkdir -p "$run"
   printf 'policy\tmode\tstage\tstatus\tduration_seconds\tlog\tlog_sha256\torigin_run\n' \
-    >"$TMP_ROOT/$name/summary.tsv"
-  printf '8\trepository\tstatic\t%s\t%s\tstatic.log\tdigest\t-\n' \
-    "$static_status" "$static_duration" >>"$TMP_ROOT/$name/summary.tsv"
+    >"$run/summary.tsv"
+  printf '23\trepository\tstatic\t%s\t%s\tstatic.log\t%s\t-\n' \
+    "$static_status" "$static_duration" "$(printf digest | shasum -a 256 | awk '{print $1}')" \
+    >>"$run/summary.tsv"
+  summary_digest="$(shasum -a 256 "$run/summary.tsv" | awk '{print $1}')"
+  cat >"$run/manifest.tsv" <<EOF
+schema	4
+policy	23
+mode	repository
+authority	ci-main
+source_commit	0123456789abcdef0123456789abcdef01234567
+fingerprint	0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+stages	static
+specs	documentation
+capabilities	quality-system
+journeys	J-QUALITY-CHANGE
+started_at	2026-08-12T10:00:00Z
+finished_at	2026-08-12T10:00:01Z
+duration_seconds	$wall
+timing_wall_seconds	$wall
+summary_sha256	$summary_digest
+result	$result
+EOF
 }
 
 write_run one passed 100 passed 1
 write_run two failed 180 environment-failed 3
 write_run three passed 120 passed 2
+mkdir -p "$TMP_ROOT/invalid"
+printf 'schema\t3\nresult\tpassed\n' >"$TMP_ROOT/invalid/manifest.tsv"
 
 "$ROOT/scripts/quality-history" "$TMP_ROOT" >"$TMP_ROOT/report.tsv"
 grep -F $'runs\t3' "$TMP_ROOT/report.tsv" >/dev/null
 grep -F $'passed\t2' "$TMP_ROOT/report.tsv" >/dev/null
+grep -F $'invalid_evidence\t1' "$TMP_ROOT/report.tsv" >/dev/null
 grep -F $'wall_p50_seconds\t120' "$TMP_ROOT/report.tsv" >/dev/null
 grep -F $'wall_p95_seconds\t180' "$TMP_ROOT/report.tsv" >/dev/null
 grep -F $'static\t3\t1\t1\t2\t3' "$TMP_ROOT/report.tsv" >/dev/null
+"$ROOT/scripts/quality-history" --format json "$TMP_ROOT" \
+  | python3 -c 'import json,sys; value=json.load(sys.stdin); assert value["schema"] == 1 and value["runs"] == 3'
 
 printf 'Quality history contract tests passed\n'

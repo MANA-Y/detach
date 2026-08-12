@@ -1,0 +1,78 @@
+name: Documentation care
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "13 6 * * 3"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: documentation-care-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generated-context:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Regenerate deterministic documentation
+        run: |
+          scripts/quality-policy generate
+          scripts/quality-care validate
+          tests/docs-contract.sh
+      - id: generated-diff
+        name: Restrict automatic edits to generated context
+        run: |
+          changed="$(git diff --name-only)"
+          if [ -z "$changed" ]; then
+            printf 'changed=false\n' >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          unexpected="$(printf '%s\n' "$changed" | grep -Ev '^quality/generated/(policy\.json|spec-traceability\.md)$' || true)"
+          [ -z "$unexpected" ] || {
+            printf 'documentation-care: unexpected generated path: %s\n' "$unexpected" >&2
+            exit 1
+          }
+          printf 'changed=true\n' >>"$GITHUB_OUTPUT"
+      - name: Open deterministic documentation repair pull request
+        if: steps.generated-diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch=quality/documentation-care
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git checkout -B "$branch"
+          git add quality/generated/policy.json quality/generated/spec-traceability.md
+          git commit -m 'Regenerate quality context'
+          remote_sha="$(timeout 20s git ls-remote --heads origin "refs/heads/$branch" | awk '{print $1}')"
+          if [ -n "$remote_sha" ]; then
+            timeout 30s git push \
+              --force-with-lease="refs/heads/$branch:$remote_sha" \
+              origin "HEAD:refs/heads/$branch"
+          else
+            timeout 30s git push origin "HEAD:refs/heads/$branch"
+          fi
+          existing="$(timeout 20s gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --head "$branch" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')"
+          if [ -z "$existing" ]; then
+            timeout 20s gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$branch" \
+              --title 'Regenerate quality context' \
+              --body 'Automated bounded documentation-care repair. Only deterministic generated quality context changed.'
+          fi
