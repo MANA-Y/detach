@@ -133,8 +133,9 @@ completed Swift log and coverage profile without another test run. The short
 packaged UI lane runs after the verified app and before the CPU-intensive
 provider, runtime, and gate-contract lanes. This prevents WindowServer event
 delivery from competing with those workers. Provider lanes then run in
-parallel. Independent distribution and release lanes overlap after provider
-work drains.
+parallel. After they drain, the runtime and gate-contract lanes run in
+parallel. This admits at most two process-heavy top-level lanes. Independent
+distribution and release lanes overlap after both groups drain.
 
 The gate-contract stage keeps lightweight contracts concurrent. It admits at
 most two process-heavy orchestrator shards at one time. This limit prevents

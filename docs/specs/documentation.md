@@ -75,6 +75,9 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
 - The gate-contract runner admits at most two process-heavy orchestrator shards
   at one time. Lightweight contracts stay concurrent. The runner does not
   increase a timing budget to hide process oversubscription.
+- The repository gate runs the Codex and Claude lanes together. It starts the
+  runtime and gate-contract lanes only after both provider lanes drain. Thus,
+  no more than two process-heavy top-level lanes compete on one macOS runner.
 - CI gets quality metrics from the last green `main` artifact. Test identities,
   aggregate coverage, and critical-source coverage cannot decrease. Changed
   executable Swift lines need at least 90 percent coverage. A person does not
