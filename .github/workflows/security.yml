@@ -49,6 +49,18 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Restore the Swift dependency graph
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: app/.build
+          key: detach-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.resolved', 'scripts/build-tmux.sh') }}-${{ github.sha }}
+          restore-keys: |
+            detach-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.resolved', 'scripts/build-tmux.sh') }}-
+            detach-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-
+      - name: Resolve the locked Swift dependencies
+        run: swift package --package-path app --force-resolved-versions resolve
+      - name: Remove cached products before tracing
+        run: swift package --package-path app clean
       - name: Initialize Swift analysis
         uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
         with:
@@ -56,7 +68,7 @@ jobs:
           build-mode: manual
           queries: security-extended
       - name: Build Swift sources for analysis
-        run: swift build --package-path app --arch arm64 --disable-sandbox
+        run: swift build --package-path app --arch arm64 --disable-sandbox --force-resolved-versions
       - name: Analyze Swift
         uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
         with:

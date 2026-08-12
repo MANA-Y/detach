@@ -257,8 +257,11 @@ week. It groups each ecosystem into at most one open update pull request. This
 keeps update traffic from exhausting the pull-request feedback queue. The
 bounded security workflow scans both GitHub Actions source and arm64 Swift
 source with CodeQL after a `main` change and on a weekly schedule. The Swift
-scan uses an explicit build. These care jobs do not extend pull-request
-feedback and cannot run release commands.
+scan restores the existing quality-gate dependency graph, resolves the tracked
+lock before tracing, removes cached products, and then uses an explicit fresh
+build. Dependency network and version work cannot consume the CodeQL tracing
+budget. These care jobs do not extend pull-request feedback and cannot run
+release commands.
 
 Release readiness also requires the tracked reference-Mac time budgets and the
 release-only gates below. Ordinary implementation must not run them.

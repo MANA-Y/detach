@@ -127,8 +127,11 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   groups each ecosystem into at most one open update pull request so update
   traffic cannot exhaust the feedback queue. A bounded CodeQL workflow scans
   GitHub Actions source on Linux and explicitly built arm64 Swift source on
-  macOS. It runs after `main` changes and each week. It does not add work to
-  pull-request feedback or enter a release path.
+  macOS. Before tracing, the Swift job restores the quality-gate dependency
+  graph and resolves only the tracked lock. It then removes cached products so
+  CodeQL observes a fresh repository-source build without tracing dependency
+  fetch or version resolution. It runs after `main` changes and each week. It
+  does not add work to pull-request feedback or enter a release path.
 - By default, put a ready task-scoped change on a topic branch. Review the
   staged public diff, commit it, and push it. Open a pull request, then give its
   number, exact head, and current repair attempt to `scripts/quality-merge`.

@@ -28,6 +28,21 @@ def main() -> None:
     require("languages: swift" in workflow, "Swift analysis is missing")
     require("build-mode: manual" in workflow, "Swift must use an explicit build")
     require("--arch arm64" in workflow, "Swift analysis must build only arm64")
+    cache = workflow.index("Restore the Swift dependency graph")
+    resolve = workflow.index("Resolve the locked Swift dependencies")
+    clean = workflow.index("Remove cached products before tracing")
+    swift_init = workflow.index("Initialize Swift analysis")
+    swift_build = workflow.index("Build Swift sources for analysis")
+    require(cache < resolve < clean < swift_init < swift_build,
+            "Swift dependency work must finish before CodeQL tracing")
+    require("actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830" in workflow,
+            "Swift analysis must restore the immutable quality-gate cache")
+    require("swift package --package-path app --force-resolved-versions resolve" in workflow,
+            "Swift analysis must resolve the tracked lock before tracing")
+    require("swift package --package-path app clean" in workflow,
+            "Swift analysis must rebuild repository sources after cache restore")
+    require(workflow.count("--force-resolved-versions") == 2,
+            "Swift resolve and build must both reject lock drift")
     require("timeout-minutes: 5" in workflow, "workflow analysis deadline is missing")
     require("timeout-minutes: 15" in workflow, "Swift analysis deadline is missing")
     require("security-events: write" in workflow, "CodeQL cannot publish results")
