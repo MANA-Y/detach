@@ -215,6 +215,7 @@ validate_configuration() {
   RELEASE_CI_REF="refs/heads/$RELEASE_CI_BRANCH"
   BUILD=""
   SOURCE_COMMIT=""
+  RELEASE_HEAD=""
   RELEASE_COMMIT=""
   APPLICATIONS_DIR=/Applications
   if [ "$TEST_MODE" = 1 ]; then
@@ -339,7 +340,9 @@ remote_ref_commit() {
 
 release_tooling_path_allowed() {
   case "$1" in
-    scripts/release-version|scripts/release-impact|scripts/quality-gate|\
+    scripts/release-version|scripts/release-pr|scripts/release-sbom|\
+    scripts/release-impact|scripts/quality-gate|scripts/quality-merge|\
+    tools/release_pr.py|tools/release_sbom.py|tools/quality_merge.py|\
     app/scripts/publish-release.sh|\
     tests/quality-gate.sh|tests/release-impact.sh|tests/release-workflow.sh|\
     tests/publish-preflight.sh|tests/shell-safety.sh|tests/shell-safety-contract.sh|\
@@ -375,8 +378,16 @@ verify_release_remote_refs() {
 verify_resumable_release_head() {
   local head remote_main
   head="$(git -C "$ROOT" rev-parse --verify HEAD)"
-  [ "$head" != "$RELEASE_COMMIT" ] || return 0
-  has_stage pushed || die 'HEAD is no longer the unpushed release commit'
+  if ! has_stage pushed && [ -z "$RELEASE_COMMIT" ]; then
+    if [ "$head" = "$RELEASE_HEAD" ]; then
+      return
+    fi
+    remote_main="$(git -C "$ROOT" rev-parse --verify refs/remotes/origin/main)"
+    [ "$head" = "$remote_main" ] || \
+      die 'HEAD is neither the release head nor synchronized main'
+    return
+  fi
+  [ -n "$RELEASE_COMMIT" ] || die 'merged release commit is missing'
   remote_main="$(git -C "$ROOT" rev-parse --verify refs/remotes/origin/main)"
   [ "$head" = "$remote_main" ] || \
     die 'resumed release tooling must use synchronized main'
@@ -612,12 +623,12 @@ only_release_metadata_is_dirty() {
 }
 
 prepare_release_commit() {
-  local head commit_parent commit_subject tag_commit tag_type version_temp build_temp
+  local head commit_parent commit_subject version_temp build_temp
 
   verify_main_branch
   head="$(git -C "$ROOT" rev-parse --verify HEAD)"
-  if [ -f "$STATE_DIR/release-commit" ]; then
-    RELEASE_COMMIT="$(read_state_value release-commit)"
+  if [ -f "$STATE_DIR/release-head" ]; then
+    RELEASE_HEAD="$(read_state_value release-head)"
   elif [ "$head" = "$SOURCE_COMMIT" ]; then
     if [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]; then
       only_release_metadata_is_dirty && \
@@ -636,8 +647,8 @@ prepare_release_commit() {
     fi
     git -C "$ROOT" add VERSION BUILD
     git -C "$ROOT" commit -m "Prepare $VERSION release" -- VERSION BUILD
-    RELEASE_COMMIT="$(git -C "$ROOT" rev-parse --verify HEAD)"
-    write_state_value release-commit "$RELEASE_COMMIT"
+    RELEASE_HEAD="$(git -C "$ROOT" rev-parse --verify HEAD)"
+    write_state_value release-head "$RELEASE_HEAD"
   else
     commit_parent="$(git -C "$ROOT" rev-parse "$head^" 2>/dev/null || true)"
     commit_subject="$(git -C "$ROOT" log -1 --format=%s)"
@@ -646,25 +657,23 @@ prepare_release_commit() {
       [ "$(<"$ROOT/VERSION")" = "$VERSION" ] && \
       [ "$(<"$ROOT/BUILD")" = "$BUILD" ] || \
       die 'HEAD is not the resumable release commit'
-    RELEASE_COMMIT="$head"
-    write_state_value release-commit "$RELEASE_COMMIT"
+    RELEASE_HEAD="$head"
+    write_state_value release-head "$RELEASE_HEAD"
   fi
 
+  [[ "$RELEASE_HEAD" =~ ^[0-9a-f]{40}$ ]] || die 'release head is invalid'
+  [ "$(git -C "$ROOT" rev-parse "$RELEASE_HEAD^")" = "$SOURCE_COMMIT" ] || \
+    die 'release head does not directly follow the tested source'
+  [ "$(git -C "$ROOT" show "$RELEASE_HEAD:VERSION")" = "$VERSION" ] || \
+    die 'VERSION does not match the release target'
+  [ "$(git -C "$ROOT" show "$RELEASE_HEAD:BUILD")" = "$BUILD" ] || \
+    die 'BUILD does not match the release target'
+  if [ -f "$STATE_DIR/release-commit" ]; then
+    RELEASE_COMMIT="$(read_state_value release-commit)" || \
+      die 'merged release commit is missing'
+  fi
   verify_resumable_release_head
-  [ "$(git -C "$ROOT" rev-parse "$RELEASE_COMMIT^")" = "$SOURCE_COMMIT" ] || \
-    die 'release commit does not directly follow the tested source'
-  [ "$(<"$ROOT/VERSION")" = "$VERSION" ] || die 'VERSION does not match the release target'
-  [ "$(<"$ROOT/BUILD")" = "$BUILD" ] || die 'BUILD does not match the release target'
   verify_clean_worktree
-
-  tag_commit="$(git -C "$ROOT" rev-list -n 1 "$TAG" 2>/dev/null || true)"
-  if [ -z "$tag_commit" ]; then
-    git -C "$ROOT" tag -a "$TAG" -m "Detach $VERSION" "$RELEASE_COMMIT"
-  else
-    [ "$tag_commit" = "$RELEASE_COMMIT" ] || die "tag $TAG points to a different commit"
-  fi
-  tag_type="$(git -C "$ROOT" cat-file -t "refs/tags/$TAG")"
-  [ "$tag_type" = tag ] || die "release tag must be annotated: $TAG"
   has_stage prepared || record_stage prepared
 }
 
@@ -681,66 +690,12 @@ exact_confirmation() {
   [ "$confirmation" = "$expected" ] || die "$purpose confirmation must exactly equal $expected"
 }
 
-release_ci_run_id() {
-  gh run list \
-    --repo "$REPOSITORY" \
-    --workflow quality-gates.yml \
-    --branch "$RELEASE_CI_BRANCH" \
-    --commit "$RELEASE_COMMIT" \
-    --event push \
-    --limit 10 \
-    --json databaseId,headSha \
-    --jq "map(select(.headSha == \"$RELEASE_COMMIT\")) | first | .databaseId // empty"
-}
-
-wait_for_release_ci() {
-  local run_id="" approval attempts=0
-
-  while [ "$attempts" -lt 60 ]; do
-    run_id="$(release_ci_run_id)"
-    [ -z "$run_id" ] || break
-    attempts=$((attempts + 1))
-    sleep 5
-  done
-  [[ "$run_id" =~ ^[1-9][0-9]*$ ]] || \
-    die "GitHub Actions did not start for $RELEASE_CI_BRANCH"
-  write_state_value release-ci-run-id "$run_id"
-  note "waiting for required quality-gates run $run_id on $RELEASE_CI_BRANCH"
-  gh run watch "$run_id" --repo "$REPOSITORY" --exit-status --interval 10 || \
-    die 'release CI did not pass; main and the release tag were not updated'
-  approval="$(gh run view "$run_id" \
-    --repo "$REPOSITORY" \
-    --json conclusion,event,headSha,jobs \
-    --jq "select(.conclusion == \"success\" and .event == \"push\" and .headSha == \"$RELEASE_COMMIT\") | [.jobs[] | select(.name == \"quality-gates\" and .conclusion == \"success\")] | length")"
-  [ "$approval" = 1 ] || \
-    die 'release CI result does not contain the successful required quality-gates job'
-  has_stage ci-approved || record_stage ci-approved
-}
-
-approve_release_source() {
-  local remote_ci
-
-  if has_stage ci-approved; then
-    return
-  fi
-  remote_ci="$(remote_ref_commit "$RELEASE_CI_REF")"
-  if [ -z "$remote_ci" ]; then
-    git -C "$ROOT" push origin "$RELEASE_COMMIT:$RELEASE_CI_REF"
-  else
-    [ "$remote_ci" = "$RELEASE_COMMIT" ] || \
-      die "remote release CI branch already points to a different commit: $RELEASE_CI_BRANCH"
-  fi
-  [ "$(remote_ref_commit "$RELEASE_CI_REF")" = "$RELEASE_COMMIT" ] || \
-    die 'remote release CI branch verification failed after push'
-  wait_for_release_ci
-}
-
 remove_release_ci_branch() {
   local remote_ci
 
   remote_ci="$(remote_ref_commit "$RELEASE_CI_REF")"
   [ -n "$remote_ci" ] || return 0
-  [ "$remote_ci" = "$RELEASE_COMMIT" ] || \
+  [ "$remote_ci" = "$RELEASE_HEAD" ] || \
     die "refusing to remove changed release CI branch: $RELEASE_CI_BRANCH"
   git -C "$ROOT" push origin ":$RELEASE_CI_REF"
   [ -z "$(remote_ref_commit "$RELEASE_CI_REF")" ] || \
@@ -748,39 +703,87 @@ remove_release_ci_branch() {
 }
 
 push_release_source() {
-  local remote_main remote_tag
+  local remote_ci remote_main remote_tag merge_output parents tag_commit tag_type
+  local -a release_pr_args
   if has_stage pushed; then
+    RELEASE_HEAD="$(read_state_value release-head)" || die 'release head is missing'
+    RELEASE_COMMIT="$(read_state_value release-commit)" || die 'release commit is missing'
     verify_release_remote_refs
     remove_release_ci_branch
     return
   fi
   remote_main="$(remote_ref_commit refs/heads/main)"
   remote_tag="$(remote_ref_commit "refs/tags/$TAG")"
-  if [ "$remote_main" = "$RELEASE_COMMIT" ] && [ "$remote_tag" = "$RELEASE_COMMIT" ]; then
-    remove_release_ci_branch
-    has_stage pushed || record_stage pushed
-    return
+  if [ -f "$STATE_DIR/release-commit" ]; then
+    RELEASE_COMMIT="$(read_state_value release-commit)" || \
+      die 'merged release commit is invalid'
+    [ -z "$remote_tag" ] || [ "$remote_tag" = "$RELEASE_COMMIT" ] || \
+      die 'remote release tag appeared with an unexpected state'
+  else
+    [ -z "$remote_tag" ] || \
+      die 'remote release tag appeared with an unexpected state'
+    release_pr_args=(
+      --repository "$REPOSITORY"
+      --version "$VERSION"
+      --branch "$RELEASE_CI_BRANCH"
+      --head "$RELEASE_HEAD"
+      --repair-attempt 0
+    )
+    if [ "$remote_main" = "$SOURCE_COMMIT" ]; then
+      remote_ci="$(remote_ref_commit "$RELEASE_CI_REF")"
+      if [ -z "$remote_ci" ]; then
+        git -C "$ROOT" push origin "$RELEASE_HEAD:$RELEASE_CI_REF"
+      else
+        [ "$remote_ci" = "$RELEASE_HEAD" ] || \
+          die "remote release PR branch already points to a different commit: $RELEASE_CI_BRANCH"
+      fi
+      [ "$(remote_ref_commit "$RELEASE_CI_REF")" = "$RELEASE_HEAD" ] || \
+        die 'remote release PR branch verification failed after push'
+      note "opening the bounded release pull request for $REPOSITORY@$TAG"
+    else
+      release_pr_args+=(--merged-only)
+      note "recovering the exact merged release pull request for $REPOSITORY@$TAG"
+    fi
+    "$ROOT/scripts/release-pr" "${release_pr_args[@]}"
+    merge_output="$APP_ROOT/build/release-pr.json"
+    RELEASE_COMMIT="$(plutil -extract merge_commit raw -o - "$merge_output")"
   fi
-  [ "$remote_main" = "$SOURCE_COMMIT" ] || die 'remote main changed before release push'
-  [ -z "$remote_tag" ] || die 'remote release tag appeared with an unexpected state'
-  note "release invocation authorized CI validation and atomic publication of $REPOSITORY@$TAG"
-  approve_release_source
+  [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || \
+    die 'release PR did not return an exact merge commit'
+  fetch_origin
   remote_main="$(remote_ref_commit refs/heads/main)"
+  [ "$remote_main" = "$RELEASE_COMMIT" ] || \
+    die 'remote main does not match the merged release pull request'
+  parents="$(git -C "$ROOT" show -s --format=%P "$RELEASE_COMMIT")"
+  [ "$parents" = "$SOURCE_COMMIT $RELEASE_HEAD" ] || \
+    die 'release merge parents do not match the tested source and head'
+  [ "$(git -C "$ROOT" rev-parse "$RELEASE_COMMIT^{tree}")" = \
+    "$(git -C "$ROOT" rev-parse "$RELEASE_HEAD^{tree}")" ] || \
+    die 'release merge tree does not match the tested release head'
+  git -C "$ROOT" merge --ff-only refs/remotes/origin/main
+  [ -f "$STATE_DIR/release-commit" ] || \
+    write_state_value release-commit "$RELEASE_COMMIT"
+  tag_commit="$(git -C "$ROOT" rev-list -n 1 "$TAG" 2>/dev/null || true)"
+  if [ -z "$tag_commit" ]; then
+    git -C "$ROOT" tag -a "$TAG" -m "Detach $VERSION" "$RELEASE_COMMIT"
+  else
+    [ "$tag_commit" = "$RELEASE_COMMIT" ] || die "tag $TAG points to a different commit"
+  fi
+  tag_type="$(git -C "$ROOT" cat-file -t "refs/tags/$TAG")"
+  [ "$tag_type" = tag ] || die "release tag must be annotated: $TAG"
+  if [ -z "$remote_tag" ]; then
+    git -C "$ROOT" push origin "refs/tags/$TAG:refs/tags/$TAG"
+  fi
   remote_tag="$(remote_ref_commit "refs/tags/$TAG")"
-  [ "$remote_main" = "$SOURCE_COMMIT" ] || die 'remote main changed while release CI was running'
-  [ -z "$remote_tag" ] || die 'remote release tag appeared while release CI was running'
-  git -C "$ROOT" push --atomic origin \
-    "$RELEASE_COMMIT:refs/heads/main" "refs/tags/$TAG:refs/tags/$TAG"
-  remote_main="$(remote_ref_commit refs/heads/main)"
-  remote_tag="$(remote_ref_commit "refs/tags/$TAG")"
-  [ "$remote_main" = "$RELEASE_COMMIT" ] && [ "$remote_tag" = "$RELEASE_COMMIT" ] || \
-    die 'remote main/tag verification failed after push'
+  [ "$remote_tag" = "$RELEASE_COMMIT" ] || \
+    die 'remote release tag does not match the merged release commit'
   remove_release_ci_branch
   record_stage pushed
 }
 
 release_artifacts_valid() {
   local manifest="$APP_ROOT/build/update-assets/release-manifest.json"
+  local sbom="$APP_ROOT/build/update-assets/release-sbom.spdx.json"
   local appcast="$APP_ROOT/build/update-assets/appcast.xml"
   local dmg="$APP_ROOT/build/Detach.dmg"
   local update="$APP_ROOT/build/update-assets/Detach-$VERSION.zip"
@@ -788,10 +791,15 @@ release_artifacts_valid() {
     [ -f "$appcast" ] && [ ! -L "$appcast" ] && \
     [ -f "$dmg" ] && [ ! -L "$dmg" ] && \
     [ -f "$update" ] && [ ! -L "$update" ] || return 1
-  [ "$(manifest_value "$manifest" version 2>/dev/null || true)" = "$VERSION" ] && \
+  [ -f "$sbom" ] && [ ! -L "$sbom" ] && [ -f "$sbom.sha256" ] && \
+    [ ! -L "$sbom.sha256" ] || return 1
+  [ "$(manifest_value "$manifest" schema 2>/dev/null || true)" = 2 ] && \
+    [ "$(manifest_value "$manifest" version 2>/dev/null || true)" = "$VERSION" ] && \
     [ "$(manifest_value "$manifest" build 2>/dev/null || true)" = "$BUILD" ] && \
     [ "$(manifest_value "$manifest" tag 2>/dev/null || true)" = "$TAG" ] && \
     [ "$(manifest_value "$manifest" git_commit 2>/dev/null || true)" = "$RELEASE_COMMIT" ] || return 1
+  [ "$(manifest_value "$manifest" sbom_sha256 2>/dev/null || true)" = \
+    "$(shasum -a 256 "$sbom" | awk '{print $1}')" ] || return 1
   (
     cd -P "$APP_ROOT/build"
     shasum -a 256 -c Detach.dmg.sha256 >/dev/null
@@ -802,6 +810,13 @@ release_artifacts_valid() {
       shasum -a 256 -c "$checksum" >/dev/null
     ) || return 1
   done
+  (
+    cd -P "$APP_ROOT/build/update-assets"
+    shasum -a 256 -c release-sbom.spdx.json.sha256 >/dev/null
+  ) || return 1
+  "$ROOT/scripts/release-sbom" validate \
+    --version "$VERSION" --tag "$TAG" --commit "$RELEASE_COMMIT" \
+    --repository "$REPOSITORY" --input "$sbom" >/dev/null || return 1
   "$APP_ROOT/scripts/verify-appcast.sh" "$appcast" >/dev/null || return 1
 }
 
@@ -1050,6 +1065,8 @@ verify_published_release() {
     "$APP_ROOT/build/update-assets/Detach-$VERSION.zip.sha256"
     "$APP_ROOT/build/update-assets/appcast.xml"
     "$APP_ROOT/build/update-assets/appcast.xml.sha256"
+    "$APP_ROOT/build/update-assets/release-sbom.spdx.json"
+    "$APP_ROOT/build/update-assets/release-sbom.spdx.json.sha256"
     "$APP_ROOT/build/update-assets/release-manifest.json"
     "$APP_ROOT/build/update-assets/release-manifest.json.sha256"
   )
@@ -1062,10 +1079,19 @@ verify_published_release() {
       die "published asset hash mismatch: $name"
   done
   "$APP_ROOT/scripts/verify-appcast.sh" "$remote_root/appcast.xml"
-  [ "$(manifest_value "$remote_root/release-manifest.json" version)" = "$VERSION" ] && \
+  [ "$(manifest_value "$remote_root/release-manifest.json" schema)" = 2 ] && \
+    [ "$(manifest_value "$remote_root/release-manifest.json" version)" = "$VERSION" ] && \
     [ "$(manifest_value "$remote_root/release-manifest.json" build)" = "$BUILD" ] && \
     [ "$(manifest_value "$remote_root/release-manifest.json" git_commit)" = "$RELEASE_COMMIT" ] || \
     die 'published release manifest does not match the workflow'
+  [ "$(manifest_value "$remote_root/release-manifest.json" sbom_sha256)" = \
+    "$(shasum -a 256 "$remote_root/release-sbom.spdx.json" | awk '{print $1}')" ] || \
+    die 'published release SBOM does not match the manifest'
+  "$ROOT/scripts/release-sbom" validate \
+    --version "$VERSION" --tag "$TAG" --commit "$RELEASE_COMMIT" \
+    --repository "$REPOSITORY" \
+    --input "$remote_root/release-sbom.spdx.json" >/dev/null || \
+    die 'published release SBOM is invalid'
   curl --fail --silent --show-error --location --max-time 60 \
     "https://github.com/$REPOSITORY/releases/latest/download/appcast.xml" \
     --output "$remote_root/latest-appcast.xml"

@@ -140,7 +140,7 @@ CARE_EVAL_DIGEST="$(shasum -a 256 "$CARE_EVALS" | awk '{print $1}')"
 CARE_HISTORY_DIGEST="$(shasum -a 256 "$CARE_HISTORY" | awk '{print $1}')"
 cat >"$CARE_SUMMARY" <<JSON
 {
-  "schema": 1,
+  "schema": 2,
   "policy": $POLICY_VERSION,
   "source_commit": "$SOURCE_COMMIT",
   "status": "passed",
@@ -170,10 +170,6 @@ cat >"$CARE_SUMMARY" <<JSON
     "failed_or_interrupted": 0,
     "environment_failures": 0,
     "invalid_evidence": 0
-  },
-  "autonomy": {
-    "review": "not-configured",
-    "repair_loops": "not-yet-emitted"
   }
 }
 JSON
@@ -219,13 +215,20 @@ import json
 import sys
 with open(sys.argv[1], encoding="utf-8") as source:
     data = json.load(source)
-assert data["schema"] == 1
+assert data["schema"] == 2
 assert data["run"]["authority"] == "ci-merge"
 assert data["run"]["result"] == "passed"
 assert [spec["id"] for spec in data["specifications"]] == ["app"]
 assert data["quality"]["planned_scenarios"] == 3
 assert data["quality"]["coverage"]["comparison"]["mode"] == "green-main-artifact"
 assert data["quality"]["mutation"]["score_percent"] == 100
+assert data["quality"]["merge"] == "not-yet-emitted"
+assert data["quality"]["security"] == {
+    "cadence": "main-and-weekly",
+    "codeql_languages": ["actions", "swift"],
+    "pull_request_feedback": "not-selected",
+    "status": "configured",
+}
 assert data["quality"]["care"]["evals"] == {
     "categories": {
         "escaped-defect": 2, "historical-task": 2,
@@ -234,11 +237,29 @@ assert data["quality"]["care"]["evals"] == {
     "passed": 8,
     "total": 8,
 }
-assert data["quality"]["review"] == "not-configured"
 assert len(data["trends"]) == 2
 assert [journey["id"] for journey in data["journeys"]] == [
     "J-ONBOARD-FIRST-RUN", "J-ONBOARD-PROVIDER", "J-ONBOARD-APPROVAL"
 ]
+
+sys.path.insert(0, "tools")
+from quality_dashboard import DashboardError, parse_merge_evidence
+assert parse_merge_evidence(
+    "Merge change\n\nQuality-Policy: %s\nQuality-Repair-Attempt: 1\n" % data["run"]["policy"],
+    data["run"]["policy"], 2,
+) == {
+    "policy": data["run"]["policy"], "repair_attempt": 1,
+    "maximum_repair_loops": 2, "status": "passed",
+}
+try:
+    parse_merge_evidence(
+        "Quality-Policy: %s\n" % data["run"]["policy"],
+        data["run"]["policy"], 2,
+    )
+except DashboardError:
+    pass
+else:
+    raise AssertionError("dashboard accepted incomplete merge evidence")
 PY
 
 manifest_digest="$(shasum -a 256 "$RUN_DIR/manifest.tsv" | awk '{print $1}')"

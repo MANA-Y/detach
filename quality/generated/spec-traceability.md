@@ -15,10 +15,12 @@ It lists current specification ownership and verification links.
 - `*.sh`
 - `.gitattributes`
 - `.github/*`
+- `.github/dependabot.yml`
 - `.github/workflows/documentation-care.yml`
 - `.github/workflows/quality-care.yml`
 - `.github/workflows/quality-gates.yml`
 - `.github/workflows/quality-mutations.yml`
+- `.github/workflows/security.yml`
 - `.gitignore`
 - `AGENTS.md`
 - `CLAUDE.md`
@@ -34,6 +36,7 @@ It lists current specification ownership and verification links.
 - `scripts/quality-dashboard`
 - `scripts/quality-gate`
 - `scripts/quality-history`
+- `scripts/quality-merge`
 - `scripts/quality-metrics`
 - `scripts/quality-mutation`
 - `scripts/quality-policy`
@@ -45,6 +48,8 @@ It lists current specification ownership and verification links.
 - `tests/quality-*`
 - `tests/quality_*`
 - `tests/release-budget*`
+- `tests/security-*`
+- `tests/security_*`
 - `tests/shell-safety*`
 - `tests/test-suite-contract.sh`
 - `tools/quality_baseline.py`
@@ -52,6 +57,7 @@ It lists current specification ownership and verification links.
 - `tools/quality_dashboard.py`
 - `tools/quality_gate.py`
 - `tools/quality_history.py`
+- `tools/quality_merge.py`
 - `tools/quality_metrics.py`
 - `tools/quality_mutation.py`
 - `tools/quality_policy.py`
@@ -62,7 +68,8 @@ It lists current specification ownership and verification links.
 
 | Requirement | Journeys | Scenarios | Outcome |
 | --- | --- | --- | --- |
-| `QC-QUALITY-POLICY` | `J-QUALITY-CHANGE` | `SC-POLICY-CONTRACT` (automated, `gate-contract`)<br>`SC-PROMOTION-CONTRACT` (automated, `gate-contract`) | One current policy owns quality selection and traceability. |
+| `QC-QUALITY-POLICY` | `J-QUALITY-CHANGE` | `SC-POLICY-CONTRACT` (automated, `gate-contract`)<br>`SC-PROMOTION-CONTRACT` (automated, `gate-contract`)<br>`SC-MERGE-CONTRACT` (automated, `gate-contract`)<br>`SC-SECURITY-CONTRACT` (automated, `gate-contract`) | One current policy owns quality selection and traceability. |
+| `QC-QUALITY-SUPPLY-CHAIN` | `J-QUALITY-CHANGE` | `SC-POLICY-CONTRACT` (automated, `gate-contract`)<br>`SC-PROMOTION-CONTRACT` (automated, `gate-contract`)<br>`SC-MERGE-CONTRACT` (automated, `gate-contract`)<br>`SC-SECURITY-CONTRACT` (automated, `gate-contract`) | Bounded automation scans code and keeps dependency pins current. |
 | `QC-DOC-CONSISTENCY` | `J-DOCS-CONSISTENCY` | `SC-DOCS-CONTRACT` (automated, `static`) | Durable documentation and generated quality views stay synchronized. |
 
 ## `runtime`
@@ -216,15 +223,23 @@ It lists current specification ownership and verification links.
 - `app/scripts/verify-appcast.sh`
 - `scripts/release-impact`
 - `scripts/release-lid-probe`
+- `scripts/release-pr`
+- `scripts/release-sbom`
 - `scripts/release-version`
 - `tests/publish-preflight.sh`
 - `tests/release-impact.sh`
+- `tests/release-pr*`
 - `tests/release-preflight.sh`
+- `tests/release-sbom*`
 - `tests/release-workflow.sh`
+- `tests/release_pr*`
+- `tests/release_sbom*`
+- `tools/release_pr.py`
+- `tools/release_sbom.py`
 
 ### Requirement verification
 
 | Requirement | Journeys | Scenarios | Outcome |
 | --- | --- | --- | --- |
 | `QC-RELEASE-INSTALL` | `J-INSTALL-CLEAN`<br>`J-INSTALL-REPAIR`<br>`J-INSTALL-UNINSTALL` | `SC-INSTALL-CLEAN` (instrumented, `distribution`)<br>`SC-RUNTIME-PACKAGE` (instrumented, `tmux-runtime`)<br>`SC-INSTALL-REPAIR` (instrumented, `distribution`)<br>`SC-INSTALL-UNINSTALL` (instrumented, `distribution`) | Install, repair, and uninstall mutate only Detach-owned payloads and selected state. |
-| `QC-RELEASE-PUBLISH` | `J-PUBLISH-ARTIFACTS` | `SC-PUBLISH-CONTRACT` (instrumented, `publish-preflight`) | Publication exposes only independently verified allowlisted artifacts. |
+| `QC-RELEASE-PUBLISH` | `J-PUBLISH-ARTIFACTS` | `SC-PUBLISH-CONTRACT` (instrumented, `publish-preflight`)<br>`SC-RELEASE-SBOM` (automated, `gate-contract`)<br>`SC-RELEASE-PR` (automated, `gate-contract`) | Publication exposes only independently verified allowlisted artifacts. |

@@ -31,8 +31,10 @@ grep -F 'promotion_root="$(scripts/quality-promote 2>"$error_log")"' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F "steps.promoted-main.outputs.promoted != 'true'" \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F -- '- "detach-release/**"' \
-  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+! grep -F 'detach-release/' "$ROOT/.github/workflows/quality-gates.yml" >/dev/null || {
+  printf 'quality gate has a duplicate release-branch push path\n' >&2
+  exit 1
+}
 ! grep -E 'uses:[[:space:]]+[^[:space:]]+@v[0-9]' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null || {
   printf 'quality gate workflow contains a mutable Action tag\n' >&2

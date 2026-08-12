@@ -62,8 +62,9 @@
   evidence. `scripts/quality-dashboard serve --seconds 300` serves it only on
   loopback and stops at the deadline. A green `main` workflow publishes the
   same static files to `https://iltsarev.github.io/detach/`. Add
-  `--care-summary <json>` to show validated eval, latency, run-health, and
-  autonomy facts. Scheduled care can publish an attention result before the
+  `--care-summary <json>` to show validated eval, latency, and run-health
+  facts. A merge commit from `scripts/quality-merge` adds the bounded repair
+  attempt. Scheduled care can publish an attention result before the
   workflow records FAIL and opens its issue.
 - `scripts/quality-mutation validate` checks the deterministic safety corpus.
   `scripts/quality-mutation run --id <id> --output <json> --log <log>` runs one
@@ -178,11 +179,13 @@ ignored owner-only `.env.release`, runs the complete suite before changing Git,
 requires the tracked root `BUILD` to match the latest published manifest,
 increments it together with `VERSION` in one release commit, and creates one
 annotated tag. The invocation authorizes its automated commit, tag, and
-publication steps. It pushes the commit first to a unique
-`detach-release/vX.Y.Z` ref. The exact commit must pass the official GitHub
-Actions `quality-gates` job. The workflow makes sure that remote `main` did not
-change. Then it atomically pushes the approved commit and tag, verifies both
-refs, and removes the matching temporary ref. It then reuses the
+publication steps. It pushes the release head to a unique
+`detach-release/vX.Y.Z` branch. `scripts/release-pr` creates or resumes one
+exact pull request. The normal strict `quality-gates` job must pass before
+bounded exact-head auto-merge. The workflow verifies the final merge parents
+and tree, tags that merge, verifies remote `main` and the tag, and removes the
+matching temporary branch. It does not push release metadata directly to
+`main`. It then reuses the
 strict `app/scripts/release.sh` and `app/scripts/publish-release.sh`, installs
 the signed candidate, runs the real power smoke, publishes, and independently
 downloads and hashes every remote asset. `scripts/release-impact` compares the
@@ -204,6 +207,12 @@ Interrupted draft uploads may resume only after every existing asset digest is
 matched; an unexpected or changed asset fails closed. Do not run the two
 low-level scripts manually during a normal release. Do not run, tag, notarize,
 upload, or publish as part of ordinary implementation or verification.
+
+Each published release also contains `release-sbom.spdx.json` and its SHA-256
+sidecar. `scripts/release-sbom` builds it from the pinned Swift and bundled tmux
+source metadata. The release manifest binds the SBOM digest to the exact tag
+and commit. Preflight and remote verification reject a missing, changed, or
+structurally invalid SBOM.
 
 ## Clean installation and system UI release checklist
 

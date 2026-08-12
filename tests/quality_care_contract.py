@@ -175,6 +175,7 @@ def main() -> int:
             ]
         )
         healthy = json.loads(healthy_summary.read_text(encoding="utf-8"))
+        assert healthy["schema"] == 2
         assert healthy["status"] == "passed"
         assert healthy["latency"]["alert_seconds"] == 480
         assert len(healthy["source_commit"]) == 40

@@ -93,17 +93,17 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   changes, evidence is invalid, or pull-request wall p95 reaches 80 percent of
   the ten-minute SLO. A separate bounded documentation-care workflow can open
   a pull request only for deterministic files under `quality/generated/`.
-  Neither workflow can enter a release path. Care evidence reports agent review
-  as not configured until an independent provider binds a review to the exact
-  commit.
+  Neither workflow can enter a release path. Code review stays a read-only step
+  in the active agent workflow. It is not a second merge authority and does not
+  require a repository provider, secret, or blocking check.
 - A deterministic static dashboard reads only validated gate evidence. The
   same artifact opens locally and deploys to GitHub Pages only after a green
   `main` run with direct or promoted evidence, or a green scheduled mutation
   run. Bounded quality care can also deploy its validated result before it
   marks an attention run as failed. Care evidence binds the source commit and
   SHA-256 digests of its eval and history inputs. The dashboard shows measured
-  coverage, mutation score, workflow evals, feedback p95 and SLO, review state,
-  and security state when they exist. A later main or mutation deploy restores
+  coverage, mutation score, workflow evals, feedback p95 and SLO, and security
+  state when they exist. A later main or mutation deploy restores
   the newest valid current-policy care artifact. Only deploy jobs have Pages
   write permission. A healthy care run closes the prior scoped attention issue.
 - An ordinary merged pull request does not repeat the full functional matrix
@@ -111,14 +111,25 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   only when the tested merge and final merge have the same tree and ordered
   parents. Promotion keeps both commit identities and every original digest.
   Missing or ambiguous proof falls back to a full `ci-main` repository gate.
-- The active GitHub ruleset for `main` has no bypass actors. It requires the
-  GitHub Actions `quality-gates` job. An administrator cannot use an unchecked
-  push as a substitute for CI. A release commit first gets the same check on
-  its temporary release ref.
+- The active GitHub ruleset for `main` has no bypass actors. It requires a pull
+  request, a current strict GitHub Actions `quality-gates` job, merge commits,
+  and no approving review. It rejects deletion and non-fast-forward updates.
+  An administrator cannot use an unchecked push as a substitute for CI. A
+  release head gets the same check through its release pull request.
+- `scripts/quality-merge` waits at most the pull-request feedback SLO for the
+  exact head check. It then enables native auto-merge for that head and waits
+  at most the merge deadline. It disables auto-merge on timeout. The command
+  rejects a changed head, an invalid ruleset, and a repair attempt above the
+  policy maximum. It writes current-policy evidence under `app/build/`.
+- Dependabot checks pinned GitHub Actions and Swift packages each week. A
+  bounded CodeQL workflow scans GitHub Actions source on Linux and explicitly
+  built arm64 Swift source on macOS. It runs after `main` changes and each week.
+  It does not add work to pull-request feedback or enter a release path.
 - By default, put a ready task-scoped change on a topic branch. Review the
-  staged public diff, commit it, and push it. Merge it only after the required
-  PR check passes. Then verify that local `main` and upstream `main` are equal.
-  The owner can ask to keep the change local.
+  staged public diff, commit it, and push it. Open a pull request, then give its
+  number, exact head, and current repair attempt to `scripts/quality-merge`.
+  After its bounded PASS, verify that local `main` and upstream `main` are
+  equal. The owner can ask to keep the change local.
 - `tests/docs-contract.sh` enforces this structure and runs inside the
   static quality stage.
 

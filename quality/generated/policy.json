@@ -6,7 +6,8 @@
         "J-QUALITY-CHANGE"
       ],
       "requirements": [
-        "QC-QUALITY-POLICY"
+        "QC-QUALITY-POLICY",
+        "QC-QUALITY-SUPPLY-CHAIN"
       ],
       "spec": "docs/specs/documentation.md"
     },
@@ -280,11 +281,14 @@
       "capability": "quality-system",
       "id": "J-QUALITY-CHANGE",
       "requirements": [
-        "QC-QUALITY-POLICY"
+        "QC-QUALITY-POLICY",
+        "QC-QUALITY-SUPPLY-CHAIN"
       ],
       "scenarios": [
         "SC-POLICY-CONTRACT",
-        "SC-PROMOTION-CONTRACT"
+        "SC-PROMOTION-CONTRACT",
+        "SC-MERGE-CONTRACT",
+        "SC-SECURITY-CONTRACT"
       ],
       "summary": "A policy change keeps local feedback focused and hosted evidence complete."
     },
@@ -604,7 +608,9 @@
         "QC-RELEASE-PUBLISH"
       ],
       "scenarios": [
-        "SC-PUBLISH-CONTRACT"
+        "SC-PUBLISH-CONTRACT",
+        "SC-RELEASE-SBOM",
+        "SC-RELEASE-PR"
       ],
       "summary": "Publication exposes only verified allowlisted artifacts."
     }
@@ -616,10 +622,9 @@
     "merge_wait_seconds": 300,
     "mutation_score_percent": 100,
     "mutation_timeout_seconds": 240,
-    "pr_feedback_seconds": 600,
-    "review_seconds": 180
+    "pr_feedback_seconds": 600
   },
-  "policy": 26,
+  "policy": 27,
   "release_domains": [
     {
       "gates": "-",
@@ -768,6 +773,11 @@
       "summary": "One current policy owns quality selection and traceability."
     },
     {
+      "id": "QC-QUALITY-SUPPLY-CHAIN",
+      "spec": "docs/specs/documentation.md",
+      "summary": "Bounded automation scans code and keeps dependency pins current."
+    },
+    {
       "id": "QC-DOC-CONSISTENCY",
       "spec": "docs/specs/documentation.md",
       "summary": "Durable documentation and generated quality views stay synchronized."
@@ -783,6 +793,20 @@
     },
     {
       "pattern": ".github/workflows/quality-gates.yml",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": ".github/workflows/security.yml",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": ".github/dependabot.yml",
       "priority": 1000,
       "release_domain": "safe",
       "spec": "docs/specs/documentation.md",
@@ -887,6 +911,20 @@
       "test_domain": "policy"
     },
     {
+      "pattern": "scripts/quality-merge",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tools/quality_merge.py",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
       "pattern": "scripts/quality-mutation",
       "priority": 1000,
       "release_domain": "safe",
@@ -983,6 +1021,48 @@
       "release_domain": "safe",
       "spec": "docs/specs/documentation.md",
       "test_domain": "policy"
+    },
+    {
+      "pattern": "tests/security-*",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tests/security_*",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tests/release-pr*",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-contract"
+    },
+    {
+      "pattern": "tests/release_pr*",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-contract"
+    },
+    {
+      "pattern": "tests/release-sbom*",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-contract"
+    },
+    {
+      "pattern": "tests/release_sbom*",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-contract"
     },
     {
       "pattern": "tests/release-budget*",
@@ -1482,6 +1562,34 @@
       "test_domain": "release-tool"
     },
     {
+      "pattern": "scripts/release-sbom",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-tool"
+    },
+    {
+      "pattern": "tools/release_sbom.py",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-tool"
+    },
+    {
+      "pattern": "scripts/release-pr",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-tool"
+    },
+    {
+      "pattern": "tools/release_pr.py",
+      "priority": 900,
+      "release_domain": "safe",
+      "spec": "docs/specs/release.md",
+      "test_domain": "release-tool"
+    },
+    {
       "pattern": "app/scripts/make-dmg.sh",
       "priority": 900,
       "release_domain": "install",
@@ -1723,6 +1831,30 @@
     {
       "command": "tests/quality-promote.sh",
       "id": "SC-PROMOTION-CONTRACT",
+      "stage": "gate-contract",
+      "status": "automated"
+    },
+    {
+      "command": "tests/quality-merge.sh",
+      "id": "SC-MERGE-CONTRACT",
+      "stage": "gate-contract",
+      "status": "automated"
+    },
+    {
+      "command": "tests/security-contract.sh",
+      "id": "SC-SECURITY-CONTRACT",
+      "stage": "gate-contract",
+      "status": "automated"
+    },
+    {
+      "command": "tests/release-sbom.sh",
+      "id": "SC-RELEASE-SBOM",
+      "stage": "gate-contract",
+      "status": "automated"
+    },
+    {
+      "command": "tests/release-pr.sh",
+      "id": "SC-RELEASE-PR",
       "stage": "gate-contract",
       "status": "automated"
     },
@@ -1972,10 +2104,12 @@
         "*.sh",
         ".gitattributes",
         ".github/*",
+        ".github/dependabot.yml",
         ".github/workflows/documentation-care.yml",
         ".github/workflows/quality-care.yml",
         ".github/workflows/quality-gates.yml",
         ".github/workflows/quality-mutations.yml",
+        ".github/workflows/security.yml",
         ".gitignore",
         "AGENTS.md",
         "CLAUDE.md",
@@ -1991,6 +2125,7 @@
         "scripts/quality-dashboard",
         "scripts/quality-gate",
         "scripts/quality-history",
+        "scripts/quality-merge",
         "scripts/quality-metrics",
         "scripts/quality-mutation",
         "scripts/quality-policy",
@@ -2002,6 +2137,8 @@
         "tests/quality-*",
         "tests/quality_*",
         "tests/release-budget*",
+        "tests/security-*",
+        "tests/security_*",
         "tests/shell-safety*",
         "tests/test-suite-contract.sh",
         "tools/quality_baseline.py",
@@ -2009,6 +2146,7 @@
         "tools/quality_dashboard.py",
         "tools/quality_gate.py",
         "tools/quality_history.py",
+        "tools/quality_merge.py",
         "tools/quality_metrics.py",
         "tools/quality_mutation.py",
         "tools/quality_policy.py",
@@ -2034,9 +2172,54 @@
               "id": "SC-PROMOTION-CONTRACT",
               "stage": "gate-contract",
               "status": "automated"
+            },
+            {
+              "command": "tests/quality-merge.sh",
+              "id": "SC-MERGE-CONTRACT",
+              "stage": "gate-contract",
+              "status": "automated"
+            },
+            {
+              "command": "tests/security-contract.sh",
+              "id": "SC-SECURITY-CONTRACT",
+              "stage": "gate-contract",
+              "status": "automated"
             }
           ],
           "summary": "One current policy owns quality selection and traceability."
+        },
+        {
+          "id": "QC-QUALITY-SUPPLY-CHAIN",
+          "journeys": [
+            "J-QUALITY-CHANGE"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/quality-policy.sh",
+              "id": "SC-POLICY-CONTRACT",
+              "stage": "gate-contract",
+              "status": "automated"
+            },
+            {
+              "command": "tests/quality-promote.sh",
+              "id": "SC-PROMOTION-CONTRACT",
+              "stage": "gate-contract",
+              "status": "automated"
+            },
+            {
+              "command": "tests/quality-merge.sh",
+              "id": "SC-MERGE-CONTRACT",
+              "stage": "gate-contract",
+              "status": "automated"
+            },
+            {
+              "command": "tests/security-contract.sh",
+              "id": "SC-SECURITY-CONTRACT",
+              "stage": "gate-contract",
+              "status": "automated"
+            }
+          ],
+          "summary": "Bounded automation scans code and keeps dependency pins current."
         },
         {
           "id": "QC-DOC-CONSISTENCY",
@@ -2698,11 +2881,19 @@
         "app/scripts/verify-appcast.sh",
         "scripts/release-impact",
         "scripts/release-lid-probe",
+        "scripts/release-pr",
+        "scripts/release-sbom",
         "scripts/release-version",
         "tests/publish-preflight.sh",
         "tests/release-impact.sh",
+        "tests/release-pr*",
         "tests/release-preflight.sh",
-        "tests/release-workflow.sh"
+        "tests/release-sbom*",
+        "tests/release-workflow.sh",
+        "tests/release_pr*",
+        "tests/release_sbom*",
+        "tools/release_pr.py",
+        "tools/release_sbom.py"
       ],
       "path": "docs/specs/release.md",
       "requirements": [
@@ -2752,6 +2943,18 @@
               "id": "SC-PUBLISH-CONTRACT",
               "stage": "publish-preflight",
               "status": "instrumented"
+            },
+            {
+              "command": "tests/release-sbom.sh",
+              "id": "SC-RELEASE-SBOM",
+              "stage": "gate-contract",
+              "status": "automated"
+            },
+            {
+              "command": "tests/release-pr.sh",
+              "id": "SC-RELEASE-PR",
+              "stage": "gate-contract",
+              "status": "automated"
             }
           ],
           "summary": "Publication exposes only independently verified allowlisted artifacts."
@@ -2976,6 +3179,11 @@
       "capabilities": "update,publication",
       "id": "release-workflow-test",
       "stages": "static,release-workflow,release-budget"
+    },
+    {
+      "capabilities": "update,publication",
+      "id": "release-contract",
+      "stages": "static,gate-contract"
     },
     {
       "capabilities": "quality-system",

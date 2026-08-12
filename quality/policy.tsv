@@ -1,5 +1,5 @@
 schema	1
-policy	26
+policy	27
 spec	documentation	docs/specs/documentation.md	Agent context, specifications, and quality automation stay synchronized.
 spec	runtime	docs/specs/runtime.md	Runtime state and session operations preserve exact ownership.
 spec	power	docs/specs/power.md	Power protection fails safe across both required layers.
@@ -7,7 +7,6 @@ spec	app	docs/specs/app.md	The app presents and changes only typed product state
 spec	release	docs/specs/release.md	Distribution and publication preserve verified immutable artifacts.
 limit	pr_feedback_seconds	600
 limit	local_feedback_seconds	120
-limit	review_seconds	180
 limit	merge_wait_seconds	300
 limit	max_repair_loops	2
 limit	changed_line_coverage_percent	90
@@ -54,6 +53,7 @@ test-domain	ui-test	static,app,release-budget	app-experience
 test-domain	release-preflight-test	static,release-preflight,release-budget	update
 test-domain	publish-preflight-test	static,publish-preflight,release-budget	publication
 test-domain	release-workflow-test	static,release-workflow,release-budget	update,publication
+test-domain	release-contract	static,gate-contract	update,publication
 test-domain	metadata	static	quality-system
 test-domain	unknown	*	*
 release-domain	safe	-	false
@@ -71,6 +71,8 @@ coverage-region	ui	app/Sources/DetachApp/SessionDetailView.swift	ui-e2e-instrume
 coverage-region	ui	app/Sources/DetachApp/SidebarView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-SESSION-DETAIL	The packaged journey covers sidebar control geometry.
 route	1000	quality/*	policy	safe	docs/specs/documentation.md
 route	1000	.github/workflows/quality-gates.yml	policy	safe	docs/specs/documentation.md
+route	1000	.github/workflows/security.yml	policy	safe	docs/specs/documentation.md
+route	1000	.github/dependabot.yml	policy	safe	docs/specs/documentation.md
 route	1000	docs/quality-gates.md	policy	safe	docs/specs/documentation.md
 route	1000	docs/testing.md	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-gate	policy	safe	docs/specs/documentation.md
@@ -85,6 +87,8 @@ route	1000	scripts/quality-baseline	policy	safe	docs/specs/documentation.md
 route	1000	tools/quality_baseline.py	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-promote	policy	safe	docs/specs/documentation.md
 route	1000	tools/quality_promote.py	policy	safe	docs/specs/documentation.md
+route	1000	scripts/quality-merge	policy	safe	docs/specs/documentation.md
+route	1000	tools/quality_merge.py	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-mutation	policy	safe	docs/specs/documentation.md
 route	1000	tools/quality_mutation.py	policy	safe	docs/specs/documentation.md
 route	1000	.github/workflows/quality-mutations.yml	policy	safe	docs/specs/documentation.md
@@ -99,6 +103,12 @@ route	1000	tools/quality_care.py	policy	safe	docs/specs/documentation.md
 route	1000	scripts/test	policy	safe	docs/specs/documentation.md
 route	1000	tests/quality-*	policy	safe	docs/specs/documentation.md
 route	1000	tests/quality_*	policy	safe	docs/specs/documentation.md
+route	1000	tests/security-*	policy	safe	docs/specs/documentation.md
+route	1000	tests/security_*	policy	safe	docs/specs/documentation.md
+route	1000	tests/release-pr*	release-contract	safe	docs/specs/release.md
+route	1000	tests/release_pr*	release-contract	safe	docs/specs/release.md
+route	1000	tests/release-sbom*	release-contract	safe	docs/specs/release.md
+route	1000	tests/release_sbom*	release-contract	safe	docs/specs/release.md
 route	1000	tests/release-budget*	policy	safe	docs/specs/documentation.md
 route	1000	tests/shell-safety*	policy	safe	docs/specs/documentation.md
 route	1000	tests/test-suite-contract.sh	policy	safe	docs/specs/documentation.md
@@ -170,6 +180,10 @@ route	900	install.sh	install	install	docs/specs/runtime.md
 route	900	scripts/install.sh	install	install	docs/specs/runtime.md
 route	900	scripts/build-tmux.sh	tmux-build	safe	docs/specs/runtime.md
 route	900	scripts/release-lid-probe	release-tool	lid	docs/specs/release.md
+route	900	scripts/release-sbom	release-tool	safe	docs/specs/release.md
+route	900	tools/release_sbom.py	release-tool	safe	docs/specs/release.md
+route	900	scripts/release-pr	release-tool	safe	docs/specs/release.md
+route	900	tools/release_pr.py	release-tool	safe	docs/specs/release.md
 route	900	app/scripts/make-dmg.sh	release-tool	install	docs/specs/release.md
 route	900	app/scripts/make-app.sh	app-script	unknown	docs/specs/release.md
 route	900	app/scripts/release.sh	release-tool	unknown	docs/specs/release.md
@@ -203,7 +217,7 @@ route	900	.gitattributes	metadata	safe	docs/specs/documentation.md
 route	800	.github/*	unknown	safe	docs/specs/documentation.md
 route	700	app/.gitignore	metadata	safe	docs/specs/documentation.md
 route	100	*.sh	unknown	unknown	docs/specs/documentation.md
-capability	quality-system	docs/specs/documentation.md	QC-QUALITY-POLICY	J-QUALITY-CHANGE
+capability	quality-system	docs/specs/documentation.md	QC-QUALITY-POLICY,QC-QUALITY-SUPPLY-CHAIN	J-QUALITY-CHANGE
 capability	documentation	docs/specs/documentation.md	QC-DOC-CONSISTENCY	J-DOCS-CONSISTENCY
 capability	session-lifecycle	docs/specs/runtime.md	QC-RUNTIME-STATE,QC-RUNTIME-OWNERSHIP,QC-RUNTIME-STORAGE,QC-RUNTIME-TRANSITION	J-SESSION-CREATE,J-SESSION-PERSIST,J-SESSION-RECOVER,J-SESSION-STOP,J-SESSION-DELETE
 capability	power-protection	docs/specs/power.md	QC-POWER-ASSERTION,QC-POWER-AUTH,QC-POWER-LEASE,QC-POWER-XPC,QC-POWER-PROTECTION,QC-POWER-CLI,QC-POWER-PLATFORM	J-POWER-ENABLE,J-POWER-LOW-BATTERY,J-POWER-HELPER-LEASE,J-POWER-CLOSED-LID
@@ -214,7 +228,7 @@ capability	update	docs/specs/app.md	QC-APP-UPDATE	J-UPDATE-CHECK,J-UPDATE-APPLY
 capability	diagnostics	docs/specs/app.md	QC-APP-DOCTOR	J-DOCTOR-REPORT
 capability	installation	docs/specs/release.md	QC-RELEASE-INSTALL	J-INSTALL-CLEAN,J-INSTALL-REPAIR,J-INSTALL-UNINSTALL
 capability	publication	docs/specs/release.md	QC-RELEASE-PUBLISH	J-PUBLISH-ARTIFACTS
-journey	J-QUALITY-CHANGE	quality-system	QC-QUALITY-POLICY	SC-POLICY-CONTRACT,SC-PROMOTION-CONTRACT	A policy change keeps local feedback focused and hosted evidence complete.
+journey	J-QUALITY-CHANGE	quality-system	QC-QUALITY-POLICY,QC-QUALITY-SUPPLY-CHAIN	SC-POLICY-CONTRACT,SC-PROMOTION-CONTRACT,SC-MERGE-CONTRACT,SC-SECURITY-CONTRACT	A policy change keeps local feedback focused and hosted evidence complete.
 journey	J-DOCS-CONSISTENCY	documentation	QC-DOC-CONSISTENCY	SC-DOCS-CONTRACT	Documentation and executable contracts stay synchronized.
 journey	J-SESSION-CREATE	session-lifecycle	QC-RUNTIME-STATE,QC-RUNTIME-OWNERSHIP	SC-SESSION-CREATE-CODEX,SC-SESSION-CREATE-CLAUDE	A user creates a managed provider session.
 journey	J-SESSION-PERSIST	session-lifecycle	QC-RUNTIME-STATE,QC-RUNTIME-STORAGE	SC-SESSION-PERSIST-CODEX,SC-SESSION-PERSIST-CLAUDE	A live session remains available after the app exits.
@@ -241,9 +255,13 @@ journey	J-DOCTOR-REPORT	diagnostics	QC-APP-DOCTOR	SC-DOCTOR-REPORT	A user receiv
 journey	J-INSTALL-CLEAN	installation	QC-RELEASE-INSTALL	SC-INSTALL-CLEAN,SC-RUNTIME-PACKAGE	A user installs one immutable self-contained payload.
 journey	J-INSTALL-REPAIR	installation	QC-RELEASE-INSTALL	SC-INSTALL-REPAIR	Repair restores the exact immutable payload.
 journey	J-INSTALL-UNINSTALL	installation	QC-RELEASE-INSTALL	SC-INSTALL-UNINSTALL	Uninstall removes only Detach-owned data selected by the user.
-journey	J-PUBLISH-ARTIFACTS	publication	QC-RELEASE-PUBLISH	SC-PUBLISH-CONTRACT	Publication exposes only verified allowlisted artifacts.
+journey	J-PUBLISH-ARTIFACTS	publication	QC-RELEASE-PUBLISH	SC-PUBLISH-CONTRACT,SC-RELEASE-SBOM,SC-RELEASE-PR	Publication exposes only verified allowlisted artifacts.
 scenario	SC-POLICY-CONTRACT	gate-contract	automated	tests/quality-policy.sh
 scenario	SC-PROMOTION-CONTRACT	gate-contract	automated	tests/quality-promote.sh
+scenario	SC-MERGE-CONTRACT	gate-contract	automated	tests/quality-merge.sh
+scenario	SC-SECURITY-CONTRACT	gate-contract	automated	tests/security-contract.sh
+scenario	SC-RELEASE-SBOM	gate-contract	automated	tests/release-sbom.sh
+scenario	SC-RELEASE-PR	gate-contract	automated	tests/release-pr.sh
 scenario	SC-DOCS-CONTRACT	static	automated	tests/docs-contract.sh
 scenario	SC-SESSION-CREATE-CODEX	codex	instrumented	tests/run.sh
 scenario	SC-SESSION-CREATE-CLAUDE	claude	instrumented	tests/run-claude.sh
@@ -328,4 +346,5 @@ requirement	QC-APP-UPDATE	docs/specs/app.md	Update state and application preserv
 requirement	QC-RELEASE-INSTALL	docs/specs/release.md	Install, repair, and uninstall mutate only Detach-owned payloads and selected state.
 requirement	QC-RELEASE-PUBLISH	docs/specs/release.md	Publication exposes only independently verified allowlisted artifacts.
 requirement	QC-QUALITY-POLICY	docs/specs/documentation.md	One current policy owns quality selection and traceability.
+requirement	QC-QUALITY-SUPPLY-CHAIN	docs/specs/documentation.md	Bounded automation scans code and keeps dependency pins current.
 requirement	QC-DOC-CONSISTENCY	docs/specs/documentation.md	Durable documentation and generated quality views stay synchronized.

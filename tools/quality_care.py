@@ -376,7 +376,7 @@ def assess(eval_path: Path, history_path: Path, policy: Policy) -> dict[str, Any
         status = "attention"
         reasons.append("a retained stage had an environment failure")
     return {
-        "schema": 1,
+        "schema": 2,
         "policy": policy.version,
         "source_commit": git_source_commit(),
         "status": status,
@@ -402,10 +402,6 @@ def assess(eval_path: Path, history_path: Path, policy: Policy) -> dict[str, Any
             "environment_failures": environment_failures,
             "invalid_evidence": history["invalid_evidence"],
         },
-        "autonomy": {
-            "review": "not-configured",
-            "repair_loops": "not-yet-emitted",
-        },
     }
 
 
@@ -418,12 +414,12 @@ def validate_summary(
 ) -> dict[str, Any]:
     keys = {
         "schema", "policy", "source_commit", "status", "reasons", "inputs",
-        "evals", "latency", "runs", "autonomy"
+        "evals", "latency", "runs"
     }
     if not isinstance(value, dict) or set(value) != keys:
         raise CareError("care summary schema is invalid")
     if (
-        value["schema"] != 1
+        value["schema"] != 2
         or value["policy"] != expected_policy
         or not isinstance(value["source_commit"], str)
         or not COMMIT.fullmatch(value["source_commit"])
@@ -479,17 +475,6 @@ def validate_summary(
         or runs["failed_or_interrupted"] > runs["total"]
     ):
         raise CareError("care summary run counts are invalid")
-    autonomy = value["autonomy"]
-    if (
-        not isinstance(autonomy, dict)
-        or set(autonomy) != {"review", "repair_loops"}
-        or autonomy["review"] not in ("not-configured", "passed", "failed")
-        or not (
-            autonomy["repair_loops"] == "not-yet-emitted"
-            or valid_count(autonomy["repair_loops"])
-        )
-    ):
-        raise CareError("care summary autonomy is invalid")
     p95 = latency["wall_p95_seconds"]
     expected_latency = (
         "breached" if p95 >= latency["slo_seconds"]

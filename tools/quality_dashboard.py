@@ -10,7 +10,9 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import re
 import statistics
+import subprocess
 import sys
 import threading
 from typing import Any, NoReturn, Optional
@@ -42,6 +44,8 @@ SUMMARY_HEADER = [
 ]
 FAILURE_STATUSES = {"failed", "environment-failed", "timeout", "interrupted"}
 PASS_STATUSES = {"passed", "reused"}
+MERGE_POLICY = re.compile(r"^Quality-Policy: ([1-9][0-9]*)$", re.MULTILINE)
+MERGE_REPAIR = re.compile(r"^Quality-Repair-Attempt: ([0-9]+)$", re.MULTILINE)
 
 
 class DashboardError(Exception):
@@ -272,6 +276,52 @@ def latest_run(result_root: Path) -> Path:
     return candidates[-1]
 
 
+def parse_merge_evidence(message: str, policy: int, maximum_repairs: int) -> Any:
+    policy_match = MERGE_POLICY.search(message)
+    repair_match = MERGE_REPAIR.search(message)
+    if policy_match is None and repair_match is None:
+        return "not-yet-emitted"
+    if policy_match is None or repair_match is None:
+        raise DashboardError("merge evidence trailers are incomplete")
+    merge_policy = int(policy_match.group(1))
+    repair_attempt = int(repair_match.group(1))
+    if merge_policy != policy or repair_attempt > maximum_repairs:
+        raise DashboardError("merge evidence trailers violate the current policy")
+    return {
+        "policy": merge_policy,
+        "repair_attempt": repair_attempt,
+        "maximum_repair_loops": maximum_repairs,
+        "status": "passed",
+    }
+
+
+def merge_evidence(commit: str, policy: int, maximum_repairs: int) -> Any:
+    try:
+        result = subprocess.run(
+            ["git", "show", "-s", "--format=%B", f"{commit}^{{commit}}"],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "not-yet-emitted"
+    if result.returncode:
+        return "not-yet-emitted"
+    return parse_merge_evidence(result.stdout, policy, maximum_repairs)
+
+
+def security_automation() -> dict[str, Any]:
+    return {
+        "status": "configured",
+        "codeql_languages": ["actions", "swift"],
+        "cadence": "main-and-weekly",
+        "pull_request_feedback": "not-selected",
+    }
+
+
 def build_data(
     run_dir: Path,
     result_root: Path,
@@ -354,7 +404,7 @@ def build_data(
         int(policy["limits"]["pr_feedback_seconds"]),
     )
     return {
-        "schema": 1,
+        "schema": 2,
         "run": {
             "id": run_dir.name,
             "commit": effective_commit,
@@ -390,8 +440,12 @@ def build_data(
             "coverage": metrics if metrics is not None else "not-yet-emitted",
             "mutation": mutation if mutation is not None else "not-yet-emitted",
             "care": care if care is not None else "not-yet-emitted",
-            "review": care["autonomy"]["review"] if care is not None else "not-yet-emitted",
-            "security": "not-yet-emitted",
+            "merge": merge_evidence(
+                effective_commit,
+                int(manifest["policy"]),
+                int(policy["limits"]["max_repair_loops"]),
+            ),
+            "security": security_automation(),
         },
         "trends": trends,
     }
@@ -492,6 +546,18 @@ def render_html(data: dict[str, Any]) -> str:
         )
     else:
         eval_text = latency_text = str(care)
+    merge = quality["merge"]
+    merge_text = (
+        f'attempt {merge["repair_attempt"]} of {merge["maximum_repair_loops"]} · '
+        f'{merge["status"]}'
+        if isinstance(merge, dict)
+        else str(merge)
+    )
+    security = quality["security"]
+    security_text = (
+        f'CodeQL {" + ".join(security["codeql_languages"])} · '
+        f'{security["cadence"]} · outside PR feedback'
+    )
     return f'''<!doctype html>
 <html lang="en">
 <head>
@@ -562,8 +628,8 @@ def render_html(data: dict[str, Any]) -> str:
       <div class="gap"><span class="eyebrow">Mutation</span><p>{html.escape(mutation_text)}</p></div>
       <div class="gap"><span class="eyebrow">Workflow evals</span><p>{html.escape(eval_text)}</p></div>
       <div class="gap"><span class="eyebrow">Feedback latency</span><p>{html.escape(latency_text)}</p></div>
-      <div class="gap"><span class="eyebrow">Agent review</span><p>{html.escape(str(quality["review"]))}</p></div>
-      <div class="gap"><span class="eyebrow">Security</span><p>{html.escape(str(quality["security"]))}</p></div>
+      <div class="gap"><span class="eyebrow">Bounded merge</span><p>{html.escape(merge_text)}</p></div>
+      <div class="gap"><span class="eyebrow">Security</span><p>{html.escape(security_text)}</p></div>
     </div></section>
     <section><h2>Recent runs</h2><div class="table-wrap"><table><thead><tr><th>Commit</th><th>Authority</th><th>Result</th><th class="number">Wall</th><th>Finished</th></tr></thead><tbody>{trend_rows}</tbody></table></div></section>
   </main>

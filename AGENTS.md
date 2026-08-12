@@ -23,7 +23,7 @@ the providers separately.
    topic branch: stage only task-scoped files, inspect the staged public diff,
    commit after local diagnostics pass, push, and merge only through a PR whose
    required authoritative `quality-gates` job passed. Verify final `main` upstream parity.
-   `scripts/release-version` is the sole direct-`main` path.
+   Release metadata uses a PR. `scripts/release-version` is the sole entry.
 
 `README.md` is the user-facing contract. `docs/specs/` contains durable
 current-state engineering contracts. Tests and gates are executable evidence;

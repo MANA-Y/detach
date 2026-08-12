@@ -45,11 +45,15 @@ setup_fixture() {
   install -m 0755 "$ROOT/scripts/release-version" "$REPO/scripts/release-version"
   install -m 0755 "$ROOT/scripts/release-impact" "$REPO/scripts/release-impact"
   install -m 0755 "$ROOT/scripts/release-lid-probe" "$REPO/scripts/release-lid-probe"
+  install -m 0755 "$ROOT/scripts/release-sbom" "$REPO/scripts/release-sbom"
+  install -m 0755 "$ROOT/scripts/build-tmux.sh" "$REPO/scripts/build-tmux.sh"
   install -m 0755 "$ROOT/scripts/quality-gate" "$REPO/scripts/quality-gate"
   install -m 0755 "$ROOT/scripts/quality-policy" "$REPO/scripts/quality-policy"
   install -m 0644 "$ROOT/tools/quality_gate.py" "$REPO/tools/quality_gate.py"
   install -m 0644 "$ROOT/tools/quality_scenarios.py" "$REPO/tools/quality_scenarios.py"
   install -m 0644 "$ROOT/tools/quality_policy.py" "$REPO/tools/quality_policy.py"
+  install -m 0644 "$ROOT/tools/release_sbom.py" "$REPO/tools/release_sbom.py"
+  install -m 0644 "$ROOT/app/Package.resolved" "$REPO/app/Package.resolved"
   install -m 0644 "$ROOT/quality/policy.tsv" "$REPO/quality/policy.tsv"
   install -m 0755 "$ROOT/app/scripts/verify-appcast.sh" \
     "$REPO/app/scripts/verify-appcast.sh"
@@ -164,14 +168,21 @@ XML
 dmg_sha="$(shasum -a 256 "$root/app/build/Detach.dmg" | awk '{print $1}')"
 update_sha="$(shasum -a 256 "$assets/Detach-$version.zip" | awk '{print $1}')"
 appcast_sha="$(shasum -a 256 "$assets/appcast.xml" | awk '{print $1}')"
+"$root/scripts/release-sbom" generate \
+  --version "$version" \
+  --tag "$tag" \
+  --commit "$commit" \
+  --repository "$DETACH_GITHUB_REPOSITORY" \
+  --output "$assets/release-sbom.spdx.json"
+sbom_sha="$(shasum -a 256 "$assets/release-sbom.spdx.json" | awk '{print $1}')"
 cat >"$assets/release-manifest.json" <<JSON
-{"schema":1,"version":"$version","build":"$build","tag":"$tag","git_commit":"$commit","feed_url":"https://github.com/${DETACH_GITHUB_REPOSITORY}/releases/latest/download/appcast.xml","update_url":"https://github.com/${DETACH_GITHUB_REPOSITORY}/releases/download/$tag/Detach-$version.zip","download_url":"https://github.com/${DETACH_GITHUB_REPOSITORY}/releases/latest","dmg_sha256":"$dmg_sha","update_sha256":"$update_sha","appcast_sha256":"$appcast_sha"}
+{"schema":2,"version":"$version","build":"$build","tag":"$tag","git_commit":"$commit","feed_url":"https://github.com/${DETACH_GITHUB_REPOSITORY}/releases/latest/download/appcast.xml","update_url":"https://github.com/${DETACH_GITHUB_REPOSITORY}/releases/download/$tag/Detach-$version.zip","download_url":"https://github.com/${DETACH_GITHUB_REPOSITORY}/releases/latest","dmg_sha256":"$dmg_sha","update_sha256":"$update_sha","appcast_sha256":"$appcast_sha","sbom_sha256":"$sbom_sha"}
 JSON
 (
   cd -P "$root/app/build"
   shasum -a 256 Detach.dmg >Detach.dmg.sha256
 )
-for asset in "Detach-$version.zip" appcast.xml release-manifest.json; do
+for asset in "Detach-$version.zip" appcast.xml release-sbom.spdx.json release-manifest.json; do
   (
     cd -P "$assets"
     shasum -a 256 "$asset" >"$asset.sha256"
@@ -195,6 +206,8 @@ cp "$root/app/build/Detach.dmg" "$root/app/build/Detach.dmg.sha256" \
   "$root/app/build/update-assets/Detach-$version.zip.sha256" \
   "$root/app/build/update-assets/appcast.xml" \
   "$root/app/build/update-assets/appcast.xml.sha256" \
+  "$root/app/build/update-assets/release-sbom.spdx.json" \
+  "$root/app/build/update-assets/release-sbom.spdx.json.sha256" \
   "$root/app/build/update-assets/release-manifest.json" \
   "$root/app/build/update-assets/release-manifest.json.sha256" \
   "$FAKE_REMOTE_ASSETS/"
@@ -203,6 +216,48 @@ if [ "${FAKE_PUBLISH_CORRUPT:-0}" = 1 ]; then
 fi
 : >"${FAKE_RELEASE_EXISTS:?}"
 printf '%s\n' publish >>"${FAKE_ACTION_LOG:?}"
+SH
+
+  write_executable "$REPO/scripts/release-pr" <<'SH'
+#!/bin/bash
+set -euo pipefail
+root="$(cd -P "$(dirname "$0")/.." && pwd)"
+branch=""
+head=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --branch) branch="$2"; shift 2 ;;
+    --head) head="$2"; shift 2 ;;
+    --repository|--version|--repair-attempt) shift 2 ;;
+    --merged-only) shift ;;
+    *) exit 64 ;;
+  esac
+done
+[ -n "$branch" ] && [ -n "$head" ]
+if [ "${FAKE_RELEASE_CI_FAIL:-0}" = 1 ]; then
+  printf '%s\n' 'release PR quality-gates did not pass; main and tag are unchanged' >&2
+  exit 23
+fi
+base="$(git -C "$root" ls-remote origin refs/heads/main | awk '{print $1}')"
+if [ "${FAKE_RELEASE_CI_ADVANCE_MAIN:-0}" = 1 ]; then
+  base_tree="$(git -C "$root" rev-parse "$base^{tree}")"
+  raced="$(printf '%s\n' 'concurrent main update' | \
+    git -C "$root" commit-tree "$base_tree" -p "$base")"
+  git -C "$root" push -q origin "$raced:refs/heads/main"
+  printf '%s\n' 'remote main changed before release PR merge' >&2
+  exit 24
+fi
+[ "$base" = "$(git -C "$root" rev-parse "$head^")" ] || {
+  printf '%s\n' 'remote main changed before release PR merge' >&2
+  exit 25
+}
+tree="$(git -C "$root" rev-parse "$head^{tree}")"
+merge="$(printf '%s\n' 'Merge automated release PR' | \
+  git -C "$root" commit-tree "$tree" -p "$base" -p "$head")"
+git -C "$root" push -q origin "$merge:refs/heads/main"
+mkdir -p "$root/app/build"
+printf '{"schema":1,"status":"passed","source_commit":"%s","merge_commit":"%s"}\n' \
+  "$head" "$merge" >"$root/app/build/release-pr.json"
 SH
 
   for test_name in run.sh run-claude.sh distribution.sh tmux-runtime.sh release-preflight.sh publish-preflight.sh; do
@@ -468,28 +523,28 @@ run_resume_case() {
   git -C "$REPO" push -q origin \
     "$release_ci_source:refs/heads/detach-release/$TARGET_TAG"
   expect_failure release-ci-collision \
-    "remote release CI branch already points to a different commit: detach-release/$TARGET_TAG" \
+    "remote release PR branch already points to a different commit: detach-release/$TARGET_TAG" \
     run_workflow
   git -C "$REPO" push -q origin ":refs/heads/detach-release/$TARGET_TAG"
 
   export FAKE_RELEASE_CI_FAIL=1
   expect_failure release-ci-failure \
-    'release CI did not pass; main and the release tag were not updated' \
+    'release PR quality-gates did not pass; main and tag are unchanged' \
     run_workflow
   unset FAKE_RELEASE_CI_FAIL
   [ "$(git -C "$REPO" ls-remote origin refs/heads/main | awk '{print $1}')" = \
     "$release_ci_source" ]
   [ -z "$(git -C "$REPO" ls-remote origin "refs/tags/$TARGET_TAG")" ]
   [ -n "$(git -C "$REPO" ls-remote origin "refs/heads/detach-release/$TARGET_TAG")" ]
-  [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-ci-approved" ]
+  [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-pushed" ]
 
   export FAKE_RELEASE_CI_ADVANCE_MAIN=1
-  expect_failure release-ci-main-race 'remote main changed while release CI was running' \
+  expect_failure release-ci-main-race 'remote main changed before release PR merge' \
     run_workflow
   unset FAKE_RELEASE_CI_ADVANCE_MAIN
   [ -z "$(git -C "$REPO" ls-remote origin "refs/tags/$TARGET_TAG")" ]
   [ -n "$(git -C "$REPO" ls-remote origin "refs/heads/detach-release/$TARGET_TAG")" ]
-  [ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-ci-approved" ]
+  [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-pushed" ]
 
   git -C "$REPO" push -q --force origin "$release_ci_source:refs/heads/main"
 
