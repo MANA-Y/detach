@@ -33,6 +33,12 @@ ownership paths, and verification. Explain why only where it prevents a likely
 wrong implementation. Do not copy code, maintain a file inventory, preserve
 task history, or prescribe incidental implementation detail.
 
+`quality/policy.tsv` registers each current durable spec. It owns the stable
+spec identity and the links from requirements to user journeys and automated
+scenarios. `quality/generated/spec-traceability.md` is the generated readable
+view. Do not copy this metadata into individual specs or edit the generated
+view.
+
 Change the narrowest owning spec whenever behavior or an invariant changes.
 Keep task progress and rejected experiments in the local ExecPlan, not here.
 A finished spec describes the system as it is, not the sequence used to build it.

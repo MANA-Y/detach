@@ -47,6 +47,13 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   policy schemas. The last green metrics artifact can use an earlier policy
   number only when its evidence schema is current. This preserves metric
   continuity and does not decode an old policy.
+- The quality policy registers each tracked durable spec exactly once. It has
+  no spec-history or lifecycle-status field. Each registered spec owns a route,
+  a capability, and a requirement. Each requirement links to a user journey
+  and at least one automated scenario. Generated JSON and Markdown views must
+  match the policy.
+- Retained gate results contain execution history for timing and quality
+  trends. They are not policy history and cannot restore an old policy state.
 - Instrumented user scenarios emit addressable begin and pass events. Gate
   evidence records their requirement and journey links, duration, result, and
   bounded rerun command. A passed stage with missing scenario events fails.

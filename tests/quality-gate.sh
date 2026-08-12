@@ -137,7 +137,7 @@ refresh_summary_digest() {
 
 CONTRACT_SHARD="${DETACH_QUALITY_GATE_CONTRACT_SHARD:-all}"
 case "$CONTRACT_SHARD" in
-  all|selection|execution|failures|evidence|evidence-resume|evidence-resume-a|evidence-resume-b|evidence-runtime) ;;
+  all|selection|execution|failures|evidence|evidence-resume|evidence-resume-a|evidence-resume-b|evidence-runtime|evidence-runtime-a|evidence-runtime-b) ;;
   *) printf 'invalid quality-gate contract shard\n' >&2; exit 2 ;;
 esac
 
@@ -187,6 +187,7 @@ mkdir -p "$REPO/app/Sources/DetachApp"
 printf '%s\n' 'struct ChangedOnboarding {}' \
   >"$REPO/app/Sources/DetachApp/OnboardingFuture.swift"
 plan="$(gate --plan)"
+[[ "$plan" = *'specs=app'* ]]
 [[ "$plan" = *'capabilities=onboarding'* ]]
 [[ "$plan" = *'journeys=J-ONBOARD-FIRST-RUN,J-ONBOARD-PROVIDER,J-ONBOARD-APPROVAL'* ]]
 
@@ -606,7 +607,8 @@ grep -F 'resume summary contains invalid or duplicate stage records' "$REPO/inva
 fi
 
 if [ "$CONTRACT_SHARD" = all ] || [ "$CONTRACT_SHARD" = execution ] || \
-   [ "$CONTRACT_SHARD" = evidence ] || [ "$CONTRACT_SHARD" = evidence-runtime ]; then
+   [ "$CONTRACT_SHARD" = evidence ] || [ "$CONTRACT_SHARD" = evidence-runtime ] || \
+   [ "$CONTRACT_SHARD" = evidence-runtime-a ]; then
 setup_fixture stage-timeout
 printf '#!/bin/bash\nsleep 5\n' >"$REPO/tests/quality-gate-fixtures/static"
 chmod 0755 "$REPO/tests/quality-gate-fixtures/static"
@@ -740,6 +742,11 @@ grep -F $'inherited_wall_seconds\t2' "$RESULT_ROOT"/*/release-budget.log >/dev/n
   exit 1
 }
 grep -F 'wall time regressed: 2s > 1s' "$RESULT_ROOT"/*/release-budget.log >/dev/null
+fi
+
+if [ "$CONTRACT_SHARD" = all ] || [ "$CONTRACT_SHARD" = execution ] || \
+   [ "$CONTRACT_SHARD" = evidence ] || [ "$CONTRACT_SHARD" = evidence-runtime ] || \
+   [ "$CONTRACT_SHARD" = evidence-runtime-b ]; then
 
 setup_fixture static-only-budget
 printf '%s\n' docs >>"$REPO/README.md"
@@ -784,6 +791,7 @@ gate >"$REPO/evidence.out"
 run_dir="$(find "$RESULT_ROOT" -mindepth 1 -maxdepth 1 -type d -print | head -1)"
 grep -F $'schema\t4' "$run_dir/manifest.tsv" >/dev/null
 grep -F $'authority\tlocal-diagnostic' "$run_dir/manifest.tsv" >/dev/null
+grep -F $'specs\tdocumentation' "$run_dir/manifest.tsv" >/dev/null
 grep -F $'capabilities\tdocumentation' "$run_dir/manifest.tsv" >/dev/null
 grep -F $'journeys\tJ-DOCS-CONSISTENCY' "$run_dir/manifest.tsv" >/dev/null
 grep -F $'input_fingerprint\t' "$run_dir/manifest.tsv" >/dev/null
@@ -805,6 +813,7 @@ grep -F '"id":"SC-DOCS-CONTRACT"' "$run_dir/scenarios.jsonl" >/dev/null
 grep -F '"journeys":["J-DOCS-CONSISTENCY"]' "$run_dir/scenarios.jsonl" >/dev/null
 grep -F '<testsuite name="detach-quality-scenarios"' "$run_dir/scenarios.junit.xml" >/dev/null
 grep -F '# Quality gate' "$run_dir/summary.md" >/dev/null
+grep -F -- '- Specifications: `documentation`' "$run_dir/summary.md" >/dev/null
 grep -F '| `static` | passed |' "$run_dir/summary.md" >/dev/null
 grep -F '| `SC-DOCS-CONTRACT` | `static` | passed |' "$run_dir/summary.md" >/dev/null
 grep -F 'markdown=' "$REPO/evidence.out" >/dev/null
@@ -850,4 +859,6 @@ case "$CONTRACT_SHARD" in
   evidence-resume-a) printf 'Quality gate resume provenance tests passed\n' ;;
   evidence-resume-b) printf 'Quality gate resume integrity tests passed\n' ;;
   evidence-runtime) printf 'Quality gate runtime evidence tests passed\n' ;;
+  evidence-runtime-a) printf 'Quality gate runtime evidence A tests passed\n' ;;
+  evidence-runtime-b) printf 'Quality gate runtime evidence B tests passed\n' ;;
 esac

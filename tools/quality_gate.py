@@ -277,6 +277,7 @@ class QualityGate:
         self.resolved_base = ""
         self.source_commit = git_text(["rev-parse", "--verify", "HEAD"])
         self.selected: list[str] = []
+        self.specs: list[str] = []
         self.capabilities: list[str] = []
         self.journeys: list[str] = []
         self.explanations: list[str] = []
@@ -440,6 +441,7 @@ class QualityGate:
         return entries
 
     def select_all_impacts(self) -> None:
+        self.specs = list(self.policy.specs)
         self.capabilities = list(self.policy.capabilities)
         self.journeys = list(self.policy.journeys)
 
@@ -469,6 +471,12 @@ class QualityGate:
             return
         for stage in classification.stages.split(","):
             self.add_stage(stage, f"{change} {classification.test_domain} domain {path}")
+        spec_identifier = next(
+            identifier
+            for identifier, (spec_path, _) in self.policy.specs.items()
+            if spec_path == classification.spec
+        )
+        self.add_unique(self.specs, spec_identifier)
         for capability in classification.capabilities.split(","):
             self.add_unique(self.capabilities, capability)
         for journey in classification.journeys.split(","):
@@ -538,6 +546,7 @@ class QualityGate:
         fact = (
             f"input={self.input_fingerprint}\nmode={self.effective_mode}\n"
             f"authority={self.authority}\nstages={','.join(self.selected)}\n"
+            f"specs={','.join(self.specs)}\n"
             f"capabilities={','.join(self.capabilities)}\n"
             f"journeys={','.join(self.journeys)}\n"
         )
@@ -553,6 +562,7 @@ class QualityGate:
                 "base_commit": self.resolved_base,
                 "input_fingerprint": self.input_fingerprint,
                 "fingerprint": self.fingerprint,
+                "specs": self.specs,
                 "capabilities": self.capabilities,
                 "journeys": self.journeys,
                 "stages": self.selected,
@@ -562,7 +572,8 @@ class QualityGate:
         print(
             f"quality-gate policy={self.policy_version} mode={self.effective_mode} "
             f"authority={self.authority} fingerprint={self.fingerprint} "
-            f"stages={','.join(self.selected)} capabilities={','.join(self.capabilities)} "
+            f"stages={','.join(self.selected)} specs={','.join(self.specs)} "
+            f"capabilities={','.join(self.capabilities)} "
             f"journeys={','.join(self.journeys)}"
         )
         if self.options.explain:
@@ -728,6 +739,7 @@ class QualityGate:
             ("input_fingerprint", self.input_fingerprint),
             ("fingerprint", self.fingerprint),
             ("stages", ",".join(self.selected)),
+            ("specs", ",".join(self.specs)),
             ("capabilities", ",".join(self.capabilities)),
             ("journeys", ",".join(self.journeys)),
             ("started_at", self.started_at),
@@ -1472,6 +1484,7 @@ class QualityGate:
         write_private(self.junit, "\n".join(lines) + "\n")
 
     def write_markdown(self) -> None:
+        specs = ",".join(self.specs) or "-"
         capabilities = ",".join(self.capabilities) or "-"
         journeys = ",".join(self.journeys) or "-"
         lines = [
@@ -1483,6 +1496,7 @@ class QualityGate:
             f"- Source: `{self.source_commit}`",
             f"- Fingerprint: `{self.fingerprint}`",
             "",
+            f"- Specifications: `{specs}`",
             f"- Capabilities: `{capabilities}`",
             f"- Journeys: `{journeys}`",
             "",
@@ -1707,10 +1721,16 @@ def run_gate_contract_stage(root: Path) -> int:
             "Quality gate resume integrity tests passed",
         ),
         (
-            "orchestrator-evidence-runtime.log",
+            "orchestrator-evidence-runtime-a.log",
             [str(root / "tests/quality-gate.sh")],
-            {"DETACH_QUALITY_GATE_CONTRACT_SHARD": "evidence-runtime"},
-            "Quality gate runtime evidence tests passed",
+            {"DETACH_QUALITY_GATE_CONTRACT_SHARD": "evidence-runtime-a"},
+            "Quality gate runtime evidence A tests passed",
+        ),
+        (
+            "orchestrator-evidence-runtime-b.log",
+            [str(root / "tests/quality-gate.sh")],
+            {"DETACH_QUALITY_GATE_CONTRACT_SHARD": "evidence-runtime-b"},
+            "Quality gate runtime evidence B tests passed",
         ),
         (
             "quality-metrics.log",
@@ -1774,7 +1794,7 @@ def run_gate_contract_stage(root: Path) -> int:
         ),
     ]
     contract_root = Path(tempfile.mkdtemp(prefix="detach-gate-contract."))
-    processes: list[tuple[Path, subprocess.Popen[bytes], TextIO, str]] = []
+    processes: list[tuple[Path, subprocess.Popen[bytes], TextIO, str, float]] = []
     try:
         for filename, command, additions, expected in contracts:
             path = contract_root / filename
@@ -1788,20 +1808,32 @@ def run_gate_contract_stage(root: Path) -> int:
                 stdout=output,
                 stderr=subprocess.STDOUT,
             )
-            processes.append((path, process, output, expected))
+            processes.append((path, process, output, expected, time.monotonic()))
         failed = False
-        for _, process, output, _ in processes:
-            if process.wait() != 0:
-                failed = True
-            output.close()
-        for path, _, _, expected in sorted(processes, key=lambda item: item[0].name):
+        durations: dict[Path, int] = {}
+        pending = set(range(len(processes)))
+        while pending:
+            for index in list(pending):
+                path, process, output, _, started = processes[index]
+                status = process.poll()
+                if status is None:
+                    continue
+                if status != 0:
+                    failed = True
+                durations[path] = max(0, round(time.monotonic() - started))
+                output.close()
+                pending.remove(index)
+            if pending:
+                time.sleep(0.05)
+        for path, _, _, expected, _ in sorted(processes, key=lambda item: item[0].name):
             content = path.read_text(encoding="utf-8", errors="replace")
             sys.stdout.write(content)
             if expected not in content.splitlines():
                 failed = True
+            print(f"quality-contract {path.stem} completed in {durations[path]}s")
         return 1 if failed else 0
     finally:
-        for _, process, output, _ in processes:
+        for _, process, output, _, _ in processes:
             if process.poll() is None:
                 process.terminate()
                 process.wait()

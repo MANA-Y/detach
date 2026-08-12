@@ -38,7 +38,10 @@
   granularity until it gets scenario markers.
 - `scripts/quality-history [RESULT_ROOT]` reports p50/p95 wall and stage timing,
   ordinary failures, and execution-environment failures across retained local
-  or downloaded gate evidence. It is telemetry, not readiness evidence.
+  or downloaded gate evidence. It is run telemetry, not policy history or
+  readiness evidence.
+- `scripts/quality-policy generate --check` checks both generated policy JSON
+  and the readable current-spec traceability table.
 - `scripts/quality-dashboard generate` creates
   `app/build/quality-dashboard/{index.html,data.json}` from the newest schema-4
   evidence. `scripts/quality-dashboard serve --seconds 300` serves it only on
