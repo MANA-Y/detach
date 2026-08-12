@@ -283,7 +283,8 @@
         "QC-QUALITY-POLICY"
       ],
       "scenarios": [
-        "SC-POLICY-CONTRACT"
+        "SC-POLICY-CONTRACT",
+        "SC-PROMOTION-CONTRACT"
       ],
       "summary": "A policy change keeps local feedback focused and hosted evidence complete."
     },
@@ -618,7 +619,7 @@
     "pr_feedback_seconds": 600,
     "review_seconds": 180
   },
-  "policy": 22,
+  "policy": 23,
   "release_domains": [
     {
       "gates": "-",
@@ -866,6 +867,20 @@
     },
     {
       "pattern": "tools/quality_baseline.py",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "scripts/quality-promote",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tools/quality_promote.py",
       "priority": 1000,
       "release_domain": "safe",
       "spec": "docs/specs/documentation.md",
@@ -1671,6 +1686,12 @@
       "status": "automated"
     },
     {
+      "command": "tests/quality-promote.sh",
+      "id": "SC-PROMOTION-CONTRACT",
+      "stage": "gate-contract",
+      "status": "automated"
+    },
+    {
       "command": "tests/docs-contract.sh",
       "id": "SC-DOCS-CONTRACT",
       "stage": "static",
@@ -1935,6 +1956,7 @@
         "scripts/quality-metrics",
         "scripts/quality-mutation",
         "scripts/quality-policy",
+        "scripts/quality-promote",
         "scripts/quality-scenarios",
         "scripts/test",
         "tests/*",
@@ -1950,6 +1972,7 @@
         "tools/quality_metrics.py",
         "tools/quality_mutation.py",
         "tools/quality_policy.py",
+        "tools/quality_promote.py",
         "tools/quality_scenarios.py"
       ],
       "path": "docs/specs/documentation.md",
@@ -1963,6 +1986,12 @@
             {
               "command": "tests/quality-policy.sh",
               "id": "SC-POLICY-CONTRACT",
+              "stage": "gate-contract",
+              "status": "automated"
+            },
+            {
+              "command": "tests/quality-promote.sh",
+              "id": "SC-PROMOTION-CONTRACT",
               "stage": "gate-contract",
               "status": "automated"
             }

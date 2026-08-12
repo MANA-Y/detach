@@ -1,5 +1,5 @@
 schema	1
-policy	22
+policy	23
 spec	documentation	docs/specs/documentation.md	Agent context, specifications, and quality automation stay synchronized.
 spec	runtime	docs/specs/runtime.md	Runtime state and session operations preserve exact ownership.
 spec	power	docs/specs/power.md	Power protection fails safe across both required layers.
@@ -83,6 +83,8 @@ route	1000	scripts/quality-metrics	policy	safe	docs/specs/documentation.md
 route	1000	tools/quality_metrics.py	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-baseline	policy	safe	docs/specs/documentation.md
 route	1000	tools/quality_baseline.py	policy	safe	docs/specs/documentation.md
+route	1000	scripts/quality-promote	policy	safe	docs/specs/documentation.md
+route	1000	tools/quality_promote.py	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-mutation	policy	safe	docs/specs/documentation.md
 route	1000	tools/quality_mutation.py	policy	safe	docs/specs/documentation.md
 route	1000	.github/workflows/quality-mutations.yml	policy	safe	docs/specs/documentation.md
@@ -207,7 +209,7 @@ capability	update	docs/specs/app.md	QC-APP-UPDATE	J-UPDATE-CHECK,J-UPDATE-APPLY
 capability	diagnostics	docs/specs/app.md	QC-APP-DOCTOR	J-DOCTOR-REPORT
 capability	installation	docs/specs/release.md	QC-RELEASE-INSTALL	J-INSTALL-CLEAN,J-INSTALL-REPAIR,J-INSTALL-UNINSTALL
 capability	publication	docs/specs/release.md	QC-RELEASE-PUBLISH	J-PUBLISH-ARTIFACTS
-journey	J-QUALITY-CHANGE	quality-system	QC-QUALITY-POLICY	SC-POLICY-CONTRACT	A policy change keeps local feedback focused and hosted evidence complete.
+journey	J-QUALITY-CHANGE	quality-system	QC-QUALITY-POLICY	SC-POLICY-CONTRACT,SC-PROMOTION-CONTRACT	A policy change keeps local feedback focused and hosted evidence complete.
 journey	J-DOCS-CONSISTENCY	documentation	QC-DOC-CONSISTENCY	SC-DOCS-CONTRACT	Documentation and executable contracts stay synchronized.
 journey	J-SESSION-CREATE	session-lifecycle	QC-RUNTIME-STATE,QC-RUNTIME-OWNERSHIP	SC-SESSION-CREATE-CODEX,SC-SESSION-CREATE-CLAUDE	A user creates a managed provider session.
 journey	J-SESSION-PERSIST	session-lifecycle	QC-RUNTIME-STATE,QC-RUNTIME-STORAGE	SC-SESSION-PERSIST-CODEX,SC-SESSION-PERSIST-CLAUDE	A live session remains available after the app exits.
@@ -236,6 +238,7 @@ journey	J-INSTALL-REPAIR	installation	QC-RELEASE-INSTALL	SC-INSTALL-REPAIR	Repai
 journey	J-INSTALL-UNINSTALL	installation	QC-RELEASE-INSTALL	SC-INSTALL-UNINSTALL	Uninstall removes only Detach-owned data selected by the user.
 journey	J-PUBLISH-ARTIFACTS	publication	QC-RELEASE-PUBLISH	SC-PUBLISH-CONTRACT	Publication exposes only verified allowlisted artifacts.
 scenario	SC-POLICY-CONTRACT	gate-contract	automated	tests/quality-policy.sh
+scenario	SC-PROMOTION-CONTRACT	gate-contract	automated	tests/quality-promote.sh
 scenario	SC-DOCS-CONTRACT	static	automated	tests/docs-contract.sh
 scenario	SC-SESSION-CREATE-CODEX	codex	instrumented	tests/run.sh
 scenario	SC-SESSION-CREATE-CLAUDE	claude	instrumented	tests/run-claude.sh

@@ -41,6 +41,8 @@ the only ordinary merge authority. Unknown paths select the full plan.
   deadline.
 - `scripts/quality-mutation` validates and runs the deterministic safety mutant
   corpus. Mutation work does not add to pull request latency.
+- `scripts/quality-promote` binds a successful pull-request artifact to its
+  final `main` merge commit. It runs only in the hosted main-push workflow.
 
 `--without-release-budget` disables reference-Mac time comparisons. Hosted CI
 uses this option because hosted timing is not release timing. Functional
@@ -55,6 +57,13 @@ Every manifest records one authority:
 - `ci-merge` for the pull request merge commit;
 - `ci-main` for the current `main` commit;
 - `release` for the owner-confirmed release flow.
+
+An ordinary main merge keeps the original `ci-merge` manifest immutable. A
+separate promotion record supplies `ci-main` authority only when GitHub and Git
+facts prove that the tested synthetic merge and final merge have the same tree
+and ordered parents. The dashboard shows both commits and the source run. The
+next metrics comparison uses the final main commit. A direct or ambiguous main
+push runs the complete repository gate instead.
 
 The repository gate writes private evidence under
 `app/build/quality-gates/`. One run contains a schema-versioned TSV summary,

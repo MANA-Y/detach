@@ -42,6 +42,10 @@
   readiness evidence.
 - `scripts/quality-policy generate --check` checks both generated policy JSON
   and the readable current-spec traceability table.
+- `scripts/quality-promote` is the hosted post-merge path. It downloads the
+  exact successful pull-request artifact and proves tree and parent equality.
+  It does not run locally or change the tested evidence. A failed proof makes
+  the workflow run the full main repository gate.
 - `scripts/quality-dashboard generate` creates
   `app/build/quality-dashboard/{index.html,data.json}` from the newest schema-4
   evidence. `scripts/quality-dashboard serve --seconds 300` serves it only on

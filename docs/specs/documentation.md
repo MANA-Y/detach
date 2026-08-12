@@ -78,9 +78,14 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   extend pull-request feedback time.
 - A deterministic static dashboard reads only validated gate evidence. The
   same artifact opens locally and deploys to GitHub Pages only after a green
-  `main` repository run or a green scheduled mutation run. It shows measured
-  coverage and the latest valid mutation score when they exist. Only deploy
-  jobs have Pages write permission.
+  `main` run with direct or promoted evidence, or a green scheduled mutation
+  run. It shows measured coverage and the latest valid mutation score when
+  they exist. Only deploy jobs have Pages write permission.
+- An ordinary merged pull request does not repeat the full functional matrix
+  on `main`. The main workflow promotes the successful pull-request artifact
+  only when the tested merge and final merge have the same tree and ordered
+  parents. Promotion keeps both commit identities and every original digest.
+  Missing or ambiguous proof falls back to a full `ci-main` repository gate.
 - The active GitHub ruleset for `main` has no bypass actors. It requires the
   GitHub Actions `quality-gates` job. An administrator cannot use an unchecked
   push as a substitute for CI. A release commit first gets the same check on

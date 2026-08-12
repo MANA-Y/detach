@@ -1660,6 +1660,7 @@ def run_static_stage(root: Path, run_dir: Path, mode: str, resolved_base: str) -
         "scripts/quality-metrics",
         "scripts/quality-mutation",
         "scripts/quality-baseline",
+        "scripts/quality-promote",
         "scripts/release-version",
         "scripts/release-impact",
         "scripts/release-lid-probe",
@@ -1743,6 +1744,12 @@ def run_gate_contract_stage(root: Path) -> int:
             [str(root / "tests/quality-baseline.sh")],
             {},
             "Quality baseline contracts passed",
+        ),
+        (
+            "quality-promote.log",
+            [str(root / "tests/quality-promote.sh")],
+            {},
+            "Quality promotion contracts passed",
         ),
         (
             "quality-mutation.log",

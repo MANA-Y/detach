@@ -26,6 +26,10 @@ expect_route() {
 
 "$ROOT/scripts/quality-policy" validate >/dev/null
 "$ROOT/scripts/quality-policy" generate --check
+git -C "$ROOT" check-ignore --no-index -q -- presentations/internal.html || \
+  fail 'the internal presentations directory is a quality input'
+git -C "$ROOT" check-ignore --no-index -q -- docs/assets/internal.html || \
+  fail 'internal HTML presentation assets are quality inputs'
 python3 "$ROOT/tests/quality_policy_contract.py"
 policy_version="$("$ROOT/scripts/quality-policy" version)"
 [[ "$policy_version" =~ ^[1-9][0-9]*$ ]] || fail 'invalid policy version'
@@ -48,7 +52,7 @@ policy_version="$("$ROOT/scripts/quality-policy" version)"
   fail 'capability inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" journeys | wc -l | tr -d ' ')" = 28 ] || \
   fail 'journey inventory is incomplete'
-[ "$("$ROOT/scripts/quality-policy" scenarios | wc -l | tr -d ' ')" = 39 ] || \
+[ "$("$ROOT/scripts/quality-policy" scenarios | wc -l | tr -d ' ')" = 40 ] || \
   fail 'scenario inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" coverage-exclusions | wc -l | tr -d ' ')" = 4 ] || \
   fail 'coverage exclusion inventory is incomplete'

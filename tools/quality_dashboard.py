@@ -17,6 +17,7 @@ from typing import Any, NoReturn, Optional
 
 from quality_metrics import MetricsError, validate_metrics
 from quality_mutation import MutationError, validate_summary
+from quality_promote import PromotionError, validate_promotion
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -84,9 +85,8 @@ def read_manifest(run_dir: Path) -> dict[str, str]:
         raise DashboardError("manifest schema is unsupported")
     if not values["policy"].isdigit():
         raise DashboardError("manifest policy is invalid")
-    if int(values["policy"]) >= 22 and not values.get("specs"):
+    if not values.get("specs"):
         raise DashboardError("manifest is missing: specs")
-    values.setdefault("specs", "")
     if values["authority"] not in ("local-diagnostic", "ci-merge", "ci-main", "release"):
         raise DashboardError("manifest authority is invalid")
     if values["result"] not in ("passed", "failed", "interrupted", "diagnostic"):
@@ -188,6 +188,18 @@ def split_csv(value: str) -> list[str]:
     return [item for item in value.split(",") if item]
 
 
+def effective_identity(
+    run_dir: Path, manifest: dict[str, str]
+) -> tuple[str, str, Optional[dict[str, str]]]:
+    try:
+        promotion = validate_promotion(run_dir, manifest)
+    except PromotionError as error:
+        raise DashboardError(str(error)) from error
+    if promotion is None:
+        return manifest["source_commit"], manifest["authority"], None
+    return promotion["main_commit"], promotion["authority"], promotion
+
+
 def percentile(values: list[int], percent: int) -> int:
     if not values:
         return 0
@@ -205,14 +217,15 @@ def collect_trends(result_root: Path, current: Path) -> list[dict[str, Any]]:
             continue
         try:
             manifest = read_manifest(candidate)
+            commit, authority, _ = effective_identity(candidate, manifest)
         except DashboardError:
             continue
         trends.append(
             {
                 "run": candidate.name,
                 "current": candidate.resolve() == current.resolve(),
-                "commit": manifest["source_commit"],
-                "authority": manifest["authority"],
+                "commit": commit,
+                "authority": authority,
                 "result": manifest["result"],
                 "finished_at": manifest["finished_at"],
                 "duration_seconds": int(manifest["duration_seconds"]),
@@ -241,6 +254,9 @@ def build_data(
     mutation_summary: Optional[Path] = None,
 ) -> dict[str, Any]:
     manifest = read_manifest(run_dir)
+    effective_commit, effective_authority, promotion = effective_identity(
+        run_dir, manifest
+    )
     stages = read_summary(run_dir, manifest)
     policy = read_policy()
     if int(manifest["policy"]) != policy["policy"]:
@@ -310,10 +326,11 @@ def build_data(
         "schema": 1,
         "run": {
             "id": run_dir.name,
-            "commit": manifest["source_commit"],
+            "commit": effective_commit,
+            "tested_commit": manifest["source_commit"],
             "fingerprint": manifest["fingerprint"],
             "policy": int(manifest["policy"]),
-            "authority": manifest["authority"],
+            "authority": effective_authority,
             "mode": manifest["mode"],
             "result": manifest["result"],
             "started_at": manifest["started_at"],
@@ -321,6 +338,7 @@ def build_data(
             "duration_seconds": int(manifest["duration_seconds"]),
             "wall_seconds": int(manifest["timing_wall_seconds"]),
             "url": run_url,
+            "promotion": promotion if promotion is not None else "not-promoted",
         },
         "specifications": impacted_specs,
         "capabilities": split_csv(manifest["capabilities"]),
@@ -401,6 +419,14 @@ def render_html(data: dict[str, Any]) -> str:
     specification_text = ", ".join(
         spec["id"] for spec in data["specifications"]
     ) or "none"
+    promotion = run["promotion"]
+    promotion_text = (
+        f'Tested merge <code>{html.escape(run["tested_commit"])}</code> · '
+        f'<a href="{html.escape(promotion["source_run_url"], quote=True)}">'
+        f'PR run {html.escape(promotion["source_run"])}</a>'
+        if isinstance(promotion, dict)
+        else "Direct evidence for this commit"
+    )
     coverage = quality["coverage"]
     if isinstance(coverage, dict):
         ui_coverage = coverage["suites"]["ui"]["line_coverage"]["percent"]
@@ -480,6 +506,7 @@ def render_html(data: dict[str, Any]) -> str:
       <div><span class="eyebrow">Fingerprint</span><br><code>{html.escape(run["fingerprint"])}</code></div>
       <div><span class="eyebrow">Specifications</span><br>{html.escape(specification_text)}</div>
       <div><span class="eyebrow">Capabilities</span><br>{html.escape(capability_text)}</div>
+      <div><span class="eyebrow">Evidence provenance</span><br>{promotion_text}</div>
       <div><span class="eyebrow">Freshness</span><br><span id="freshness" data-finished="{html.escape(run["finished_at"], quote=True)}">{html.escape(run["finished_at"])}</span></div>
     </div>
     <section><h2>Stages</h2><div class="table-wrap"><table><thead><tr><th>Stage</th><th>Status</th><th class="number">Seconds</th><th>Log</th></tr></thead><tbody>{stage_rows}</tbody></table></div></section>

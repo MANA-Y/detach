@@ -34,6 +34,7 @@ It lists current specification ownership and verification links.
 - `scripts/quality-metrics`
 - `scripts/quality-mutation`
 - `scripts/quality-policy`
+- `scripts/quality-promote`
 - `scripts/quality-scenarios`
 - `scripts/test`
 - `tests/*`
@@ -49,13 +50,14 @@ It lists current specification ownership and verification links.
 - `tools/quality_metrics.py`
 - `tools/quality_mutation.py`
 - `tools/quality_policy.py`
+- `tools/quality_promote.py`
 - `tools/quality_scenarios.py`
 
 ### Requirement verification
 
 | Requirement | Journeys | Scenarios | Outcome |
 | --- | --- | --- | --- |
-| `QC-QUALITY-POLICY` | `J-QUALITY-CHANGE` | `SC-POLICY-CONTRACT` (automated, `gate-contract`) | One current policy owns quality selection and traceability. |
+| `QC-QUALITY-POLICY` | `J-QUALITY-CHANGE` | `SC-POLICY-CONTRACT` (automated, `gate-contract`)<br>`SC-PROMOTION-CONTRACT` (automated, `gate-contract`) | One current policy owns quality selection and traceability. |
 | `QC-DOC-CONSISTENCY` | `J-DOCS-CONSISTENCY` | `SC-DOCS-CONTRACT` (automated, `static`) | Durable documentation and generated quality views stay synchronized. |
 
 ## `runtime`
