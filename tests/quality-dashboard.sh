@@ -9,7 +9,11 @@ RUN_DIR="$RESULT_ROOT/20260811T100000Z-1"
 OUTPUT="$TMP_ROOT/dashboard"
 PROMOTED_OUTPUT="$TMP_ROOT/promoted-dashboard"
 MUTATION_SUMMARY="$TMP_ROOT/mutation-summary.json"
+CARE_SUMMARY="$TMP_ROOT/care-summary.json"
+CARE_EVALS="$TMP_ROOT/evals.json"
+CARE_HISTORY="$TMP_ROOT/history.json"
 POLICY_VERSION="$("$ROOT/scripts/quality-policy" version)"
+SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 MAIN_COMMIT=8989898989898989898989898989898989898989
 trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
 
@@ -130,16 +134,60 @@ cat >"$MUTATION_SUMMARY" <<JSON
 }
 JSON
 
+printf '{"schema":1,"status":"passed"}\n' >"$CARE_EVALS"
+printf '{"schema":1,"runs":4}\n' >"$CARE_HISTORY"
+CARE_EVAL_DIGEST="$(shasum -a 256 "$CARE_EVALS" | awk '{print $1}')"
+CARE_HISTORY_DIGEST="$(shasum -a 256 "$CARE_HISTORY" | awk '{print $1}')"
+cat >"$CARE_SUMMARY" <<JSON
+{
+  "schema": 1,
+  "policy": $POLICY_VERSION,
+  "source_commit": "$SOURCE_COMMIT",
+  "status": "passed",
+  "reasons": [],
+  "inputs": {
+    "eval_sha256": "$CARE_EVAL_DIGEST",
+    "history_sha256": "$CARE_HISTORY_DIGEST"
+  },
+  "evals": {
+    "passed": 8,
+    "total": 8,
+    "categories": {
+      "escaped-defect": 2,
+      "historical-task": 2,
+      "policy-mutant": 2,
+      "scope-violation": 2
+    }
+  },
+  "latency": {
+    "status": "healthy",
+    "wall_p95_seconds": 285,
+    "alert_seconds": 480,
+    "slo_seconds": 600
+  },
+  "runs": {
+    "total": 4,
+    "failed_or_interrupted": 0,
+    "environment_failures": 0,
+    "invalid_evidence": 0
+  },
+  "autonomy": {
+    "review": "not-configured",
+    "repair_loops": "not-yet-emitted"
+  }
+}
+JSON
+
 "$ROOT/scripts/quality-dashboard" generate --result-root "$RESULT_ROOT" \
   --output "$OUTPUT" --run-url 'https://github.example/actions/runs/1' \
-  --mutation-summary "$MUTATION_SUMMARY" >/dev/null
+  --mutation-summary "$MUTATION_SUMMARY" --care-summary "$CARE_SUMMARY" >/dev/null
 [ -f "$OUTPUT/index.html" ] && [ -f "$OUTPUT/data.json" ] || \
   fail 'dashboard artifacts are missing'
 first_html="$(shasum -a 256 "$OUTPUT/index.html" | awk '{print $1}')"
 first_data="$(shasum -a 256 "$OUTPUT/data.json" | awk '{print $1}')"
 "$ROOT/scripts/quality-dashboard" generate --result-root "$RESULT_ROOT" \
   --output "$OUTPUT" --run-url 'https://github.example/actions/runs/1' \
-  --mutation-summary "$MUTATION_SUMMARY" >/dev/null
+  --mutation-summary "$MUTATION_SUMMARY" --care-summary "$CARE_SUMMARY" >/dev/null
 [ "$first_html" = "$(shasum -a 256 "$OUTPUT/index.html" | awk '{print $1}')" ] || \
   fail 'HTML generation is not deterministic'
 [ "$first_data" = "$(shasum -a 256 "$OUTPUT/data.json" | awk '{print $1}')" ] || \
@@ -160,6 +208,10 @@ grep -F 'changed lines 90.00%' "$OUTPUT/index.html" >/dev/null || \
   fail 'measured changed-line coverage is missing'
 grep -F '100% · 1/1 killed · passed' "$OUTPUT/index.html" >/dev/null || \
   fail 'mutation score is missing'
+grep -F '8/8 passed · passed · source' "$OUTPUT/index.html" >/dev/null || \
+  fail 'workflow-eval summary is missing'
+grep -F 'p95 285s · alert 480s · SLO 600s · healthy' "$OUTPUT/index.html" >/dev/null || \
+  fail 'feedback latency summary is missing'
 ! grep -F '<svg' "$OUTPUT/index.html" >/dev/null || fail 'dashboard contains hand-drawn SVG'
 
 python3 - "$OUTPUT/data.json" <<'PY'
@@ -174,6 +226,15 @@ assert [spec["id"] for spec in data["specifications"]] == ["app"]
 assert data["quality"]["planned_scenarios"] == 3
 assert data["quality"]["coverage"]["comparison"]["mode"] == "green-main-artifact"
 assert data["quality"]["mutation"]["score_percent"] == 100
+assert data["quality"]["care"]["evals"] == {
+    "categories": {
+        "escaped-defect": 2, "historical-task": 2,
+        "policy-mutant": 2, "scope-violation": 2,
+    },
+    "passed": 8,
+    "total": 8,
+}
+assert data["quality"]["review"] == "not-configured"
 assert len(data["trends"]) == 2
 assert [journey["id"] for journey in data["journeys"]] == [
     "J-ONBOARD-FIRST-RUN", "J-ONBOARD-PROVIDER", "J-ONBOARD-APPROVAL"
@@ -203,7 +264,7 @@ EOF
 "$ROOT/scripts/quality-dashboard" generate --result-root "$RESULT_ROOT" \
   --output "$PROMOTED_OUTPUT" \
   --run-url 'https://github.com/owner/repository/actions/runs/2' \
-  --mutation-summary "$MUTATION_SUMMARY" >/dev/null
+  --mutation-summary "$MUTATION_SUMMARY" --care-summary "$CARE_SUMMARY" >/dev/null
 grep -F "Tested merge <code>0123456789abcdef0123456789abcdef01234567</code>" \
   "$PROMOTED_OUTPUT/index.html" >/dev/null || fail 'promotion provenance is missing'
 python3 - "$PROMOTED_OUTPUT/data.json" "$MAIN_COMMIT" <<'PY'
@@ -230,6 +291,36 @@ grep -F 'promotion evidence does not bind' \
   "$TMP_ROOT/tampered-promotion.out" >/dev/null || \
   fail 'tampered promotion failure is unclear'
 mv "$TMP_ROOT/promotion.tsv" "$RUN_DIR/promotion.tsv"
+
+cp "$CARE_SUMMARY" "$TMP_ROOT/care-summary.backup.json"
+python3 - "$CARE_SUMMARY" <<'PY'
+import json,sys
+path=sys.argv[1]
+value=json.load(open(path,encoding="utf-8"))
+value["policy"] += 1
+with open(path,"w",encoding="utf-8") as target:
+    json.dump(value,target)
+PY
+if "$ROOT/scripts/quality-dashboard" generate --result-root "$RESULT_ROOT" \
+    --output "$TMP_ROOT/stale-care" --care-summary "$CARE_SUMMARY" \
+    >"$TMP_ROOT/stale-care.out" 2>&1; then
+  fail 'care evidence from another policy was accepted'
+fi
+grep -F 'care summary is invalid' "$TMP_ROOT/stale-care.out" >/dev/null || \
+  fail 'stale care failure is unclear'
+mv "$TMP_ROOT/care-summary.backup.json" "$CARE_SUMMARY"
+
+cp "$CARE_EVALS" "$TMP_ROOT/evals.backup.json"
+printf 'tampered\n' >>"$CARE_EVALS"
+if "$ROOT/scripts/quality-dashboard" generate --result-root "$RESULT_ROOT" \
+    --output "$TMP_ROOT/tampered-care-input" --care-summary "$CARE_SUMMARY" \
+    >"$TMP_ROOT/tampered-care-input.out" 2>&1; then
+  fail 'tampered care input was accepted'
+fi
+grep -F 'care input digest does not match: evals.json' \
+  "$TMP_ROOT/tampered-care-input.out" >/dev/null || \
+  fail 'tampered care input failure is unclear'
+mv "$TMP_ROOT/evals.backup.json" "$CARE_EVALS"
 
 cp "$RUN_DIR/manifest.tsv" "$TMP_ROOT/current-manifest.tsv"
 awk -F '\t' '$1 != "specs" {print}' "$TMP_ROOT/current-manifest.tsv" \

@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
+import time
 from typing import Any, NoReturn
 
 from quality_policy import POLICY_FILE, Policy, PolicyError
@@ -16,7 +19,14 @@ from quality_policy import POLICY_FILE, Policy, PolicyError
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CORPUS = ROOT / "quality/evals.json"
+DEFAULT_BASELINE = ROOT / "app/build/quality-care-baseline"
+LATEST_RUN_LIMIT = 5
+GH_TIMEOUT_SECONDS = 20
+LATEST_DEADLINE_SECONDS = 60
 CASE_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+COMMIT = re.compile(r"^[0-9a-f]{40}$")
+DIGEST = re.compile(r"^[0-9a-f]{64}$")
+REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 CATEGORIES = {
     "escaped-defect",
     "historical-task",
@@ -50,6 +60,27 @@ def read_json(path: Path, label: str) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, UnicodeError, OSError) as error:
         raise CareError(f"{label} is invalid: {error}") from error
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def git_source_commit() -> str:
+    try:
+        result = subprocess.run(
+            ("git", "-C", str(ROOT), "rev-parse", "HEAD"),
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as error:
+        raise CareError(f"cannot inspect source commit: {error}") from error
+    value = result.stdout.strip()
+    if result.returncode or not COMMIT.fullmatch(value):
+        raise CareError("cannot resolve the quality-care source commit")
+    return value
 
 
 def valid_path(value: Any) -> bool:
@@ -347,8 +378,13 @@ def assess(eval_path: Path, history_path: Path, policy: Policy) -> dict[str, Any
     return {
         "schema": 1,
         "policy": policy.version,
+        "source_commit": git_source_commit(),
         "status": status,
         "reasons": reasons,
+        "inputs": {
+            "eval_sha256": sha256_file(eval_path),
+            "history_sha256": sha256_file(history_path),
+        },
         "evals": {
             "passed": eval_summary.get("passed", 0),
             "total": eval_summary.get("total", 0),
@@ -373,6 +409,252 @@ def assess(eval_path: Path, history_path: Path, policy: Policy) -> dict[str, Any
     }
 
 
+def valid_count(value: Any) -> bool:
+    return type(value) is int and value >= 0
+
+
+def validate_summary(
+    value: Any, expected_policy: int, expected_slo_seconds: int
+) -> dict[str, Any]:
+    keys = {
+        "schema", "policy", "source_commit", "status", "reasons", "inputs",
+        "evals", "latency", "runs", "autonomy"
+    }
+    if not isinstance(value, dict) or set(value) != keys:
+        raise CareError("care summary schema is invalid")
+    if (
+        value["schema"] != 1
+        or value["policy"] != expected_policy
+        or not isinstance(value["source_commit"], str)
+        or not COMMIT.fullmatch(value["source_commit"])
+        or value["status"] not in ("passed", "attention")
+        or not isinstance(value["reasons"], list)
+        or any(not isinstance(reason, str) or not reason for reason in value["reasons"])
+    ):
+        raise CareError("care summary identity is invalid")
+    inputs = value["inputs"]
+    if (
+        not isinstance(inputs, dict)
+        or set(inputs) != {"eval_sha256", "history_sha256"}
+        or any(not isinstance(digest, str) or not DIGEST.fullmatch(digest) for digest in inputs.values())
+    ):
+        raise CareError("care summary input digests are invalid")
+    evals = value["evals"]
+    if (
+        not isinstance(evals, dict)
+        or set(evals) != {"passed", "total", "categories"}
+        or not valid_count(evals["passed"])
+        or not valid_count(evals["total"])
+        or evals["total"] < 1
+        or evals["passed"] > evals["total"]
+        or not isinstance(evals["categories"], dict)
+        or set(evals["categories"]) != CATEGORIES
+        or any(not valid_count(count) for count in evals["categories"].values())
+        or sum(evals["categories"].values()) != evals["passed"]
+    ):
+        raise CareError("care summary evals are invalid")
+    latency = value["latency"]
+    if (
+        not isinstance(latency, dict)
+        or set(latency) != {
+            "status", "wall_p95_seconds", "alert_seconds", "slo_seconds"
+        }
+        or latency["status"] not in ("healthy", "attention", "breached")
+        or any(
+            not valid_count(latency[key])
+            for key in ("wall_p95_seconds", "alert_seconds", "slo_seconds")
+        )
+        or latency["slo_seconds"] != expected_slo_seconds
+        or latency["alert_seconds"] != expected_slo_seconds * 80 // 100
+        or latency["alert_seconds"] >= latency["slo_seconds"]
+    ):
+        raise CareError("care summary latency is invalid")
+    runs = value["runs"]
+    if (
+        not isinstance(runs, dict)
+        or set(runs) != {
+            "total", "failed_or_interrupted", "environment_failures", "invalid_evidence"
+        }
+        or any(not valid_count(count) for count in runs.values())
+        or runs["failed_or_interrupted"] > runs["total"]
+    ):
+        raise CareError("care summary run counts are invalid")
+    autonomy = value["autonomy"]
+    if (
+        not isinstance(autonomy, dict)
+        or set(autonomy) != {"review", "repair_loops"}
+        or autonomy["review"] not in ("not-configured", "passed", "failed")
+        or not (
+            autonomy["repair_loops"] == "not-yet-emitted"
+            or valid_count(autonomy["repair_loops"])
+        )
+    ):
+        raise CareError("care summary autonomy is invalid")
+    p95 = latency["wall_p95_seconds"]
+    expected_latency = (
+        "breached" if p95 >= latency["slo_seconds"]
+        else "attention" if p95 >= latency["alert_seconds"]
+        else "healthy"
+    )
+    if latency["status"] != expected_latency:
+        raise CareError("care summary latency status is inconsistent")
+    needs_attention = (
+        evals["passed"] != evals["total"]
+        or latency["status"] != "healthy"
+        or any(runs[key] for key in (
+            "failed_or_interrupted", "environment_failures", "invalid_evidence"
+        ))
+    )
+    if (
+        (value["status"] == "attention") != needs_attention
+        or (value["status"] == "attention") != bool(value["reasons"])
+    ):
+        raise CareError("care summary status is inconsistent")
+    return value
+
+
+def validate_input_bindings(path: Path, summary: dict[str, Any]) -> None:
+    for filename, key in (
+        ("evals.json", "eval_sha256"),
+        ("history.json", "history_sha256"),
+    ):
+        candidate = path.parent / filename
+        if not candidate.is_file() or candidate.is_symlink():
+            raise CareError(f"care input is missing or unsafe: {filename}")
+        if sha256_file(candidate) != summary["inputs"][key]:
+            raise CareError(f"care input digest does not match: {filename}")
+
+
+def gh_output(
+    executable: str, arguments: list[str], *, deadline: float | None = None
+) -> str:
+    timeout = GH_TIMEOUT_SECONDS
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise CareError(
+                f"care restore exceeded its {LATEST_DEADLINE_SECONDS}-second deadline"
+            )
+        timeout = min(timeout, remaining)
+    try:
+        result = subprocess.run(
+            [executable, *arguments],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as error:
+        if deadline is not None:
+            raise CareError("gh did not finish before the bounded care restore deadline") from error
+        raise CareError(f"gh exceeded its {GH_TIMEOUT_SECONDS}-second deadline") from error
+    except OSError as error:
+        raise CareError(f"cannot start gh: {error}") from error
+    if result.returncode:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+        raise CareError(f"gh failed: {detail}")
+    return result.stdout.strip()
+
+
+def latest_summary(
+    repository: str,
+    output_root: Path,
+    optional: bool,
+    policy: Policy,
+    test_mode: bool,
+) -> Path | None:
+    if not REPOSITORY.fullmatch(repository):
+        if optional and not repository:
+            return None
+        raise CareError("repository must identify owner/repository")
+    if not test_mode and output_root.resolve() != DEFAULT_BASELINE.resolve():
+        raise CareError("care baseline output must use app/build/quality-care-baseline")
+    if output_root.exists() and (not output_root.is_dir() or output_root.is_symlink()):
+        raise CareError("care baseline output is unsafe")
+    output_root.mkdir(parents=True, exist_ok=True)
+    executable = os.environ.get("DETACH_QUALITY_CARE_GH", "gh") if test_mode else "gh"
+    deadline_seconds = LATEST_DEADLINE_SECONDS
+    if test_mode and os.environ.get("DETACH_QUALITY_CARE_LATEST_SECONDS"):
+        raw_deadline = os.environ["DETACH_QUALITY_CARE_LATEST_SECONDS"]
+        if not raw_deadline.isdigit() or int(raw_deadline) < 1:
+            raise CareError("test care restore deadline must be a positive integer")
+        deadline_seconds = int(raw_deadline)
+    deadline = time.monotonic() + deadline_seconds
+    run_output = gh_output(
+        executable,
+        [
+            "api",
+            f"repos/{repository}/actions/workflows/quality-care.yml/runs"
+            f"?branch=main&status=completed&per_page={LATEST_RUN_LIMIT}",
+            "--jq",
+            ".workflow_runs[].id",
+        ],
+        deadline=deadline,
+    )
+    run_ids = run_output.splitlines()
+    if not run_ids:
+        if optional:
+            return None
+        raise CareError("no completed main quality-care run is available")
+    if len(run_ids) > LATEST_RUN_LIMIT or any(
+        not re.fullmatch(r"[1-9][0-9]*", run_id) for run_id in run_ids
+    ):
+        raise CareError("quality-care run list is invalid")
+    for run_id in run_ids:
+        artifact_name = gh_output(
+            executable,
+            [
+                "api",
+                f"repos/{repository}/actions/runs/{run_id}/artifacts",
+                "--jq",
+                ".artifacts | map(select(.expired == false and "
+                "(.name | startswith(\"quality-care-\")))) | "
+                "if length == 0 then \"missing\" elif length == 1 then "
+                ".[0].name else \"ambiguous\" end",
+            ],
+            deadline=deadline,
+        )
+        if artifact_name == "missing":
+            continue
+        if artifact_name == "ambiguous" or not artifact_name.startswith("quality-care-"):
+            raise CareError(f"quality-care run {run_id} has ambiguous artifacts")
+        destination = output_root / run_id
+        if destination.exists():
+            raise CareError(f"care baseline destination already exists: {destination}")
+        destination.mkdir()
+        gh_output(
+            executable,
+            [
+                "run", "download", run_id, "--repo", repository,
+                "--name", artifact_name, "--dir", str(destination),
+            ],
+            deadline=deadline,
+        )
+        candidates = [
+            path for path in destination.rglob("summary.json")
+            if path.is_file() and not path.is_symlink()
+        ]
+        if len(candidates) != 1:
+            raise CareError("downloaded care evidence has no unique summary")
+        document = read_json(candidates[0], "care summary")
+        if isinstance(document, dict) and document.get("policy") != policy.version:
+            continue
+        summary = validate_summary(
+            document, policy.version, policy.limits["pr_feedback_seconds"]
+        )
+        validate_input_bindings(candidates[0], summary)
+        print(candidates[0])
+        return candidates[0]
+    if optional:
+        return None
+    raise CareError(
+        f"no valid policy {policy.version} care artifact exists in the latest "
+        f"{LATEST_RUN_LIMIT} completed runs"
+    )
+
+
 def atomic_write(path: Path, value: dict[str, Any]) -> None:
     if path.exists() and path.is_symlink():
         raise CareError(f"output target is a symlink: {path}")
@@ -395,15 +677,32 @@ def parser() -> argparse.ArgumentParser:
     assess_parser.add_argument("--history-summary", type=Path, required=True)
     assess_parser.add_argument("--output", type=Path, required=True)
     assess_parser.add_argument("--json", action="store_true")
+    latest_parser = commands.add_parser("latest")
+    latest_parser.add_argument(
+        "--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
+    latest_parser.add_argument("--output-root", type=Path, default=DEFAULT_BASELINE)
+    latest_parser.add_argument("--optional", action="store_true")
     return result
 
 
 def main() -> int:
     arguments = parser().parse_args()
     policy = Policy(POLICY_FILE)
+    if arguments.command == "latest":
+        latest_summary(
+            arguments.repository,
+            arguments.output_root,
+            arguments.optional,
+            policy,
+            os.environ.get("DETACH_QUALITY_CARE_TEST_MODE") == "1",
+        )
+        return 0
     if arguments.command == "assess":
         document = assess(
             arguments.eval_summary.resolve(), arguments.history_summary.resolve(), policy
+        )
+        validate_summary(
+            document, policy.version, policy.limits["pr_feedback_seconds"]
         )
         atomic_write(arguments.output.resolve(), document)
         if arguments.json:

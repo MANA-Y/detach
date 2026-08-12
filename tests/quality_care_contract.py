@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -18,11 +20,16 @@ DOC_WORKFLOW = ROOT / ".github/workflows/documentation-care.yml"
 
 
 def invoke(
-    arguments: list[str], *, expected: int = 0
+    arguments: list[str], *, expected: int = 0,
+    extra_environment: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    environment = os.environ.copy()
+    if extra_environment:
+        environment.update(extra_environment)
     result = subprocess.run(
         [str(SCRIPT), *arguments],
         cwd=ROOT,
+        env=environment,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -49,6 +56,9 @@ def assert_workflows() -> None:
         "scripts/quality-care evaluate",
         "scripts/quality-history --format json",
         "scripts/quality-care assess",
+        "--care-summary app/build/quality-care/summary.json",
+        "enforce-attention:",
+        "pages: write",
         "cancel-in-progress: true",
         "--created \">=$since\"",
         "timeout 20s gh run download",
@@ -152,7 +162,7 @@ def main() -> int:
 
         eval_path = root / "evals.json"
         write_json(eval_path, result)
-        healthy_history = root / "healthy-history.json"
+        healthy_history = root / "history.json"
         write_json(healthy_history, history(420))
         healthy_summary = root / "healthy-summary.json"
         invoke(
@@ -165,6 +175,11 @@ def main() -> int:
         healthy = json.loads(healthy_summary.read_text(encoding="utf-8"))
         assert healthy["status"] == "passed"
         assert healthy["latency"]["alert_seconds"] == 480
+        assert len(healthy["source_commit"]) == 40
+        assert healthy["inputs"] == {
+            "eval_sha256": hashlib.sha256(eval_path.read_bytes()).hexdigest(),
+            "history_sha256": hashlib.sha256(healthy_history.read_bytes()).hexdigest(),
+        }
 
         slow_history = root / "slow-history.json"
         write_json(slow_history, history(481))
@@ -197,6 +212,105 @@ def main() -> int:
         )
         failed_care = json.loads(failed_summary.read_text(encoding="utf-8"))
         assert "a retained gate run failed or was interrupted" in failed_care["reasons"]
+
+        fake_gh = root / "fake-gh.py"
+        fake_gh.write_text(
+            """#!/usr/bin/env python3
+import os
+from pathlib import Path
+import shutil
+import sys
+import time
+args=sys.argv[1:]
+if os.environ.get("CARE_GH_SLEEP"):
+    time.sleep(float(os.environ["CARE_GH_SLEEP"]))
+if args[0] == "api" and "workflows/quality-care.yml/runs" in args[1]:
+    print("778\\n777")
+elif args[0] == "api" and args[1].endswith("/runs/778/artifacts"):
+    print("missing")
+elif args[0] == "api" and args[1].endswith("/runs/777/artifacts"):
+    print("quality-care-777-1")
+elif args[:2] == ["run", "download"]:
+    destination=Path(args[args.index("--dir") + 1])
+    destination.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(os.environ["CARE_FIXTURE"], destination / "summary.json")
+    shutil.copyfile(os.environ["CARE_EVAL_FIXTURE"], destination / "evals.json")
+    shutil.copyfile(os.environ["CARE_HISTORY_FIXTURE"], destination / "history.json")
+else:
+    raise SystemExit(3)
+""",
+            encoding="utf-8",
+        )
+        fake_gh.chmod(0o755)
+        latest_root = root / "latest"
+        latest = invoke(
+            [
+                "latest", "--repository", "owner/repository",
+                "--output-root", str(latest_root),
+            ],
+            extra_environment={
+                "DETACH_QUALITY_CARE_TEST_MODE": "1",
+                "DETACH_QUALITY_CARE_GH": str(fake_gh),
+                "CARE_FIXTURE": str(healthy_summary),
+                "CARE_EVAL_FIXTURE": str(eval_path),
+                "CARE_HISTORY_FIXTURE": str(healthy_history),
+            },
+        ).stdout.strip()
+        assert Path(latest) == latest_root / "777/summary.json"
+
+        stale_value = json.loads(healthy_summary.read_text(encoding="utf-8"))
+        stale_value["policy"] -= 1
+        stale_fixture = root / "stale-care.json"
+        write_json(stale_fixture, stale_value)
+        optional = invoke(
+            [
+                "latest", "--repository", "owner/repository",
+                "--output-root", str(root / "stale-latest"), "--optional",
+            ],
+            extra_environment={
+                "DETACH_QUALITY_CARE_TEST_MODE": "1",
+                "DETACH_QUALITY_CARE_GH": str(fake_gh),
+                "CARE_FIXTURE": str(stale_fixture),
+                "CARE_EVAL_FIXTURE": str(eval_path),
+                "CARE_HISTORY_FIXTURE": str(healthy_history),
+            },
+        )
+        assert optional.stdout == ""
+
+        false_pass_value = json.loads(healthy_summary.read_text(encoding="utf-8"))
+        false_pass_value["latency"]["wall_p95_seconds"] = 481
+        false_pass_fixture = root / "false-pass-care.json"
+        write_json(false_pass_fixture, false_pass_value)
+        false_pass = invoke(
+            [
+                "latest", "--repository", "owner/repository",
+                "--output-root", str(root / "false-pass-latest"),
+            ],
+            expected=2,
+            extra_environment={
+                "DETACH_QUALITY_CARE_TEST_MODE": "1",
+                "DETACH_QUALITY_CARE_GH": str(fake_gh),
+                "CARE_FIXTURE": str(false_pass_fixture),
+                "CARE_EVAL_FIXTURE": str(eval_path),
+                "CARE_HISTORY_FIXTURE": str(healthy_history),
+            },
+        )
+        assert "care summary latency status is inconsistent" in false_pass.stdout
+
+        timed_out = invoke(
+            [
+                "latest", "--repository", "owner/repository",
+                "--output-root", str(root / "timed-out-latest"),
+            ],
+            expected=2,
+            extra_environment={
+                "DETACH_QUALITY_CARE_TEST_MODE": "1",
+                "DETACH_QUALITY_CARE_GH": str(fake_gh),
+                "DETACH_QUALITY_CARE_LATEST_SECONDS": "1",
+                "CARE_GH_SLEEP": "2",
+            },
+        )
+        assert "deadline" in timed_out.stdout
 
     print("Quality care contracts passed")
     return 0

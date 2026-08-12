@@ -37,6 +37,9 @@ the only ordinary merge authority. Unknown paths select the full plan.
 - `scripts/quality-care validate` checks the versioned workflow eval corpus.
   `scripts/quality-care evaluate` grades diff impact and private-scope cases.
   `scripts/quality-care assess` compares the results with retained run latency.
+  `scripts/quality-care latest --optional` inspects at most five completed
+  runs within one 60-second deadline. It restores the newest valid
+  current-policy care artifact for a dashboard deploy.
 - `scripts/quality-policy specs` lists current durable specs.
   `scripts/quality-policy render-specs` prints their requirement, journey, and
   scenario links.
@@ -126,6 +129,10 @@ delivery from competing with those workers. Provider lanes then run in
 parallel. Independent distribution and release lanes overlap after provider
 work drains.
 
+The gate-contract stage keeps lightweight contracts concurrent. It admits at
+most two process-heavy orchestrator shards at one time. This limit prevents
+process oversubscription without increasing the stage budget.
+
 Swift and Clang caches stay under `app/.build`. The packaged UI test uses a
 stripped process-private app, fake CLI, and private state. Provider tests use
 private state and socket roots plus the newly bundled `tmux` and
@@ -193,13 +200,18 @@ run release tools.
 ## Dashboard
 
 The dashboard generator validates the current manifest, summary, metric and
-mutation digests. It shows authority, result, exact commit, exact CI run,
+mutation digests. It also validates the care policy, source commit, schema, and
+input digests. It shows authority, result, exact commit, exact CI run,
 freshness, fingerprint, durations, coverage, affected journeys, scenario gaps,
-mutation score, and recent latency.
+mutation score, workflow evals, feedback p95 and SLO, review state, security
+state, and recent latency.
 
-The same artifact opens locally and deploys to GitHub Pages. Pages deploys only
-after a green `ci-main` gate or a green mutation score for that policy. The
-workflow does not publish pull request or local evidence.
+The same artifact opens locally and deploys to GitHub Pages. Main and mutation
+workflows deploy only after a green `ci-main` gate or a green mutation score for
+that policy. The bounded care workflow can publish a validated attention
+result, then marks its run failed and opens one issue. A later deploy restores
+the newest valid care artifact for the current policy. No workflow publishes
+pull request or local gate evidence.
 
 ## Definition of done
 

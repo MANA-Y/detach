@@ -44,8 +44,11 @@
   `scripts/quality-care evaluate --output <json>` grades exact diff impact and
   private-scope outcomes. `scripts/quality-care assess` fails before the
   pull-request wall p95 reaches the ten-minute SLO. Scheduled quality care opens
-  one scoped issue. Scheduled documentation care can open a pull request only
-  for deterministic files under `quality/generated/`.
+  one scoped issue. Its summary binds the source commit and both input digests.
+  `scripts/quality-care latest --optional` inspects at most five completed runs
+  inside one 60-second deadline. It supplies only a valid current-policy
+  artifact to later dashboard deploys. Scheduled documentation care can open a
+  pull request only for deterministic files under `quality/generated/`.
 - `scripts/quality-policy generate --check` checks both generated policy JSON
   and the readable current-spec traceability table.
 - `scripts/quality-promote` is the hosted post-merge path. It downloads the
@@ -56,7 +59,10 @@
   `app/build/quality-dashboard/{index.html,data.json}` from the newest schema-4
   evidence. `scripts/quality-dashboard serve --seconds 300` serves it only on
   loopback and stops at the deadline. A green `main` workflow publishes the
-  same static files to `https://iltsarev.github.io/detach/`.
+  same static files to `https://iltsarev.github.io/detach/`. Add
+  `--care-summary <json>` to show validated eval, latency, run-health, and
+  autonomy facts. Scheduled care can publish an attention result before the
+  workflow records FAIL and opens its issue.
 - `scripts/quality-mutation validate` checks the deterministic safety corpus.
   `scripts/quality-mutation run --id <id> --output <json> --log <log>` runs one
   mutant and restores its source. The weekly hosted workflow runs all mutants

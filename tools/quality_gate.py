@@ -1698,6 +1698,7 @@ def run_static_stage(root: Path, run_dir: Path, mode: str, resolved_base: str) -
 
 
 def run_gate_contract_stage(root: Path) -> int:
+    orchestrator_limit = 2
     contracts = [
         (
             "orchestrator-selection.log",
@@ -1811,24 +1812,33 @@ def run_gate_contract_stage(root: Path) -> int:
     contract_root = Path(tempfile.mkdtemp(prefix="detach-gate-contract."))
     processes: list[tuple[Path, subprocess.Popen[bytes], TextIO, str, float]] = []
     try:
-        for filename, command, additions, expected in contracts:
-            path = contract_root / filename
-            output = path.open("w", encoding="utf-8")
-            environment = os.environ.copy()
-            environment.update(additions)
-            process = subprocess.Popen(
-                command,
-                cwd=root,
-                env=environment,
-                stdout=output,
-                stderr=subprocess.STDOUT,
-            )
-            processes.append((path, process, output, expected, time.monotonic()))
         failed = False
         durations: dict[Path, int] = {}
-        pending = set(range(len(processes)))
-        while pending:
-            for index in list(pending):
+        waiting = list(contracts)
+        running: set[int] = set()
+        running_orchestrators = 0
+        while waiting or running:
+            for contract in list(waiting):
+                filename, command, additions, expected = contract
+                is_orchestrator = filename.startswith("orchestrator-")
+                if is_orchestrator and running_orchestrators >= orchestrator_limit:
+                    continue
+                path = contract_root / filename
+                output = path.open("w", encoding="utf-8")
+                environment = os.environ.copy()
+                environment.update(additions)
+                process = subprocess.Popen(
+                    command,
+                    cwd=root,
+                    env=environment,
+                    stdout=output,
+                    stderr=subprocess.STDOUT,
+                )
+                processes.append((path, process, output, expected, time.monotonic()))
+                running.add(len(processes) - 1)
+                running_orchestrators += int(is_orchestrator)
+                waiting.remove(contract)
+            for index in list(running):
                 path, process, output, _, started = processes[index]
                 status = process.poll()
                 if status is None:
@@ -1837,8 +1847,10 @@ def run_gate_contract_stage(root: Path) -> int:
                     failed = True
                 durations[path] = max(0, round(time.monotonic() - started))
                 output.close()
-                pending.remove(index)
-            if pending:
+                running.remove(index)
+                if path.name.startswith("orchestrator-"):
+                    running_orchestrators -= 1
+            if running:
                 time.sleep(0.05)
         for path, _, _, expected, _ in sorted(processes, key=lambda item: item[0].name):
             content = path.read_text(encoding="utf-8", errors="replace")

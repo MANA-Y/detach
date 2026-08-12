@@ -68,6 +68,9 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
 - Pull-request CI runs every functional check once and the timing-policy
   ratchets. It does not enforce reference-machine wall or per-stage timing
   ceilings. The workflow has a ten-minute overall deadline.
+- The gate-contract runner admits at most two process-heavy orchestrator shards
+  at one time. Lightweight contracts stay concurrent. The runner does not
+  increase a timing budget to hide process oversubscription.
 - CI gets quality metrics from the last green `main` artifact. Test identities,
   aggregate coverage, and critical-source coverage cannot decrease. Changed
   executable Swift lines need at least 90 percent coverage. A person does not
@@ -92,8 +95,13 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
 - A deterministic static dashboard reads only validated gate evidence. The
   same artifact opens locally and deploys to GitHub Pages only after a green
   `main` run with direct or promoted evidence, or a green scheduled mutation
-  run. It shows measured coverage and the latest valid mutation score when
-  they exist. Only deploy jobs have Pages write permission.
+  run. Bounded quality care can also deploy its validated result before it
+  marks an attention run as failed. Care evidence binds the source commit and
+  SHA-256 digests of its eval and history inputs. The dashboard shows measured
+  coverage, mutation score, workflow evals, feedback p95 and SLO, review state,
+  and security state when they exist. A later main or mutation deploy restores
+  the newest valid current-policy care artifact. Only deploy jobs have Pages
+  write permission.
 - An ordinary merged pull request does not repeat the full functional matrix
   on `main`. The main workflow promotes the successful pull-request artifact
   only when the tested merge and final merge have the same tree and ordered
