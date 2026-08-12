@@ -5,7 +5,9 @@
       "journeys": [
         "J-QUALITY-CHANGE"
       ],
-      "requirements": [],
+      "requirements": [
+        "QC-QUALITY-POLICY"
+      ],
       "spec": "docs/specs/documentation.md"
     },
     {
@@ -13,7 +15,9 @@
       "journeys": [
         "J-DOCS-CONSISTENCY"
       ],
-      "requirements": [],
+      "requirements": [
+        "QC-DOC-CONSISTENCY"
+      ],
       "spec": "docs/specs/documentation.md"
     },
     {
@@ -275,7 +279,9 @@
     {
       "capability": "quality-system",
       "id": "J-QUALITY-CHANGE",
-      "requirements": [],
+      "requirements": [
+        "QC-QUALITY-POLICY"
+      ],
       "scenarios": [
         "SC-POLICY-CONTRACT"
       ],
@@ -284,7 +290,9 @@
     {
       "capability": "documentation",
       "id": "J-DOCS-CONSISTENCY",
-      "requirements": [],
+      "requirements": [
+        "QC-DOC-CONSISTENCY"
+      ],
       "scenarios": [
         "SC-DOCS-CONTRACT"
       ],
@@ -362,7 +370,9 @@
       "id": "J-POWER-ENABLE",
       "requirements": [
         "QC-POWER-ASSERTION",
-        "QC-POWER-LEASE"
+        "QC-POWER-LEASE",
+        "QC-POWER-CLI",
+        "QC-POWER-PLATFORM"
       ],
       "scenarios": [
         "SC-POWER-UNIT"
@@ -479,6 +489,7 @@
         "QC-APP-ONBOARDING"
       ],
       "scenarios": [
+        "SC-APP-ONBOARDING-UNIT",
         "SC-UI-ONBOARD-FIRST-RUN"
       ],
       "summary": "A new user completes the first-run setup."
@@ -512,6 +523,7 @@
         "QC-APP-SETTINGS"
       ],
       "scenarios": [
+        "SC-APP-SETTINGS-UNIT",
         "SC-UI-SETTINGS"
       ],
       "summary": "A user changes a setting and observes the persisted result."
@@ -606,7 +618,7 @@
     "pr_feedback_seconds": 600,
     "review_seconds": 180
   },
-  "policy": 21,
+  "policy": 22,
   "release_domains": [
     {
       "gates": "-",
@@ -748,6 +760,16 @@
       "id": "QC-RELEASE-PUBLISH",
       "spec": "docs/specs/release.md",
       "summary": "Publication exposes only independently verified allowlisted artifacts."
+    },
+    {
+      "id": "QC-QUALITY-POLICY",
+      "spec": "docs/specs/documentation.md",
+      "summary": "One current policy owns quality selection and traceability."
+    },
+    {
+      "id": "QC-DOC-CONSISTENCY",
+      "spec": "docs/specs/documentation.md",
+      "summary": "Durable documentation and generated quality views stay synchronized."
     }
   ],
   "routes": [
@@ -1739,6 +1761,18 @@
       "status": "manual-release"
     },
     {
+      "command": "cd app && swift test --filter Onboarding",
+      "id": "SC-APP-ONBOARDING-UNIT",
+      "stage": "swift",
+      "status": "legacy-stage"
+    },
+    {
+      "command": "cd app && swift test --filter Settings",
+      "id": "SC-APP-SETTINGS-UNIT",
+      "stage": "swift",
+      "status": "legacy-stage"
+    },
+    {
       "command": "tests/ui-e2e.sh",
       "id": "SC-UI-DASHBOARD",
       "stage": "ui-e2e",
@@ -1866,6 +1900,797 @@
     }
   ],
   "schema": 1,
+  "specifications": [
+    {
+      "capabilities": [
+        "quality-system",
+        "documentation"
+      ],
+      "id": "documentation",
+      "journeys": [
+        "J-QUALITY-CHANGE",
+        "J-DOCS-CONSISTENCY"
+      ],
+      "owned_patterns": [
+        "*.md",
+        "*.sh",
+        ".gitattributes",
+        ".github/*",
+        ".github/workflows/quality-gates.yml",
+        ".github/workflows/quality-mutations.yml",
+        ".gitignore",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "README.md",
+        "app/.gitignore",
+        "docs/assets/*",
+        "docs/quality-gates.md",
+        "docs/testing.md",
+        "quality/*",
+        "scripts/*",
+        "scripts/quality-baseline",
+        "scripts/quality-dashboard",
+        "scripts/quality-gate",
+        "scripts/quality-history",
+        "scripts/quality-metrics",
+        "scripts/quality-mutation",
+        "scripts/quality-policy",
+        "scripts/quality-scenarios",
+        "scripts/test",
+        "tests/*",
+        "tests/docs-contract.sh",
+        "tests/quality-*",
+        "tests/quality_*",
+        "tests/release-budget*",
+        "tests/shell-safety*",
+        "tests/test-suite-contract.sh",
+        "tools/quality_baseline.py",
+        "tools/quality_dashboard.py",
+        "tools/quality_gate.py",
+        "tools/quality_metrics.py",
+        "tools/quality_mutation.py",
+        "tools/quality_policy.py",
+        "tools/quality_scenarios.py"
+      ],
+      "path": "docs/specs/documentation.md",
+      "requirements": [
+        {
+          "id": "QC-QUALITY-POLICY",
+          "journeys": [
+            "J-QUALITY-CHANGE"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/quality-policy.sh",
+              "id": "SC-POLICY-CONTRACT",
+              "stage": "gate-contract",
+              "status": "automated"
+            }
+          ],
+          "summary": "One current policy owns quality selection and traceability."
+        },
+        {
+          "id": "QC-DOC-CONSISTENCY",
+          "journeys": [
+            "J-DOCS-CONSISTENCY"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/docs-contract.sh",
+              "id": "SC-DOCS-CONTRACT",
+              "stage": "static",
+              "status": "automated"
+            }
+          ],
+          "summary": "Durable documentation and generated quality views stay synchronized."
+        }
+      ],
+      "summary": "Agent context, specifications, and quality automation stay synchronized."
+    },
+    {
+      "capabilities": [
+        "session-lifecycle"
+      ],
+      "id": "runtime",
+      "journeys": [
+        "J-SESSION-CREATE",
+        "J-SESSION-PERSIST",
+        "J-SESSION-RECOVER",
+        "J-SESSION-STOP",
+        "J-SESSION-DELETE"
+      ],
+      "owned_patterns": [
+        "app/Sources/DetachKit/*.swift",
+        "app/Sources/DetachKit/ANSIText.swift",
+        "app/Sources/DetachKit/DetachState*.swift",
+        "app/Sources/DetachKit/LogPoller.swift",
+        "app/Sources/DetachKit/Session*.swift",
+        "app/Sources/DetachKit/Storage*.swift",
+        "app/Sources/DetachKit/Terminal*.swift",
+        "app/Sources/DetachKit/Tip.swift",
+        "app/Sources/DetachKit/Tmux*.swift",
+        "app/Sources/DetachState/*.swift",
+        "bin/*",
+        "bin/detach",
+        "bin/detach-core",
+        "install.sh",
+        "scripts/build-tmux.sh",
+        "scripts/install.sh",
+        "tests/distribution.sh",
+        "tests/fake-claude",
+        "tests/fake-codex",
+        "tests/run-claude.sh",
+        "tests/run.sh",
+        "tests/tmux-runtime.sh"
+      ],
+      "path": "docs/specs/runtime.md",
+      "requirements": [
+        {
+          "id": "QC-RUNTIME-STATE",
+          "journeys": [
+            "J-SESSION-CREATE",
+            "J-SESSION-PERSIST"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/run.sh",
+              "id": "SC-SESSION-CREATE-CODEX",
+              "stage": "codex",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run-claude.sh",
+              "id": "SC-SESSION-CREATE-CLAUDE",
+              "stage": "claude",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run.sh",
+              "id": "SC-SESSION-PERSIST-CODEX",
+              "stage": "codex",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run-claude.sh",
+              "id": "SC-SESSION-PERSIST-CLAUDE",
+              "stage": "claude",
+              "status": "instrumented"
+            }
+          ],
+          "summary": "Typed state is the only shared state mutation boundary."
+        },
+        {
+          "id": "QC-RUNTIME-OWNERSHIP",
+          "journeys": [
+            "J-SESSION-CREATE",
+            "J-SESSION-RECOVER",
+            "J-SESSION-STOP",
+            "J-SESSION-DELETE"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/run.sh",
+              "id": "SC-SESSION-CREATE-CODEX",
+              "stage": "codex",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run-claude.sh",
+              "id": "SC-SESSION-CREATE-CLAUDE",
+              "stage": "claude",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run.sh",
+              "id": "SC-SESSION-RECOVER-CODEX",
+              "stage": "codex",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run-claude.sh",
+              "id": "SC-SESSION-RECOVER-CLAUDE",
+              "stage": "claude",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run.sh",
+              "id": "SC-SESSION-STOP-CODEX",
+              "stage": "codex",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run-claude.sh",
+              "id": "SC-SESSION-STOP-CLAUDE",
+              "stage": "claude",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/ui-e2e.sh",
+              "id": "SC-UI-SESSION-STOP",
+              "stage": "ui-e2e",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run.sh",
+              "id": "SC-SESSION-DELETE-CODEX",
+              "stage": "codex",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run-claude.sh",
+              "id": "SC-SESSION-DELETE-CLAUDE",
+              "stage": "claude",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/ui-e2e.sh",
+              "id": "SC-UI-SESSION-DELETE",
+              "stage": "ui-e2e",
+              "status": "instrumented"
+            }
+          ],
+          "summary": "Session operations prove the exact run token and process ownership."
+        },
+        {
+          "id": "QC-RUNTIME-STORAGE",
+          "journeys": [
+            "J-SESSION-PERSIST",
+            "J-SESSION-RECOVER",
+            "J-SESSION-DELETE"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/run.sh",
+              "id": "SC-SESSION-PERSIST-CODEX",
+              "stage": "codex",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run-claude.sh",
+              "id": "SC-SESSION-PERSIST-CLAUDE",
+              "stage": "claude",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run.sh",
+              "id": "SC-SESSION-RECOVER-CODEX",
+              "stage": "codex",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run-claude.sh",
+              "id": "SC-SESSION-RECOVER-CLAUDE",
+              "stage": "claude",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run.sh",
+              "id": "SC-SESSION-DELETE-CODEX",
+              "stage": "codex",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run-claude.sh",
+              "id": "SC-SESSION-DELETE-CLAUDE",
+              "stage": "claude",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/ui-e2e.sh",
+              "id": "SC-UI-SESSION-DELETE",
+              "stage": "ui-e2e",
+              "status": "instrumented"
+            }
+          ],
+          "summary": "Restores validate path, symlink, identity, and JSONL data before replacement."
+        },
+        {
+          "id": "QC-RUNTIME-TRANSITION",
+          "journeys": [
+            "J-SESSION-RECOVER"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/run.sh",
+              "id": "SC-SESSION-RECOVER-CODEX",
+              "stage": "codex",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/run-claude.sh",
+              "id": "SC-SESSION-RECOVER-CLAUDE",
+              "stage": "claude",
+              "status": "instrumented"
+            }
+          ],
+          "summary": "Session transitions preserve exact process identity."
+        }
+      ],
+      "summary": "Runtime state and session operations preserve exact ownership."
+    },
+    {
+      "capabilities": [
+        "power-protection"
+      ],
+      "id": "power",
+      "journeys": [
+        "J-POWER-ENABLE",
+        "J-POWER-LOW-BATTERY",
+        "J-POWER-HELPER-LEASE",
+        "J-POWER-CLOSED-LID"
+      ],
+      "owned_patterns": [
+        "app/Resources/DetachWatchdog*",
+        "app/Resources/dev.tsarev.detach.power-*",
+        "app/Sources/DetachApp/InstallationStore.swift",
+        "app/Sources/DetachApp/PowerHelper*.swift",
+        "app/Sources/DetachApp/Watchdog*.swift",
+        "app/Sources/DetachKit/BoundedProcessRunner.swift",
+        "app/Sources/DetachKit/ClamshellLockRunner.swift",
+        "app/Sources/DetachKit/DetachPower*.swift",
+        "app/Sources/DetachKit/Power*.swift",
+        "app/Sources/DetachPower/*.swift",
+        "app/Sources/DetachPowerHelper/*.swift",
+        "app/Sources/DetachWatchdog/*.swift",
+        "tests/power-smoke.sh"
+      ],
+      "path": "docs/specs/power.md",
+      "requirements": [
+        {
+          "id": "QC-POWER-ASSERTION",
+          "journeys": [
+            "J-POWER-ENABLE"
+          ],
+          "scenarios": [
+            {
+              "command": "cd app && swift test --filter Power",
+              "id": "SC-POWER-UNIT",
+              "stage": "swift",
+              "status": "legacy-stage"
+            }
+          ],
+          "summary": "Power protection owns a user IOKit assertion."
+        },
+        {
+          "id": "QC-POWER-AUTH",
+          "journeys": [
+            "J-POWER-HELPER-LEASE"
+          ],
+          "scenarios": [
+            {
+              "command": "cd app && swift test --filter PowerHelper",
+              "id": "SC-POWER-HELPER",
+              "stage": "swift",
+              "status": "legacy-stage"
+            }
+          ],
+          "summary": "Helper authorization binds audit token, console user, signing, and deadline."
+        },
+        {
+          "id": "QC-POWER-LEASE",
+          "journeys": [
+            "J-POWER-ENABLE",
+            "J-POWER-HELPER-LEASE"
+          ],
+          "scenarios": [
+            {
+              "command": "cd app && swift test --filter Power",
+              "id": "SC-POWER-UNIT",
+              "stage": "swift",
+              "status": "legacy-stage"
+            },
+            {
+              "command": "cd app && swift test --filter PowerHelper",
+              "id": "SC-POWER-HELPER",
+              "stage": "swift",
+              "status": "legacy-stage"
+            }
+          ],
+          "summary": "The root helper lease is bounded and ownership safe."
+        },
+        {
+          "id": "QC-POWER-XPC",
+          "journeys": [
+            "J-POWER-HELPER-LEASE"
+          ],
+          "scenarios": [
+            {
+              "command": "cd app && swift test --filter PowerHelper",
+              "id": "SC-POWER-HELPER",
+              "stage": "swift",
+              "status": "legacy-stage"
+            }
+          ],
+          "summary": "The helper accepts only the typed power protocol."
+        },
+        {
+          "id": "QC-POWER-PROTECTION",
+          "journeys": [
+            "J-POWER-LOW-BATTERY",
+            "J-POWER-CLOSED-LID"
+          ],
+          "scenarios": [
+            {
+              "command": "cd app && swift test --filter PowerProtection",
+              "id": "SC-POWER-LOW-BATTERY",
+              "stage": "swift",
+              "status": "legacy-stage"
+            },
+            {
+              "command": "scripts/release-lid-probe",
+              "id": "SC-POWER-CLOSED-LID",
+              "stage": "release-budget",
+              "status": "manual-release"
+            }
+          ],
+          "summary": "Low battery fails safe."
+        },
+        {
+          "id": "QC-POWER-CLI",
+          "journeys": [
+            "J-POWER-ENABLE"
+          ],
+          "scenarios": [
+            {
+              "command": "cd app && swift test --filter Power",
+              "id": "SC-POWER-UNIT",
+              "stage": "swift",
+              "status": "legacy-stage"
+            }
+          ],
+          "summary": "The power command reports and enforces typed protection state."
+        },
+        {
+          "id": "QC-POWER-PLATFORM",
+          "journeys": [
+            "J-POWER-ENABLE"
+          ],
+          "scenarios": [
+            {
+              "command": "cd app && swift test --filter Power",
+              "id": "SC-POWER-UNIT",
+              "stage": "swift",
+              "status": "legacy-stage"
+            }
+          ],
+          "summary": "Platform power operations preserve the helper safety boundary."
+        }
+      ],
+      "summary": "Power protection fails safe across both required layers."
+    },
+    {
+      "capabilities": [
+        "app-experience",
+        "onboarding",
+        "settings",
+        "update",
+        "diagnostics"
+      ],
+      "id": "app",
+      "journeys": [
+        "J-APP-DASHBOARD",
+        "J-APP-DETAIL",
+        "J-APP-EMPTY",
+        "J-APP-FAILURE",
+        "J-APP-FOCUS",
+        "J-APP-NEW-SESSION",
+        "J-ONBOARD-FIRST-RUN",
+        "J-ONBOARD-PROVIDER",
+        "J-ONBOARD-APPROVAL",
+        "J-SETTINGS-CHANGE",
+        "J-UPDATE-CHECK",
+        "J-UPDATE-APPLY",
+        "J-DOCTOR-REPORT"
+      ],
+      "owned_patterns": [
+        "app/Package.resolved",
+        "app/Package.swift",
+        "app/Resources/*",
+        "app/Resources/Detach.entitlements",
+        "app/Resources/Detach.icns",
+        "app/Resources/DetachDevelopment.entitlements",
+        "app/Resources/Info.plist",
+        "app/Resources/en.lproj/*",
+        "app/Resources/ru.lproj/*",
+        "app/Sources/*",
+        "app/Sources/DetachApp/*.swift",
+        "app/Sources/DetachApp/DetachApp.swift",
+        "app/Sources/DetachApp/EmptySessionsView.swift",
+        "app/Sources/DetachApp/LogTextView.swift",
+        "app/Sources/DetachApp/MenuBar*.swift",
+        "app/Sources/DetachApp/NewSessionSheet.swift",
+        "app/Sources/DetachApp/Onboarding*.swift",
+        "app/Sources/DetachApp/RootView.swift",
+        "app/Sources/DetachApp/Session*.swift",
+        "app/Sources/DetachApp/Settings*.swift",
+        "app/Sources/DetachApp/SetupGuidance.swift",
+        "app/Sources/DetachApp/SidebarView.swift",
+        "app/Sources/DetachApp/TextSize.swift",
+        "app/Sources/DetachApp/Theme.swift",
+        "app/Sources/DetachApp/TipsBar.swift",
+        "app/Sources/DetachApp/TmuxExtendedKeysSettingsController.swift",
+        "app/Sources/DetachApp/UIE2E*.swift",
+        "app/Sources/DetachApp/UpdaterService.swift",
+        "app/Sources/DetachKit/DetachCLI.swift",
+        "app/Sources/DetachKit/DoctorReport.swift",
+        "app/Sources/DetachKit/Localization.swift",
+        "app/Sources/DetachKit/UpdateConfiguration.swift",
+        "app/Tests/*",
+        "tests/fake-ui-cli",
+        "tests/ui-e2e-contract.sh",
+        "tests/ui-e2e.sh"
+      ],
+      "path": "docs/specs/app.md",
+      "requirements": [
+        {
+          "id": "QC-HEALTH-FRESHNESS",
+          "journeys": [
+            "J-APP-DASHBOARD"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/ui-e2e.sh",
+              "id": "SC-UI-DASHBOARD",
+              "stage": "ui-e2e",
+              "status": "instrumented"
+            }
+          ],
+          "summary": "Health claims use typed fresh state."
+        },
+        {
+          "id": "QC-HEALTH-PRESENTATION",
+          "journeys": [
+            "J-APP-DASHBOARD",
+            "J-APP-DETAIL",
+            "J-APP-EMPTY",
+            "J-APP-FAILURE",
+            "J-APP-FOCUS",
+            "J-APP-NEW-SESSION"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/ui-e2e.sh",
+              "id": "SC-UI-DASHBOARD",
+              "stage": "ui-e2e",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/ui-e2e.sh",
+              "id": "SC-UI-SESSION-DETAIL",
+              "stage": "ui-e2e",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/ui-e2e.sh",
+              "id": "SC-UI-EMPTY",
+              "stage": "ui-e2e",
+              "status": "instrumented"
+            },
+            {
+              "command": "pending hermetic packaged-app journey",
+              "id": "SC-UI-FAILURE",
+              "stage": "ui-e2e",
+              "status": "planned"
+            },
+            {
+              "command": "tests/ui-e2e.sh",
+              "id": "SC-UI-FOCUS",
+              "stage": "ui-e2e",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/ui-e2e.sh",
+              "id": "SC-UI-NEW-SESSION",
+              "stage": "ui-e2e",
+              "status": "instrumented"
+            }
+          ],
+          "summary": "The app presents typed health state without parsing terminal text."
+        },
+        {
+          "id": "QC-APP-TIPS",
+          "journeys": [
+            "J-APP-EMPTY"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/ui-e2e.sh",
+              "id": "SC-UI-EMPTY",
+              "stage": "ui-e2e",
+              "status": "instrumented"
+            }
+          ],
+          "summary": "Session tips remain deterministic and user visible."
+        },
+        {
+          "id": "QC-APP-DOCTOR",
+          "journeys": [
+            "J-DOCTOR-REPORT"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/distribution.sh",
+              "id": "SC-DOCTOR-REPORT",
+              "stage": "distribution",
+              "status": "instrumented"
+            }
+          ],
+          "summary": "Doctor output derives from typed runtime state."
+        },
+        {
+          "id": "QC-APP-ONBOARDING",
+          "journeys": [
+            "J-ONBOARD-FIRST-RUN",
+            "J-ONBOARD-PROVIDER",
+            "J-ONBOARD-APPROVAL"
+          ],
+          "scenarios": [
+            {
+              "command": "cd app && swift test --filter Onboarding",
+              "id": "SC-APP-ONBOARDING-UNIT",
+              "stage": "swift",
+              "status": "legacy-stage"
+            },
+            {
+              "command": "pending hermetic packaged-app journey",
+              "id": "SC-UI-ONBOARD-FIRST-RUN",
+              "stage": "ui-e2e",
+              "status": "planned"
+            },
+            {
+              "command": "pending hermetic packaged-app journey",
+              "id": "SC-UI-ONBOARD-PROVIDER",
+              "stage": "ui-e2e",
+              "status": "planned"
+            },
+            {
+              "command": "pending hermetic packaged-app journey",
+              "id": "SC-UI-ONBOARD-APPROVAL",
+              "stage": "ui-e2e",
+              "status": "planned"
+            }
+          ],
+          "summary": "Onboarding leads a new user through supported provider and approval setup."
+        },
+        {
+          "id": "QC-APP-SETTINGS",
+          "journeys": [
+            "J-SETTINGS-CHANGE"
+          ],
+          "scenarios": [
+            {
+              "command": "cd app && swift test --filter Settings",
+              "id": "SC-APP-SETTINGS-UNIT",
+              "stage": "swift",
+              "status": "legacy-stage"
+            },
+            {
+              "command": "pending hermetic packaged-app journey",
+              "id": "SC-UI-SETTINGS",
+              "stage": "ui-e2e",
+              "status": "planned"
+            }
+          ],
+          "summary": "Settings changes persist and affect only their declared behavior."
+        },
+        {
+          "id": "QC-APP-UPDATE",
+          "journeys": [
+            "J-UPDATE-CHECK",
+            "J-UPDATE-APPLY"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/release-preflight.sh",
+              "id": "SC-UPDATE-CHECK",
+              "stage": "release-preflight",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/publish-preflight.sh",
+              "id": "SC-UPDATE-APPLY",
+              "stage": "publish-preflight",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/release-workflow.sh",
+              "id": "SC-RELEASE-WORKFLOW",
+              "stage": "release-workflow",
+              "status": "instrumented"
+            }
+          ],
+          "summary": "Update state and application preserve the signed arm64 contract."
+        }
+      ],
+      "summary": "The app presents and changes only typed product state."
+    },
+    {
+      "capabilities": [
+        "installation",
+        "publication"
+      ],
+      "id": "release",
+      "journeys": [
+        "J-INSTALL-CLEAN",
+        "J-INSTALL-REPAIR",
+        "J-INSTALL-UNINSTALL",
+        "J-PUBLISH-ARTIFACTS"
+      ],
+      "owned_patterns": [
+        "BUILD",
+        "VERSION",
+        "app/Resources/ThirdParty/*",
+        "app/scripts/*",
+        "app/scripts/bundle-modes.sh",
+        "app/scripts/make-app.sh",
+        "app/scripts/make-dmg.sh",
+        "app/scripts/publish-release.sh",
+        "app/scripts/release.sh",
+        "app/scripts/verify-appcast.sh",
+        "scripts/release-impact",
+        "scripts/release-lid-probe",
+        "scripts/release-version",
+        "tests/publish-preflight.sh",
+        "tests/release-impact.sh",
+        "tests/release-preflight.sh",
+        "tests/release-workflow.sh"
+      ],
+      "path": "docs/specs/release.md",
+      "requirements": [
+        {
+          "id": "QC-RELEASE-INSTALL",
+          "journeys": [
+            "J-INSTALL-CLEAN",
+            "J-INSTALL-REPAIR",
+            "J-INSTALL-UNINSTALL"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/distribution.sh",
+              "id": "SC-INSTALL-CLEAN",
+              "stage": "distribution",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/tmux-runtime.sh",
+              "id": "SC-RUNTIME-PACKAGE",
+              "stage": "tmux-runtime",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/distribution.sh",
+              "id": "SC-INSTALL-REPAIR",
+              "stage": "distribution",
+              "status": "instrumented"
+            },
+            {
+              "command": "tests/distribution.sh",
+              "id": "SC-INSTALL-UNINSTALL",
+              "stage": "distribution",
+              "status": "instrumented"
+            }
+          ],
+          "summary": "Install, repair, and uninstall mutate only Detach-owned payloads and selected state."
+        },
+        {
+          "id": "QC-RELEASE-PUBLISH",
+          "journeys": [
+            "J-PUBLISH-ARTIFACTS"
+          ],
+          "scenarios": [
+            {
+              "command": "tests/publish-preflight.sh",
+              "id": "SC-PUBLISH-CONTRACT",
+              "stage": "publish-preflight",
+              "status": "instrumented"
+            }
+          ],
+          "summary": "Publication exposes only independently verified allowlisted artifacts."
+        }
+      ],
+      "summary": "Distribution and publication preserve verified immutable artifacts."
+    }
+  ],
   "stages": [
     {
       "name": "static",

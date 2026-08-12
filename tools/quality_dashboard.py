@@ -82,6 +82,11 @@ def read_manifest(run_dir: Path) -> dict[str, str]:
         raise DashboardError(f"manifest is missing: {sorted(missing)[0]}")
     if values["schema"] != "4":
         raise DashboardError("manifest schema is unsupported")
+    if not values["policy"].isdigit():
+        raise DashboardError("manifest policy is invalid")
+    if int(values["policy"]) >= 22 and not values.get("specs"):
+        raise DashboardError("manifest is missing: specs")
+    values.setdefault("specs", "")
     if values["authority"] not in ("local-diagnostic", "ci-merge", "ci-main", "release"):
         raise DashboardError("manifest authority is invalid")
     if values["result"] not in ("passed", "failed", "interrupted", "diagnostic"):
@@ -243,6 +248,13 @@ def build_data(
     stage_by_id = {stage["stage"]: stage for stage in stages}
     journeys_by_id = {journey["id"]: journey for journey in policy["journeys"]}
     scenarios_by_id = {scenario["id"]: scenario for scenario in policy["scenarios"]}
+    specs_by_id = {spec["id"]: spec for spec in policy["specifications"]}
+    impacted_specs: list[dict[str, Any]] = []
+    for spec_id in split_csv(manifest["specs"]):
+        spec = specs_by_id.get(spec_id)
+        if spec is None:
+            raise DashboardError(f"manifest references an unknown spec: {spec_id}")
+        impacted_specs.append(spec)
     impacted_journeys = split_csv(manifest["journeys"])
     journey_evidence: list[dict[str, Any]] = []
     passed_scenarios = 0
@@ -310,6 +322,7 @@ def build_data(
             "wall_seconds": int(manifest["timing_wall_seconds"]),
             "url": run_url,
         },
+        "specifications": impacted_specs,
         "capabilities": split_csv(manifest["capabilities"]),
         "journeys": journey_evidence,
         "stages": stages,
@@ -385,6 +398,9 @@ def render_html(data: dict[str, Any]) -> str:
         for trend in reversed(data["trends"])
     ) or '<tr><td colspan="5">No retained trend evidence.</td></tr>'
     capability_text = ", ".join(data["capabilities"]) or "none"
+    specification_text = ", ".join(
+        spec["id"] for spec in data["specifications"]
+    ) or "none"
     coverage = quality["coverage"]
     if isinstance(coverage, dict):
         ui_coverage = coverage["suites"]["ui"]["line_coverage"]["percent"]
@@ -462,6 +478,7 @@ def render_html(data: dict[str, Any]) -> str:
     <div class="meta">
       <div><span class="eyebrow">Commit</span><br><code>{html.escape(run["commit"])}</code></div>
       <div><span class="eyebrow">Fingerprint</span><br><code>{html.escape(run["fingerprint"])}</code></div>
+      <div><span class="eyebrow">Specifications</span><br>{html.escape(specification_text)}</div>
       <div><span class="eyebrow">Capabilities</span><br>{html.escape(capability_text)}</div>
       <div><span class="eyebrow">Freshness</span><br><span id="freshness" data-finished="{html.escape(run["finished_at"], quote=True)}">{html.escape(run["finished_at"])}</span></div>
     </div>

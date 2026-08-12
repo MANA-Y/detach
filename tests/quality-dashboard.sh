@@ -80,6 +80,7 @@ base_commit	fedcba9876543210fedcba9876543210fedcba98
 input_fingerprint	0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 fingerprint	abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789
 stages	static,swift,quality-contracts,app,ui-e2e,release-budget
+specs	app
 capabilities	onboarding
 journeys	J-ONBOARD-FIRST-RUN,J-ONBOARD-PROVIDER,J-ONBOARD-APPROVAL
 started_at	2026-08-11T10:00:00Z
@@ -93,6 +94,12 @@ artifacts_sha256	$artifacts_digest
 summary_sha256	$summary_digest
 result	passed
 EOF
+
+PRIOR_RUN="$RESULT_ROOT/20260810T100000Z-1"
+mkdir -p "$PRIOR_RUN"
+awk -F '\t' -v OFS='\t' \
+  '$1 == "policy" {$2=21} $1 != "specs" {print}' \
+  "$RUN_DIR/manifest.tsv" >"$PRIOR_RUN/manifest.tsv"
 
 cat >"$MUTATION_SUMMARY" <<JSON
 {
@@ -144,6 +151,8 @@ grep -F '@media (max-width:560px)' "$OUTPUT/index.html" >/dev/null || \
 grep -F 'STALE ·' "$OUTPUT/index.html" >/dev/null || fail 'stale evidence state is missing'
 grep -F 'J-ONBOARD-FIRST-RUN' "$OUTPUT/index.html" >/dev/null || \
   fail 'impacted journey is missing'
+grep -F 'Specifications</span><br>app' "$OUTPUT/index.html" >/dev/null || \
+  fail 'impacted specification is missing'
 grep -F 'planned' "$OUTPUT/index.html" >/dev/null || fail 'planned gap is hidden'
 grep -F 'changed lines 90.00%' "$OUTPUT/index.html" >/dev/null || \
   fail 'measured changed-line coverage is missing'
@@ -159,13 +168,26 @@ with open(sys.argv[1], encoding="utf-8") as source:
 assert data["schema"] == 1
 assert data["run"]["authority"] == "ci-merge"
 assert data["run"]["result"] == "passed"
+assert [spec["id"] for spec in data["specifications"]] == ["app"]
 assert data["quality"]["planned_scenarios"] == 3
 assert data["quality"]["coverage"]["comparison"]["mode"] == "green-main-artifact"
 assert data["quality"]["mutation"]["score_percent"] == 100
+assert len(data["trends"]) == 2
 assert [journey["id"] for journey in data["journeys"]] == [
     "J-ONBOARD-FIRST-RUN", "J-ONBOARD-PROVIDER", "J-ONBOARD-APPROVAL"
 ]
 PY
+
+cp "$RUN_DIR/manifest.tsv" "$TMP_ROOT/current-manifest.tsv"
+awk -F '\t' '$1 != "specs" {print}' "$TMP_ROOT/current-manifest.tsv" \
+  >"$RUN_DIR/manifest.tsv"
+if "$ROOT/scripts/quality-dashboard" generate --result-root "$RESULT_ROOT" \
+    --output "$TMP_ROOT/missing-specs" >"$TMP_ROOT/missing-specs.out" 2>&1; then
+  fail 'current evidence without affected specs was accepted'
+fi
+grep -F 'manifest is missing: specs' "$TMP_ROOT/missing-specs.out" >/dev/null || \
+  fail 'missing affected-spec failure is unclear'
+mv "$TMP_ROOT/current-manifest.tsv" "$RUN_DIR/manifest.tsv"
 
 PYTHONDONTWRITEBYTECODE=1 python3 - "$ROOT/tools/quality_dashboard.py" "$OUTPUT" <<'PY'
 import importlib.util

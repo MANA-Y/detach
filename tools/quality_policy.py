@@ -88,6 +88,7 @@ class Policy:
         self.path = path
         self.schema: int | None = None
         self.version: int | None = None
+        self.specs: dict[str, tuple[str, str]] = {}
         self.limits: dict[str, int] = {}
         self.stages_by_name: dict[str, Stage] = {}
         self.stage_orders: set[int] = set()
@@ -143,6 +144,7 @@ class Policy:
         coverage_patterns: set[str] = set()
         coverage_region_keys: set[tuple[str, str]] = set()
         dependency_pairs: set[tuple[str, str]] = set()
+        spec_paths: set[str] = set()
         for line_number, line in enumerate(lines, 1):
             if not line:
                 raise PolicyError(f"line {line_number}: blank records are not allowed")
@@ -159,6 +161,19 @@ class Policy:
                 if self.version is not None or not POSITIVE_INTEGER.fullmatch(values[0]):
                     raise PolicyError(f"line {line_number}: policy must be one positive integer")
                 self.version = int(values[0])
+            elif kind == "spec":
+                self._expect_count(kind, values, 3, line_number)
+                identifier, path, summary = values
+                if (
+                    not IDENTIFIER.fullmatch(identifier)
+                    or path != f"docs/specs/{identifier}.md"
+                    or not summary
+                    or path in spec_paths
+                ):
+                    raise PolicyError(f"line {line_number}: invalid or duplicate spec")
+                self._unique(self.specs, identifier, "spec", line_number)
+                spec_paths.add(path)
+                self.specs[identifier] = (path, summary)
             elif kind == "limit":
                 self._expect_count(kind, values, 2, line_number)
                 name, raw_value = values
@@ -356,6 +371,9 @@ class Policy:
     def _validate_references(self) -> None:
         if self.schema != 1 or self.version is None:
             raise PolicyError("schema and policy records are required")
+        if not self.specs:
+            raise PolicyError("at least one current specification is required")
+        registered_specs = {path for path, _ in self.specs.values()}
         if "static" not in self.stages_by_name:
             raise PolicyError("static stage is required")
         if "unknown" not in self.test_domains or "unknown" not in self.release_domains:
@@ -385,6 +403,8 @@ class Policy:
                 raise PolicyError(f"route references unknown test domain: {route.test_domain}")
             if route.release_domain not in self.release_domains:
                 raise PolicyError(f"route references unknown release domain: {route.release_domain}")
+            if route.spec not in registered_specs:
+                raise PolicyError(f"route references unknown spec: {route.spec}")
         for source, requirement in self.critical:
             if requirement not in self.requirements:
                 raise PolicyError(f"critical source {source} references unknown requirement: {requirement}")
@@ -417,12 +437,22 @@ class Policy:
         referenced_requirements: set[str] = {requirement for _, requirement in self.critical}
         referenced_journeys: set[str] = set()
         referenced_scenarios: set[str] = set()
-        for capability, (_, requirements, journeys) in self.capabilities.items():
+        requirement_journeys: dict[str, list[str]] = {
+            requirement: [] for requirement in self.requirements
+        }
+        for capability, (spec, requirements, journeys) in self.capabilities.items():
+            if spec not in registered_specs:
+                raise PolicyError(f"capability {capability} references unknown spec: {spec}")
             if requirements != "-":
                 for requirement in requirements.split(","):
                     if requirement not in self.requirements:
                         raise PolicyError(
                             f"capability {capability} references unknown requirement: {requirement}"
+                        )
+                    if self.requirements[requirement][0] != spec:
+                        raise PolicyError(
+                            f"capability {capability} references requirement from another spec: "
+                            f"{requirement}"
                         )
                     referenced_requirements.add(requirement)
             for journey in journeys.split(","):
@@ -434,13 +464,20 @@ class Policy:
         for journey, (capability, requirements, scenarios, _) in self.journeys.items():
             if capability not in self.capabilities:
                 raise PolicyError(f"journey {journey} references unknown capability: {capability}")
+            capability_requirements = set(self._list_or_empty(self.capabilities[capability][1]))
             if requirements != "-":
                 for requirement in requirements.split(","):
                     if requirement not in self.requirements:
                         raise PolicyError(
                             f"journey {journey} references unknown requirement: {requirement}"
                         )
+                    if requirement not in capability_requirements:
+                        raise PolicyError(
+                            f"journey {journey} references requirement outside its capability: "
+                            f"{requirement}"
+                        )
                     referenced_requirements.add(requirement)
+                    requirement_journeys[requirement].append(journey)
             for scenario in scenarios.split(","):
                 if scenario not in self.scenarios:
                     raise PolicyError(f"journey {journey} references unknown scenario: {scenario}")
@@ -457,6 +494,35 @@ class Policy:
             raise PolicyError(f"orphan scenario: {sorted(orphan_scenarios)[0]}")
         if orphan_requirements:
             raise PolicyError(f"orphan requirement: {sorted(orphan_requirements)[0]}")
+        for capability, (_, requirements, journeys) in self.capabilities.items():
+            journey_requirements = {
+                requirement
+                for journey in journeys.split(",")
+                for requirement in self._list_or_empty(self.journeys[journey][1])
+            }
+            missing = set(self._list_or_empty(requirements)) - journey_requirements
+            if missing:
+                raise PolicyError(
+                    f"capability requirement has no journey: {capability}#{sorted(missing)[0]}"
+                )
+        for requirement, journeys in requirement_journeys.items():
+            automated = {
+                scenario
+                for journey in journeys
+                for scenario in self.journeys[journey][2].split(",")
+                if self.scenarios[scenario][1] not in ("planned", "manual-release")
+            }
+            if not automated:
+                raise PolicyError(
+                    f"requirement has no automated verification scenario: {requirement}"
+                )
+        for identifier, (path, _) in self.specs.items():
+            if not any(route.spec == path for route in self.routes):
+                raise PolicyError(f"spec has no owned route: {identifier}")
+            if not any(spec == path for spec, _, _ in self.capabilities.values()):
+                raise PolicyError(f"spec has no capability: {identifier}")
+            if not any(spec == path for spec, _ in self.requirements.values()):
+                raise PolicyError(f"spec has no requirement: {identifier}")
 
     def classify(self, path: str) -> Classification:
         matches = [route for route in self.routes if fnmatch.fnmatchcase(path, route.pattern)]
@@ -571,6 +637,19 @@ class Policy:
 
     def validate_tracked_paths(self) -> None:
         paths = list(self.tracked_paths())
+        tracked = set(paths)
+        tracked_specs = {
+            path
+            for path in tracked
+            if SPEC_PATH.fullmatch(path) and path != "docs/specs/README.md"
+        }
+        registered_specs = {path for path, _ in self.specs.values()}
+        missing_specs = tracked_specs - registered_specs
+        orphan_specs = registered_specs - tracked_specs
+        if missing_specs:
+            raise PolicyError(f"unregistered durable spec: {sorted(missing_specs)[0]}")
+        if orphan_specs:
+            raise PolicyError(f"registered spec is missing: {sorted(orphan_specs)[0]}")
         for path in paths:
             classification = self.classify(path)
             if classification.status != "known":
@@ -580,15 +659,120 @@ class Policy:
         for _, pattern, _, _ in self.coverage_exclusions:
             if not any(fnmatch.fnmatchcase(path, pattern) for path in paths):
                 raise PolicyError(f"orphan coverage exclusion: {pattern}")
-        tracked = set(paths)
         for _, source, _, _, _ in self.coverage_regions:
             if source not in tracked:
                 raise PolicyError(f"orphan coverage-region source: {source}")
+
+    def specification_document(self) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
+        for identifier, (path, summary) in self.specs.items():
+            capabilities = [
+                capability
+                for capability, (spec, _, _) in self.capabilities.items()
+                if spec == path
+            ]
+            journeys = [
+                journey
+                for capability in capabilities
+                for journey in self.capabilities[capability][2].split(",")
+            ]
+            requirements: list[dict[str, object]] = []
+            for requirement, (spec, requirement_summary) in self.requirements.items():
+                if spec != path:
+                    continue
+                requirement_journeys = [
+                    journey
+                    for journey in journeys
+                    if requirement in self._list_or_empty(self.journeys[journey][1])
+                ]
+                scenario_ids: list[str] = []
+                for journey in requirement_journeys:
+                    for scenario in self.journeys[journey][2].split(","):
+                        if scenario not in scenario_ids:
+                            scenario_ids.append(scenario)
+                requirements.append(
+                    {
+                        "id": requirement,
+                        "summary": requirement_summary,
+                        "journeys": requirement_journeys,
+                        "scenarios": [
+                            {
+                                "id": scenario,
+                                "stage": self.scenarios[scenario][0],
+                                "status": self.scenarios[scenario][1],
+                                "command": self.scenarios[scenario][2],
+                            }
+                            for scenario in scenario_ids
+                        ],
+                    }
+                )
+            records.append(
+                {
+                    "id": identifier,
+                    "path": path,
+                    "summary": summary,
+                    "owned_patterns": sorted(
+                        {route.pattern for route in self.routes if route.spec == path}
+                    ),
+                    "capabilities": capabilities,
+                    "journeys": journeys,
+                    "requirements": requirements,
+                }
+            )
+        return records
+
+    def render_spec_traceability(self) -> str:
+        lines = [
+            "# Generated specification traceability",
+            "",
+            "This file is generated from `quality/policy.tsv`. Do not edit it.",
+            "It lists current specification ownership and verification links.",
+        ]
+        for spec in self.specification_document():
+            lines.extend(
+                [
+                    "",
+                    f"## `{spec['id']}`",
+                    "",
+                    f"- Path: `{spec['path']}`",
+                    f"- Summary: {spec['summary']}",
+                    "- Capabilities: "
+                    + ", ".join(f"`{value}`" for value in spec["capabilities"]),
+                    "",
+                    "### Owned path patterns",
+                    "",
+                ]
+            )
+            lines.extend(f"- `{pattern}`" for pattern in spec["owned_patterns"])
+            lines.extend(
+                [
+                    "",
+                    "### Requirement verification",
+                    "",
+                    "| Requirement | Journeys | Scenarios | Outcome |",
+                    "| --- | --- | --- | --- |",
+                ]
+            )
+            for requirement in spec["requirements"]:
+                journey_text = "<br>".join(
+                    f"`{journey}`" for journey in requirement["journeys"]
+                )
+                scenario_text = "<br>".join(
+                    f"`{scenario['id']}` ({scenario['status']}, `{scenario['stage']}`)"
+                    for scenario in requirement["scenarios"]
+                )
+                summary = str(requirement["summary"]).replace("|", "\\|")
+                lines.append(
+                    f"| `{requirement['id']}` | {journey_text} | "
+                    f"{scenario_text} | {summary} |"
+                )
+        return "\n".join(lines) + "\n"
 
     def document(self) -> dict[str, object]:
         return {
             "schema": self.schema,
             "policy": self.version,
+            "specifications": self.specification_document(),
             "limits": self.limits,
             "stages": [
                 {
@@ -691,6 +875,7 @@ def usage(stream: object = sys.stdout) -> None:
        scripts/quality-policy stages all|release
        scripts/quality-policy timeout STAGE
        scripts/quality-policy dependencies
+       scripts/quality-policy specs
        scripts/quality-policy classify PATH
        scripts/quality-policy critical
        scripts/quality-policy requirements
@@ -701,6 +886,7 @@ def usage(stream: object = sys.stdout) -> None:
        scripts/quality-policy coverage-regions
        scripts/quality-policy suites
        scripts/quality-policy render-json
+       scripts/quality-policy render-specs
        scripts/quality-policy generate [--check]
        scripts/quality-policy check-paths [PATH ...]""",
         file=stream,
@@ -750,6 +936,10 @@ def main(arguments: list[str]) -> int:
         require_count(values, 0, "dependencies takes no arguments")
         for prerequisite, dependent in policy.dependencies:
             print(f"{prerequisite}\t{dependent}")
+    elif command == "specs":
+        require_count(values, 0, "specs takes no arguments")
+        for identifier, (path, summary) in policy.specs.items():
+            print(f"{identifier}\t{path}\t{summary}")
     elif command == "classify":
         require_count(values, 1, "classify requires one path")
         print(policy.classify(values[0]).tsv())
@@ -788,26 +978,37 @@ def main(arguments: list[str]) -> int:
     elif command == "render-json":
         require_count(values, 0, "render-json takes no arguments")
         print(json.dumps(policy.document(), indent=2, sort_keys=True))
+    elif command == "render-specs":
+        require_count(values, 0, "render-specs takes no arguments")
+        print(policy.render_spec_traceability(), end="")
     elif command == "generate":
         if values not in ([], ["--check"]):
             raise PolicyError("generate accepts only --check")
-        target = ROOT / "quality/generated/policy.json"
-        rendered = json.dumps(policy.document(), indent=2, sort_keys=True) + "\n"
+        targets = {
+            ROOT / "quality/generated/policy.json": (
+                json.dumps(policy.document(), indent=2, sort_keys=True) + "\n"
+            ),
+            ROOT / "quality/generated/spec-traceability.md": (
+                policy.render_spec_traceability()
+            ),
+        }
         if values == ["--check"]:
-            if not target.is_file() or target.is_symlink():
-                raise PolicyError("generated policy view is missing or unsafe")
-            if target.read_text(encoding="utf-8") != rendered:
-                raise PolicyError(
-                    "generated policy view is stale; run scripts/quality-policy generate"
-                )
+            for target, rendered in targets.items():
+                if not target.is_file() or target.is_symlink():
+                    raise PolicyError(f"generated policy view is missing or unsafe: {target.name}")
+                if target.read_text(encoding="utf-8") != rendered:
+                    raise PolicyError(
+                        "generated policy view is stale; run scripts/quality-policy generate"
+                    )
         else:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if target.exists() and target.is_symlink():
-                raise PolicyError("generated policy view target is a symlink")
-            temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
-            temporary.write_text(rendered, encoding="utf-8")
-            os.chmod(temporary, 0o644)
-            os.replace(temporary, target)
+            for target, rendered in targets.items():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists() and target.is_symlink():
+                    raise PolicyError("generated policy view target is a symlink")
+                temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+                temporary.write_text(rendered, encoding="utf-8")
+                os.chmod(temporary, 0o644)
+                os.replace(temporary, target)
     elif command == "check-paths":
         if values:
             for path in values:

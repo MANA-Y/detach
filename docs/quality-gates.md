@@ -3,7 +3,9 @@
 `quality/policy.tsv` is the single quality policy. It owns path impact,
 capabilities, user journeys, requirements, stages, time limits, critical
 sources, and release impact. `scripts/quality-policy` validates this source and
-generates `quality/generated/policy.json`. Generated data must match the source.
+generates `quality/generated/policy.json` and
+`quality/generated/spec-traceability.md`. The policy contains only current
+state. Git stores its history. Generated data must match the source.
 
 `scripts/quality-gate` applies the policy. Local runs are diagnostics. Hosted
 pull request CI runs every functional stage on the current merge commit and is
@@ -12,7 +14,7 @@ the only ordinary merge authority. Unknown paths select the full plan.
 ## Commands
 
 - `scripts/quality-gate --plan --explain` shows affected capabilities,
-  journeys, stages, and the path that selected each stage.
+  specifications, journeys, stages, and the path that selected each stage.
 - `scripts/quality-gate` checks the working-tree diff and writes local
   diagnostic evidence.
 - `scripts/quality-gate --base <ref>` also checks committed changes after the
@@ -31,6 +33,9 @@ the only ordinary merge authority. Unknown paths select the full plan.
   evidence finalization and process-group cleanup.
 - `scripts/quality-history [RESULT_ROOT]` reports run and failure counts plus
   p50 and p95 wall and stage durations. It cannot produce readiness evidence.
+- `scripts/quality-policy specs` lists current durable specs.
+  `scripts/quality-policy render-specs` prints their requirement, journey, and
+  scenario links.
 - `scripts/quality-dashboard generate` writes deterministic static HTML and
   JSON. `scripts/quality-dashboard serve` binds to loopback and stops after its
   deadline.
@@ -61,8 +66,9 @@ at most the last 100 log lines.
 
 The manifest binds the evidence to the policy, authority, source and base
 commits, exact input and plan fingerprints, selected capabilities, journeys,
-stages, timestamps, inherited timing, parent evidence, environment, artifacts,
-summary, and every stage log. A failure, timeout, interruption, blocked
+owning specifications, stages, timestamps, inherited timing, parent evidence,
+environment, artifacts, summary, and every stage log. A failure, timeout,
+interruption, blocked
 dependency, unsafe file, malformed record, or digest mismatch cannot produce
 PASS. Failure output gives the exact diagnostic rerun.
 

@@ -26,8 +26,11 @@ expect_route() {
 
 "$ROOT/scripts/quality-policy" validate >/dev/null
 "$ROOT/scripts/quality-policy" generate --check
+python3 "$ROOT/tests/quality_policy_contract.py"
 policy_version="$("$ROOT/scripts/quality-policy" version)"
 [[ "$policy_version" =~ ^[1-9][0-9]*$ ]] || fail 'invalid policy version'
+[ "$("$ROOT/scripts/quality-policy" specs | wc -l | tr -d ' ')" = 5 ] || \
+  fail 'current specification inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" stages all | wc -l | tr -d ' ')" = 14 ] || \
   fail 'unexpected stage count'
 [ "$("$ROOT/scripts/quality-policy" stages release | tail -1)" = release-budget ] || \
@@ -39,13 +42,13 @@ policy_version="$("$ROOT/scripts/quality-policy" version)"
   fail 'critical source inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" suites | wc -l | tr -d ' ')" = 12 ] || \
   fail 'required Swift suite inventory is incomplete'
-[ "$("$ROOT/scripts/quality-policy" requirements | wc -l | tr -d ' ')" = 20 ] || \
+[ "$("$ROOT/scripts/quality-policy" requirements | wc -l | tr -d ' ')" = 22 ] || \
   fail 'critical requirement inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" capabilities | wc -l | tr -d ' ')" = 11 ] || \
   fail 'capability inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" journeys | wc -l | tr -d ' ')" = 28 ] || \
   fail 'journey inventory is incomplete'
-[ "$("$ROOT/scripts/quality-policy" scenarios | wc -l | tr -d ' ')" = 37 ] || \
+[ "$("$ROOT/scripts/quality-policy" scenarios | wc -l | tr -d ' ')" = 39 ] || \
   fail 'scenario inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" coverage-exclusions | wc -l | tr -d ' ')" = 4 ] || \
   fail 'coverage exclusion inventory is incomplete'
@@ -54,6 +57,15 @@ policy_version="$("$ROOT/scripts/quality-policy" version)"
 first_json="$("$ROOT/scripts/quality-policy" render-json | shasum -a 256 | awk '{print $1}')"
 second_json="$("$ROOT/scripts/quality-policy" render-json | shasum -a 256 | awk '{print $1}')"
 [ "$first_json" = "$second_json" ] || fail 'generated policy JSON is not deterministic'
+first_specs="$("$ROOT/scripts/quality-policy" render-specs | shasum -a 256 | awk '{print $1}')"
+second_specs="$("$ROOT/scripts/quality-policy" render-specs | shasum -a 256 | awk '{print $1}')"
+[ "$first_specs" = "$second_specs" ] || fail 'generated specification view is not deterministic'
+grep -F '# Generated specification traceability' \
+  "$ROOT/quality/generated/spec-traceability.md" >/dev/null || \
+  fail 'generated specification view has no title'
+grep -F '`QC-QUALITY-POLICY`' \
+  "$ROOT/quality/generated/spec-traceability.md" >/dev/null || \
+  fail 'generated specification view omits the policy requirement'
 
 expect_route docs/testing.md policy safe false
 expect_route app/Sources/DetachKit/DetachStateCommand.swift state-runtime safe false
