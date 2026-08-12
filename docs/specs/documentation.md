@@ -54,6 +54,10 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   match the policy.
 - Retained gate results contain execution history for timing and quality
   trends. They are not policy history and cannot restore an old policy state.
+  A declared unsupported evidence schema is outside the current telemetry
+  sample. Current-schema telemetry can span earlier policy identifiers without
+  requiring dashboard-only fields. Malformed telemetry evidence remains an
+  attention signal.
 - `quality/evals.json` keeps current expected outcomes for historical changes,
   escaped defects, policy mutations, and scope violations. Its stable graders
   compare selected stages, specifications, capabilities, user journeys,
@@ -101,7 +105,7 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   coverage, mutation score, workflow evals, feedback p95 and SLO, review state,
   and security state when they exist. A later main or mutation deploy restores
   the newest valid current-policy care artifact. Only deploy jobs have Pages
-  write permission.
+  write permission. A healthy care run closes the prior scoped attention issue.
 - An ordinary merged pull request does not repeat the full functional matrix
   on `main`. The main workflow promotes the successful pull-request artifact
   only when the tested merge and final merge have the same tree and ordered

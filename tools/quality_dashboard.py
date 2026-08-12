@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RESULT_ROOT = ROOT / "app/build/quality-gates"
 DEFAULT_OUTPUT = ROOT / "app/build/quality-dashboard"
 POLICY_JSON = ROOT / "quality/generated/policy.json"
+MANIFEST_SCHEMA = "4"
 SUMMARY_HEADER = [
     "policy",
     "mode",
@@ -58,7 +59,9 @@ def safe_file(path: Path, label: str) -> Path:
     return path
 
 
-def read_manifest(run_dir: Path) -> dict[str, str]:
+def read_manifest(
+    run_dir: Path, *, require_dashboard_fields: bool = True
+) -> dict[str, str]:
     manifest_path = safe_file(run_dir / "manifest.tsv", "manifest")
     values: dict[str, str] = {}
     for line_number, line in enumerate(manifest_path.read_text(encoding="utf-8").splitlines(), 1):
@@ -86,11 +89,11 @@ def read_manifest(run_dir: Path) -> dict[str, str]:
     missing = required - values.keys()
     if missing:
         raise DashboardError(f"manifest is missing: {sorted(missing)[0]}")
-    if values["schema"] != "4":
+    if values["schema"] != MANIFEST_SCHEMA:
         raise DashboardError("manifest schema is unsupported")
     if not values["policy"].isdigit():
         raise DashboardError("manifest policy is invalid")
-    if not values.get("specs"):
+    if require_dashboard_fields and not values.get("specs"):
         raise DashboardError("manifest is missing: specs")
     if values["authority"] not in ("local-diagnostic", "ci-merge", "ci-main", "release"):
         raise DashboardError("manifest authority is invalid")

@@ -619,7 +619,7 @@
     "pr_feedback_seconds": 600,
     "review_seconds": 180
   },
-  "policy": 25,
+  "policy": 26,
   "release_domains": [
     {
       "gates": "-",

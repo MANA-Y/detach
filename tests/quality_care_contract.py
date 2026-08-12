@@ -58,6 +58,8 @@ def assert_workflows() -> None:
         "scripts/quality-care assess",
         "--care-summary app/build/quality-care/summary.json",
         "enforce-attention:",
+        "resolved:",
+        "timeout 20s gh issue close",
         "pages: write",
         "cancel-in-progress: true",
         "--created \">=$since\"",

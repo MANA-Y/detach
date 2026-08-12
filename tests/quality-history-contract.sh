@@ -39,13 +39,26 @@ EOF
 write_run one passed 100 passed 1
 write_run two failed 180 environment-failed 3
 write_run three passed 120 passed 2
-mkdir -p "$TMP_ROOT/invalid"
-printf 'schema\t3\nresult\tpassed\n' >"$TMP_ROOT/invalid/manifest.tsv"
+awk -F '\t' '$1 != "specs" {print}' "$TMP_ROOT/three/manifest.tsv" \
+  >"$TMP_ROOT/three/manifest-without-dashboard-fields.tsv"
+mv "$TMP_ROOT/three/manifest-without-dashboard-fields.tsv" \
+  "$TMP_ROOT/three/manifest.tsv"
+mkdir -p "$TMP_ROOT/unsupported"
+printf 'schema\t3\nresult\tpassed\n' >"$TMP_ROOT/unsupported/manifest.tsv"
+
+"$ROOT/scripts/quality-history" "$TMP_ROOT" >"$TMP_ROOT/unsupported-report.tsv"
+grep -F $'runs\t3' "$TMP_ROOT/unsupported-report.tsv" >/dev/null
+grep -F $'invalid_evidence\t0' "$TMP_ROOT/unsupported-report.tsv" >/dev/null
+
+mkdir -p "$TMP_ROOT/invalid-current"
+printf 'schema\t4\nresult\tpassed\n' >"$TMP_ROOT/invalid-current/manifest.tsv"
+mkdir -p "$TMP_ROOT/invalid-encoding"
+printf '\377' >"$TMP_ROOT/invalid-encoding/manifest.tsv"
 
 "$ROOT/scripts/quality-history" "$TMP_ROOT" >"$TMP_ROOT/report.tsv"
 grep -F $'runs\t3' "$TMP_ROOT/report.tsv" >/dev/null
 grep -F $'passed\t2' "$TMP_ROOT/report.tsv" >/dev/null
-grep -F $'invalid_evidence\t1' "$TMP_ROOT/report.tsv" >/dev/null
+grep -F $'invalid_evidence\t2' "$TMP_ROOT/report.tsv" >/dev/null
 grep -F $'wall_p50_seconds\t120' "$TMP_ROOT/report.tsv" >/dev/null
 grep -F $'wall_p95_seconds\t180' "$TMP_ROOT/report.tsv" >/dev/null
 grep -F $'static\t3\t1\t1\t2\t3' "$TMP_ROOT/report.tsv" >/dev/null
