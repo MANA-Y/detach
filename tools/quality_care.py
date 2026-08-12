@@ -301,9 +301,13 @@ def assess(eval_path: Path, history_path: Path, policy: Policy) -> dict[str, Any
         not isinstance(history, dict)
         or set(history) != {
             "schema", "runs", "passed", "failed_or_interrupted",
-            "invalid_evidence", "wall", "stages"
+            "invalid_evidence", "latest", "wall", "stages"
         }
-        or history.get("schema") != 1
+        or history.get("schema") != 2
+        or not isinstance(history.get("latest"), dict)
+        or set(history["latest"]) != {"environment_failure", "result"}
+        or type(history["latest"].get("environment_failure")) is not bool
+        or history["latest"].get("result") not in ("passed", "failed", "interrupted")
         or not isinstance(history.get("wall"), dict)
         or set(history["wall"]) != {"samples", "p50_seconds", "p95_seconds"}
         or not isinstance(history["wall"].get("p95_seconds"), int)
@@ -369,14 +373,15 @@ def assess(eval_path: Path, history_path: Path, policy: Policy) -> dict[str, Any
     if history["invalid_evidence"]:
         status = "attention"
         reasons.append("invalid current-schema evidence was skipped")
-    if history["failed_or_interrupted"]:
+    unresolved_failure = (
+        history["latest"]["result"] != "passed"
+        or history["latest"]["environment_failure"]
+    )
+    if unresolved_failure:
         status = "attention"
-        reasons.append("a retained gate run failed or was interrupted")
-    if environment_failures:
-        status = "attention"
-        reasons.append("a retained stage had an environment failure")
+        reasons.append("the latest gate run failed or was interrupted")
     return {
-        "schema": 2,
+        "schema": 3,
         "policy": policy.version,
         "source_commit": git_source_commit(),
         "status": status,
@@ -401,6 +406,7 @@ def assess(eval_path: Path, history_path: Path, policy: Policy) -> dict[str, Any
             "failed_or_interrupted": history.get("failed_or_interrupted", 0),
             "environment_failures": environment_failures,
             "invalid_evidence": history["invalid_evidence"],
+            "unresolved_failure": unresolved_failure,
         },
     }
 
@@ -419,7 +425,7 @@ def validate_summary(
     if not isinstance(value, dict) or set(value) != keys:
         raise CareError("care summary schema is invalid")
     if (
-        value["schema"] != 2
+        value["schema"] != 3
         or value["policy"] != expected_policy
         or not isinstance(value["source_commit"], str)
         or not COMMIT.fullmatch(value["source_commit"])
@@ -469,9 +475,17 @@ def validate_summary(
     if (
         not isinstance(runs, dict)
         or set(runs) != {
-            "total", "failed_or_interrupted", "environment_failures", "invalid_evidence"
+            "total", "failed_or_interrupted", "environment_failures",
+            "invalid_evidence", "unresolved_failure"
         }
-        or any(not valid_count(count) for count in runs.values())
+        or any(
+            not valid_count(runs[key])
+            for key in (
+                "total", "failed_or_interrupted", "environment_failures",
+                "invalid_evidence"
+            )
+        )
+        or type(runs["unresolved_failure"]) is not bool
         or runs["failed_or_interrupted"] > runs["total"]
     ):
         raise CareError("care summary run counts are invalid")
@@ -486,9 +500,8 @@ def validate_summary(
     needs_attention = (
         evals["passed"] != evals["total"]
         or latency["status"] != "healthy"
-        or any(runs[key] for key in (
-            "failed_or_interrupted", "environment_failures", "invalid_evidence"
-        ))
+        or runs["invalid_evidence"]
+        or runs["unresolved_failure"]
     )
     if (
         (value["status"] == "attention") != needs_attention

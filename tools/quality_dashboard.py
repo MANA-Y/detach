@@ -534,9 +534,16 @@ def render_html(data: dict[str, Any]) -> str:
         mutation_text = str(mutation)
     care = quality["care"]
     if isinstance(care, dict):
+        retained_failures = care["runs"]["failed_or_interrupted"]
+        run_health = (
+            f'{retained_failures} repaired failure'
+            f'{"s" if retained_failures != 1 else ""} retained'
+            if retained_failures
+            else "latest run healthy"
+        )
         eval_text = (
             f'{care["evals"]["passed"]}/{care["evals"]["total"]} passed · '
-            f'{care["status"]} · source {care["source_commit"][:10]}'
+            f'{care["status"]} · {run_health} · source {care["source_commit"][:10]}'
         )
         latency_text = (
             f'p95 {care["latency"]["wall_p95_seconds"]}s · '

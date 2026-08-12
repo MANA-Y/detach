@@ -66,6 +66,7 @@ def collect(result_root: Path) -> dict[str, Any]:
     runs = 0
     passed = 0
     invalid = 0
+    latest: tuple[str, str, str, bool] | None = None
     for run_dir in sorted(result_root.iterdir()):
         if not run_dir.is_dir() or run_dir.is_symlink():
             continue
@@ -82,6 +83,14 @@ def collect(result_root: Path) -> dict[str, Any]:
         runs += 1
         passed += int(manifest["result"] == "passed")
         walls.append(int(manifest["timing_wall_seconds"]))
+        latest_candidate = (
+            manifest["finished_at"],
+            run_dir.name,
+            manifest["result"],
+            any(stage["status"] == "environment-failed" for stage in stages),
+        )
+        if latest is None or latest_candidate[:2] > latest[:2]:
+            latest = latest_candidate
         for stage in stages:
             if stage["status"] in ("reused", "blocked"):
                 continue
@@ -90,6 +99,7 @@ def collect(result_root: Path) -> dict[str, Any]:
             )
     if not runs:
         raise HistoryError("no valid completed current-schema evidence found")
+    assert latest is not None
     stages = []
     for name, records in sorted(stage_values.items()):
         durations = [duration for duration, _ in records]
@@ -106,11 +116,15 @@ def collect(result_root: Path) -> dict[str, Any]:
             }
         )
     return {
-        "schema": 1,
+        "schema": 2,
         "runs": runs,
         "passed": passed,
         "failed_or_interrupted": runs - passed,
         "invalid_evidence": invalid,
+        "latest": {
+            "environment_failure": latest[3],
+            "result": latest[2],
+        },
         "wall": {
             "samples": len(walls),
             "p50_seconds": percentile(walls, 50),
@@ -126,6 +140,8 @@ def render_tsv(document: dict[str, Any]) -> str:
         f"passed\t{document['passed']}",
         f"failed_or_interrupted\t{document['failed_or_interrupted']}",
         f"invalid_evidence\t{document['invalid_evidence']}",
+        f"latest_result\t{document['latest']['result']}",
+        f"latest_environment_failure\t{str(document['latest']['environment_failure']).lower()}",
         f"wall_p50_seconds\t{document['wall']['p50_seconds']}",
         f"wall_p95_seconds\t{document['wall']['p95_seconds']}",
         "",

@@ -140,7 +140,7 @@ CARE_EVAL_DIGEST="$(shasum -a 256 "$CARE_EVALS" | awk '{print $1}')"
 CARE_HISTORY_DIGEST="$(shasum -a 256 "$CARE_HISTORY" | awk '{print $1}')"
 cat >"$CARE_SUMMARY" <<JSON
 {
-  "schema": 2,
+  "schema": 3,
   "policy": $POLICY_VERSION,
   "source_commit": "$SOURCE_COMMIT",
   "status": "passed",
@@ -167,9 +167,10 @@ cat >"$CARE_SUMMARY" <<JSON
   },
   "runs": {
     "total": 4,
-    "failed_or_interrupted": 0,
+    "failed_or_interrupted": 1,
     "environment_failures": 0,
-    "invalid_evidence": 0
+    "invalid_evidence": 0,
+    "unresolved_failure": false
   }
 }
 JSON
@@ -205,7 +206,7 @@ grep -F 'changed lines 90.00%' "$OUTPUT/index.html" >/dev/null || \
   fail 'measured changed-line coverage is missing'
 grep -F '100% · 1/1 killed · passed' "$OUTPUT/index.html" >/dev/null || \
   fail 'mutation score is missing'
-grep -F '8/8 passed · passed · source' "$OUTPUT/index.html" >/dev/null || \
+grep -F '8/8 passed · passed · 1 repaired failure retained · source' "$OUTPUT/index.html" >/dev/null || \
   fail 'workflow-eval summary is missing'
 grep -F 'p95 285s · alert 480s · SLO 600s · healthy' "$OUTPUT/index.html" >/dev/null || \
   fail 'feedback latency summary is missing'

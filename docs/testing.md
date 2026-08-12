@@ -24,6 +24,9 @@
 - `scripts/quality-gate` — the policy-versioned, impact-aware local diagnostic
   entry point. It selects checks from the diff and fails safe to the repository
   gate for unknown impact. See `docs/quality-gates.md`.
+- A normal change keeps `gate-contract` focused on direct self-contracts.
+  `--mode repository` and an explicit `--stage gate-contract` run the full
+  orchestrator contract set.
 - `scripts/quality-gate --plan --explain` explains impact selection;
   `--plan --format json` is the machine-readable equivalent. A failed or
   interrupted run may use `--resume <run-dir>` or `--resume latest` only while
@@ -45,8 +48,10 @@
 - `scripts/quality-care validate` checks the four required eval categories.
   `scripts/quality-care evaluate --output <json>` grades exact diff impact and
   private-scope outcomes. `scripts/quality-care assess` fails before the
-  pull-request wall p95 reaches the ten-minute SLO. Scheduled quality care opens
-  one scoped issue. Its summary binds the source commit and both input digests.
+  pull-request wall p95 reaches the ten-minute SLO. It also fails for invalid
+  evidence or an unresolved latest gate result. Older repaired failures remain
+  telemetry. Scheduled quality care opens one scoped issue. Its summary binds
+  the source commit and both input digests.
   `scripts/quality-care latest --optional` inspects at most five completed runs
   inside one 60-second deadline. It supplies only a valid current-policy
   artifact to later dashboard deploys. Scheduled documentation care can open a
