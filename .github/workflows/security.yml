@@ -78,17 +78,17 @@ jobs:
           queries: security-extended
       - name: Build Swift kit source for analysis
         if: matrix.scope == 'kit'
-        run: swift build --package-path app --target DetachKit --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions -Xswiftc -disable-batch-mode
+        run: swift build --package-path app --target DetachKit --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions -Xswiftc -whole-module-optimization -Xswiftc -num-threads -Xswiftc 3 -Xswiftc -gnone
       - name: Build Swift app source for analysis
         if: matrix.scope == 'app'
-        run: swift build --package-path app --target DetachApp --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions -Xswiftc -disable-batch-mode
+        run: swift build --package-path app --target DetachApp --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions -Xswiftc -whole-module-optimization -Xswiftc -num-threads -Xswiftc 3 -Xswiftc -gnone
       - name: Build Swift process entry points for analysis
         if: matrix.scope == 'processes'
         run: |
-          swift build --package-path app --target DetachPower --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions -Xswiftc -disable-batch-mode
-          swift build --package-path app --target DetachPowerHelper --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions -Xswiftc -disable-batch-mode
-          swift build --package-path app --target DetachState --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions -Xswiftc -disable-batch-mode
-          swift build --package-path app --target DetachWatchdog --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions -Xswiftc -disable-batch-mode
+          swift build --package-path app --target DetachPower --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions -Xswiftc -whole-module-optimization -Xswiftc -num-threads -Xswiftc 3 -Xswiftc -gnone
+          swift build --package-path app --target DetachPowerHelper --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions -Xswiftc -whole-module-optimization -Xswiftc -num-threads -Xswiftc 3 -Xswiftc -gnone
+          swift build --package-path app --target DetachState --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions -Xswiftc -whole-module-optimization -Xswiftc -num-threads -Xswiftc 3 -Xswiftc -gnone
+          swift build --package-path app --target DetachWatchdog --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions -Xswiftc -whole-module-optimization -Xswiftc -num-threads -Xswiftc 3 -Xswiftc -gnone
       - name: Analyze Swift scope
         uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
         with:

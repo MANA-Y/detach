@@ -262,13 +262,13 @@ scan restores the existing quality-gate dependency graph, resolves the tracked
 lock before tracing, and removes cached products. Three parallel jobs analyze
 `DetachKit`, `DetachApp`, and the process entry points. The app and process jobs
 build `DetachKit` before CodeQL starts, so each repository source is traced in
-one scope. Traced builds disable Swift compiler batch mode. CodeQL gets one
-bounded extractor task for each primary source file instead of one large module
-batch. Each job keeps the 15-minute deadline. Build concurrency matches the
-three-thread extractor, and unused index data is disabled. Dependency network,
-version work, one large compiler extraction, and process oversubscription cannot
-consume the complete security workflow budget. These care jobs do not extend
-pull-request feedback and cannot run release commands.
+one scope. Traced builds use whole-module compilation. Each target gets one
+compiler batch with three bounded workers instead of repeated primary-file
+extraction. Debug and index output are disabled because CodeQL does not use
+them. Each job keeps the 15-minute deadline. Dependency network, version work,
+repeated extraction, and process oversubscription cannot consume the complete
+security workflow budget. These care jobs do not extend pull-request feedback
+and cannot run release commands.
 
 Release readiness also requires the tracked reference-Mac time budgets and the
 release-only gates below. Ordinary implementation must not run them.
