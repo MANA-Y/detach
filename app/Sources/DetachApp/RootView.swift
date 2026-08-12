@@ -121,6 +121,7 @@ struct RootView: View {
         }
         .onAppear { store.updateCadence(foreground: true) }
         .onDisappear { store.updateCadence(foreground: false) }
+// quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
         .background {
             if AppSettings.uiE2E != nil {
@@ -131,6 +132,7 @@ struct RootView: View {
             }
         }
 #endif
+// quality-coverage:end ui-e2e-instrumentation
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("detach-dashboard")
     }

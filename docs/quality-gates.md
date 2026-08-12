@@ -100,9 +100,12 @@ SLO is less than ten minutes.
 Static validation runs before the parallel self-contract workers. This keeps
 its two-second local signal free of scheduler contention. Coverage compilation
 and the app build then get exclusive SwiftPM access. Quality analysis reads the
-completed Swift log and coverage profile without another test run. Provider
-lanes run after the verified app exists. Independent distribution and release
-lanes overlap after provider work drains.
+completed Swift log and coverage profile without another test run. The short
+packaged UI lane runs after the verified app and before the CPU-intensive
+provider, runtime, and gate-contract lanes. This prevents WindowServer event
+delivery from competing with those workers. Provider lanes then run in
+parallel. Independent distribution and release lanes overlap after provider
+work drains.
 
 Swift and Clang caches stay under `app/.build`. The packaged UI test uses a
 stripped process-private app, fake CLI, and private state. Provider tests use

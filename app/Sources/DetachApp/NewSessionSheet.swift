@@ -97,11 +97,13 @@ struct NewSessionSheet: View {
                 Button(L10n.string("Cancel")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("new-session-cancel")
+// quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
                     .background {
                         uiE2EGeometryProbe(identifier: "new-session-cancel")
                     }
 #endif
+// quality-coverage:end ui-e2e-instrumentation
                 Button(L10n.string("Launch in Terminal")) {
                     Task { await launch() }
                 }
@@ -109,27 +111,32 @@ struct NewSessionSheet: View {
                     .tint(Brand.indigo)
                     .disabled(projectDir == nil || !isNameValid || isLaunching)
                     .accessibilityIdentifier("new-session-launch")
+// quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
                     .background {
                         uiE2EGeometryProbe(identifier: "new-session-launch")
                     }
 #endif
+// quality-coverage:end ui-e2e-instrumentation
             }
         }
         .padding(20)
         .frame(width: max(460, fontPointSize * 32))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("new-session-sheet")
+// quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
         .background {
             uiE2EGeometryProbe(identifier: "new-session-sheet")
         }
 #endif
+// quality-coverage:end ui-e2e-instrumentation
         .fileImporter(isPresented: $showPicker, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result { projectDir = url }
         }
     }
 
+// quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
     @ViewBuilder
     private func uiE2EGeometryProbe(identifier: String) -> some View {
@@ -138,6 +145,7 @@ struct NewSessionSheet: View {
         }
     }
 #endif
+// quality-coverage:end ui-e2e-instrumentation
 
     @MainActor
     private func launch() async {

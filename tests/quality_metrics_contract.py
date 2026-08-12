@@ -17,6 +17,7 @@ from typing import Any, Optional, Tuple
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+from quality_metrics import build_metrics, collect_coverage  # noqa: E402
 from quality_policy import POLICY_FILE, Policy  # noqa: E402
 
 
@@ -224,6 +225,34 @@ def main() -> None:
         excluded_document = json.loads(excluded.read_text(encoding="utf-8"))
         assert excluded_document["changed_lines"]["status"] == "not-applicable"
         assert excluded_document["changed_lines"]["files"] == []
+
+        region_path = "app/Sources/DetachApp/SidebarView.swift"
+        region_lines = POLICY.coverage_region_lines(region_path)
+        source_lines = (ROOT / region_path).read_text(encoding="utf-8").splitlines()
+        region_line = min(
+            line
+            for line in region_lines
+            if "quality-coverage:" not in source_lines[line - 1]
+        )
+        region_coverage = collect_coverage(coverage_document())
+        region_coverage[region_path] = {
+            "covered": 0,
+            "total": 1,
+            "lines": {region_line: False},
+        }
+        region_metrics = build_metrics(
+            region_coverage,
+            set(test_lines()),
+            POLICY,
+            SOURCE_COMMIT,
+            BASE_COMMIT,
+            None,
+            "none",
+            changed_override={region_path: {region_line}},
+            allow_incomplete_sources=True,
+        )
+        assert region_metrics["changed_lines"]["status"] == "not-applicable"
+        assert region_metrics["changed_lines"]["files"] == []
 
         write_json(changed, {"app/Sources/DetachApp/Synthetic.swift": list(range(1, 11))})
 

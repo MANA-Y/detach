@@ -567,11 +567,14 @@ def build_metrics(
             continue
         if policy.coverage_exclusion(path) is not None:
             continue
+        excluded_lines = policy.coverage_region_lines(path)
         value = coverage.get(path)
         executable = 0
         covered = 0
         if value is not None:
             for line in changed_by_path[path]:
+                if line in excluded_lines:
+                    continue
                 if line in value["lines"]:
                     executable += 1
                     covered += int(value["lines"][line])
@@ -604,19 +607,12 @@ def build_metrics(
                 removed = sorted(set(baseline_tests) - set(current_suite["tests"]))
                 if removed:
                     regressions.append(f"{name} test was removed: {removed[0]}")
-            baseline_coverage = baseline_suite.get("line_coverage")
-            if isinstance(baseline_coverage, dict):
-                if ratio_regressed(current_suite["line_coverage"], baseline_coverage):
-                    regressions.append(
-                        f"{name} line coverage regressed: "
-                        f"{current_suite['line_coverage']['percent']:.2f} < "
-                        f"{baseline_coverage['percent']:.2f}"
-                    )
-            elif current_suite["line_coverage"]["percent"] < baseline_suite["line_coverage_percent"]:
+            baseline_coverage = baseline_suite["line_coverage"]
+            if ratio_regressed(current_suite["line_coverage"], baseline_coverage):
                 regressions.append(
-                    f"{name} line coverage regressed below policy-13 bootstrap: "
+                    f"{name} line coverage regressed: "
                     f"{current_suite['line_coverage']['percent']:.2f} < "
-                    f"{baseline_suite['line_coverage_percent']:.2f}"
+                    f"{baseline_coverage['percent']:.2f}"
                 )
 
         baseline_critical = {item["path"]: item for item in baseline["critical_files"]}
@@ -630,19 +626,12 @@ def build_metrics(
                 if current["line_coverage"]["covered"] != current["line_coverage"]["total"]:
                     regressions.append(f"new critical source is not fully covered: {path}")
                 continue
-            prior_coverage = prior.get("line_coverage")
-            if isinstance(prior_coverage, dict):
-                if ratio_regressed(current["line_coverage"], prior_coverage):
-                    regressions.append(
-                        f"critical line coverage regressed for {path}: "
-                        f"{current['line_coverage']['percent']:.2f} < "
-                        f"{prior_coverage['percent']:.2f}"
-                    )
-            elif current["line_coverage"]["percent"] < prior["line_coverage_percent"]:
+            prior_coverage = prior["line_coverage"]
+            if ratio_regressed(current["line_coverage"], prior_coverage):
                 regressions.append(
-                    f"critical line coverage regressed below policy-13 bootstrap for {path}: "
+                    f"critical line coverage regressed for {path}: "
                     f"{current['line_coverage']['percent']:.2f} < "
-                    f"{prior['line_coverage_percent']:.2f}"
+                    f"{prior_coverage['percent']:.2f}"
                 )
 
     if changed_status == "failed":

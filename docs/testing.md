@@ -108,9 +108,11 @@
   changed executable Swift-line coverage below 90 percent. New critical
   sources start at 100 percent. The quality policy owns each coverage
   exclusion and links it to automated scenario evidence. Excluded sources do
-  not enter aggregate or changed-line denominators. `tests/quality-metrics.sh` covers missing,
-  malformed, removed-test, aggregate, critical-file, and changed-line
-  regressions. `tests/release-budget-ratchet-contract.sh` protects timing.
+  not enter aggregate or changed-line denominators. Named test-only regions in
+  product files stay in aggregate coverage but use their automated scenario as
+  changed-line evidence. `tests/quality-metrics.sh` covers missing, malformed,
+  removed-test, aggregate, critical-file, and changed-line regressions.
+  `tests/release-budget-ratchet-contract.sh` protects timing.
 - `tests/quality-mutation.sh` checks source restoration, timeout handling,
   failure classification, score enforcement, remote evidence restore, and the
   scheduled workflow contract. A nonzero compiler exit without the declared

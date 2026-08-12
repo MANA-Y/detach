@@ -171,6 +171,46 @@
       "summary": "Provider integration scenarios exercise the real CLI process boundary."
     }
   ],
+  "coverage_regions": [
+    {
+      "group": "ui",
+      "path": "app/Sources/DetachApp/NewSessionSheet.swift",
+      "region": "ui-e2e-instrumentation",
+      "scenarios": [
+        "SC-UI-NEW-SESSION"
+      ],
+      "summary": "The packaged journey covers test-only control geometry."
+    },
+    {
+      "group": "ui",
+      "path": "app/Sources/DetachApp/RootView.swift",
+      "region": "ui-e2e-instrumentation",
+      "scenarios": [
+        "SC-UI-DASHBOARD"
+      ],
+      "summary": "The packaged journey covers the test-only semantic locator."
+    },
+    {
+      "group": "ui",
+      "path": "app/Sources/DetachApp/SessionDetailView.swift",
+      "region": "ui-e2e-instrumentation",
+      "scenarios": [
+        "SC-UI-SESSION-STOP",
+        "SC-UI-SESSION-DELETE"
+      ],
+      "summary": "The packaged journey covers action geometry and its negative control."
+    },
+    {
+      "group": "ui",
+      "path": "app/Sources/DetachApp/SidebarView.swift",
+      "region": "ui-e2e-instrumentation",
+      "scenarios": [
+        "SC-UI-DASHBOARD",
+        "SC-UI-SESSION-DETAIL"
+      ],
+      "summary": "The packaged journey covers sidebar control geometry."
+    }
+  ],
   "critical_sources": [
     {
       "path": "app/Sources/DetachKit/SessionHealth.swift",
@@ -566,7 +606,7 @@
     "pr_feedback_seconds": 600,
     "review_seconds": 180
   },
-  "policy": 20,
+  "policy": 21,
   "release_domains": [
     {
       "gates": "-",

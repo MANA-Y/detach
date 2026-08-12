@@ -59,7 +59,6 @@ EXECUTION_PREREQUISITES = {
 }
 FIRST_WAVE = (
     "quality-contracts",
-    "ui-e2e",
     "codex",
     "claude",
     "tmux-runtime",
@@ -1570,6 +1569,8 @@ class QualityGate:
             self.launch("quality-contracts")
             self.launch("app")
             self.wait_for(("app",))
+            self.launch("ui-e2e")
+            self.wait_for(("ui-e2e",))
             for stage in FIRST_WAVE:
                 self.launch(stage)
             self.wait_for(FIRST_WAVE)

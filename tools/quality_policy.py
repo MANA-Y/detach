@@ -95,6 +95,7 @@ class Policy:
         self.test_domains: dict[str, tuple[str, str]] = {}
         self.release_domains: dict[str, tuple[str, bool]] = {}
         self.coverage_exclusions: list[tuple[str, str, str, str]] = []
+        self.coverage_regions: list[tuple[str, str, str, str, str]] = []
         self.routes: list[Route] = []
         self.capabilities: dict[str, tuple[str, str, str]] = {}
         self.journeys: dict[str, tuple[str, str, str, str]] = {}
@@ -140,6 +141,7 @@ class Policy:
             raise PolicyError("policy is empty")
         critical_paths: set[str] = set()
         coverage_patterns: set[str] = set()
+        coverage_region_keys: set[tuple[str, str]] = set()
         dependency_pairs: set[tuple[str, str]] = set()
         for line_number, line in enumerate(lines, 1):
             if not line:
@@ -229,6 +231,30 @@ class Policy:
                     )
                 coverage_patterns.add(pattern)
                 self.coverage_exclusions.append((group, pattern, scenarios, summary))
+            elif kind == "coverage-region":
+                self._expect_count(kind, values, 5, line_number)
+                group, source, region, scenarios, summary = values
+                expected_prefix = {
+                    "ui": "app/Sources/DetachApp/",
+                    "business": "app/Sources/DetachKit/",
+                }.get(group)
+                key = (source, region)
+                if (
+                    expected_prefix is None
+                    or not SOURCE_PATH.fullmatch(source)
+                    or not source.startswith(expected_prefix)
+                    or not IDENTIFIER.fullmatch(region)
+                    or not self._references(scenarios, SCENARIO_ID)
+                    or not summary
+                    or key in coverage_region_keys
+                ):
+                    raise PolicyError(
+                        f"line {line_number}: invalid or duplicate coverage region"
+                    )
+                coverage_region_keys.add(key)
+                self.coverage_regions.append(
+                    (group, source, region, scenarios, summary)
+                )
             elif kind == "route":
                 self._expect_count(kind, values, 5, line_number)
                 raw_priority, pattern, test_domain, release_domain, spec = values
@@ -374,6 +400,18 @@ class Policy:
                     raise PolicyError(
                         f"coverage exclusion {pattern} requires an automated scenario: {scenario}"
                     )
+        for _, source, region, scenarios, _ in self.coverage_regions:
+            if any(critical_source == source for critical_source, _ in self.critical):
+                raise PolicyError(f"critical source cannot have a coverage region: {source}")
+            for scenario in scenarios.split(","):
+                if scenario not in self.scenarios:
+                    raise PolicyError(
+                        f"coverage region {source}#{region} references unknown scenario: {scenario}"
+                    )
+                if self.scenarios[scenario][1] in ("planned", "manual-release"):
+                    raise PolicyError(
+                        f"coverage region {source}#{region} requires an automated scenario: {scenario}"
+                    )
         if not self.required_suites:
             raise PolicyError("at least one required Swift suite is required")
         referenced_requirements: set[str] = {requirement for _, requirement in self.critical}
@@ -460,6 +498,60 @@ class Policy:
             raise PolicyError(f"source has overlapping coverage exclusions: {path}")
         return matches[0] if matches else None
 
+    def coverage_region_lines(self, path: str) -> set[int]:
+        configured = {
+            region
+            for _, source, region, _, _ in self.coverage_regions
+            if source == path
+        }
+        if (
+            not path.startswith("app/Sources/")
+            or not path.endswith(".swift")
+        ):
+            if configured:
+                raise PolicyError(f"coverage-region source is not Swift: {path}")
+            return set()
+        source_path = ROOT / path
+        if not source_path.is_file() or source_path.is_symlink():
+            if configured:
+                raise PolicyError(f"coverage-region source is missing or unsafe: {path}")
+            return set()
+        marker = re.compile(
+            r"^\s*// quality-coverage:(begin|end) ([a-z0-9-]+)\s*$"
+        )
+        active: str | None = None
+        seen: set[str] = set()
+        excluded: set[int] = set()
+        try:
+            source_lines = source_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError) as error:
+            raise PolicyError(f"cannot read coverage-region source: {path}: {error}") from error
+        for line_number, line in enumerate(source_lines, 1):
+            match = marker.fullmatch(line)
+            if match:
+                direction, region = match.groups()
+                if region not in configured:
+                    raise PolicyError(f"unmapped coverage region: {path}#{region}")
+                if direction == "begin":
+                    if active is not None:
+                        raise PolicyError(f"nested coverage region: {path}#{region}")
+                    active = region
+                    seen.add(region)
+                elif active != region:
+                    raise PolicyError(f"unbalanced coverage region: {path}#{region}")
+                excluded.add(line_number)
+                if direction == "end":
+                    active = None
+                continue
+            if active is not None:
+                excluded.add(line_number)
+        if active is not None:
+            raise PolicyError(f"unclosed coverage region: {path}#{active}")
+        missing = configured - seen
+        if missing:
+            raise PolicyError(f"coverage region marker is missing: {path}#{sorted(missing)[0]}")
+        return excluded
+
     def tracked_paths(self) -> Iterable[str]:
         try:
             result = subprocess.run(
@@ -484,9 +576,14 @@ class Policy:
             if classification.status != "known":
                 raise PolicyError(f"unclassified tracked path: {path}")
             self.coverage_exclusion(path)
+            self.coverage_region_lines(path)
         for _, pattern, _, _ in self.coverage_exclusions:
             if not any(fnmatch.fnmatchcase(path, pattern) for path in paths):
                 raise PolicyError(f"orphan coverage exclusion: {pattern}")
+        tracked = set(paths)
+        for _, source, _, _, _ in self.coverage_regions:
+            if source not in tracked:
+                raise PolicyError(f"orphan coverage-region source: {source}")
 
     def document(self) -> dict[str, object]:
         return {
@@ -522,6 +619,16 @@ class Policy:
                     "summary": summary,
                 }
                 for group, pattern, scenarios, summary in self.coverage_exclusions
+            ],
+            "coverage_regions": [
+                {
+                    "group": group,
+                    "path": path,
+                    "region": region,
+                    "scenarios": scenarios.split(","),
+                    "summary": summary,
+                }
+                for group, path, region, scenarios, summary in self.coverage_regions
             ],
             "routes": [
                 {
@@ -591,6 +698,7 @@ def usage(stream: object = sys.stdout) -> None:
        scripts/quality-policy journeys
        scripts/quality-policy scenarios
        scripts/quality-policy coverage-exclusions
+       scripts/quality-policy coverage-regions
        scripts/quality-policy suites
        scripts/quality-policy render-json
        scripts/quality-policy generate [--check]
@@ -669,6 +777,10 @@ def main(arguments: list[str]) -> int:
         require_count(values, 0, "coverage-exclusions takes no arguments")
         for group, pattern, scenarios, summary in policy.coverage_exclusions:
             print(f"{group}\t{pattern}\t{scenarios}\t{summary}")
+    elif command == "coverage-regions":
+        require_count(values, 0, "coverage-regions takes no arguments")
+        for group, path, region, scenarios, summary in policy.coverage_regions:
+            print(f"{group}\t{path}\t{region}\t{scenarios}\t{summary}")
     elif command == "suites":
         require_count(values, 0, "suites takes no arguments")
         for suite in policy.required_suites:

@@ -49,6 +49,8 @@ policy_version="$("$ROOT/scripts/quality-policy" version)"
   fail 'scenario inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" coverage-exclusions | wc -l | tr -d ' ')" = 4 ] || \
   fail 'coverage exclusion inventory is incomplete'
+[ "$("$ROOT/scripts/quality-policy" coverage-regions | wc -l | tr -d ' ')" = 4 ] || \
+  fail 'coverage region inventory is incomplete'
 first_json="$("$ROOT/scripts/quality-policy" render-json | shasum -a 256 | awk '{print $1}')"
 second_json="$("$ROOT/scripts/quality-policy" render-json | shasum -a 256 | awk '{print $1}')"
 [ "$first_json" = "$second_json" ] || fail 'generated policy JSON is not deterministic'
@@ -149,6 +151,18 @@ fi
 grep -F 'critical source cannot be excluded from coverage' \
   "$TMP_ROOT/excluded-critical.out" >/dev/null || \
   fail 'critical coverage-exclusion failure is unclear'
+
+awk -F '\t' -v OFS='\t' \
+  '$1 == "coverage-region" && $3 ~ /SidebarView/ {$4="missing-marker"} {print}' \
+  "$ROOT/quality/policy.tsv" >"$TMP_ROOT/missing-region-marker.tsv"
+if DETACH_QUALITY_POLICY="$TMP_ROOT/missing-region-marker.tsv" \
+    "$ROOT/scripts/quality-policy" validate \
+    >"$TMP_ROOT/missing-region-marker.out" 2>&1; then
+  fail 'a coverage region without a source marker was accepted'
+fi
+grep -F 'unmapped coverage region' \
+  "$TMP_ROOT/missing-region-marker.out" >/dev/null || \
+  fail 'mismatched coverage-region marker failure is unclear'
 
 ! grep -F 'case "$path" in' "$ROOT/scripts/quality-gate" "$ROOT/scripts/release-impact" >/dev/null || \
   fail 'a second path classifier remains in a production script'
