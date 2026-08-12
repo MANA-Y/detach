@@ -33,8 +33,11 @@ def main() -> None:
     clean = workflow.index("Remove cached products before tracing")
     swift_init = workflow.index("Initialize Swift analysis")
     swift_build = workflow.index("Build Swift app source for analysis")
-    require(cache < resolve < clean < swift_init < swift_build,
-            "Swift dependency work must finish before CodeQL tracing")
+    process_build = workflow.index("Build Swift process entry points for analysis")
+    swift_analyze = workflow.index("Analyze Swift")
+    require(cache < resolve < clean < swift_init < swift_build
+            < process_build < swift_analyze,
+            "Swift preparation, target builds, and analysis are out of order")
     require("actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830" in workflow,
             "Swift analysis must restore the immutable quality-gate cache")
     require("swift package --package-path app --force-resolved-versions resolve" in workflow,
