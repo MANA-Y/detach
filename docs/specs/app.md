@@ -40,20 +40,20 @@ transient SMAppService Code=1 race. Do not replace a helper with active leases:
 defer the update. Report a normal reconciliation outcome and retry on a later
 app activation.
 
-Every readiness build carries one unique `detach-app-build:<UUID>` value both
-in the main executable's `__TEXT,__detach_build` section and in the signed
-`Contents/Resources/BUILD_MARKER`; verification requires an exact match. The
-packaged-app UI smoke runs only a process-private background copy under
-`/private/tmp/detach-ui-e2e.*`. That copy has a distinct bundle identity and no
-production CLI payload, watchdog, helper, power executable, state executable,
-or bundled tmux. Its HOME, preferences, state, power paths, fake CLI, fixture,
-and result are all contained below the private root after symlink resolution;
-an escape, production identity, foreground identity, executable mismatch, or
-remaining payload fails closed before UI actions. The smoke drives the app's
-semantic Accessibility tree without activating it and verifies dashboard
-geometry, session selection, one fake-CLI stop action, one completed-session
-delete with the exact provider/name/force arguments, the new-session sheet,
-and the empty state. This test-only path is otherwise dormant.
+Every readiness build has one unique `detach-app-build:<UUID>` in both the main
+executable's `__TEXT,__detach_build` section and the signed build marker. The
+values must match. The packaged-app UI smoke uses only a stripped, private
+background copy under `/private/tmp/detach-ui-e2e.*`. It has a distinct bundle
+identity and no production CLI payload, watchdog, helper, power or state
+executable, or tmux. All injected data paths stay below the private root after
+symlink resolution. An escape, unsafe identity, build mismatch, or payload
+fails closed. The smoke proves that startup does not take focus. It then
+activates the copy, posts AppKit mouse events to measured SwiftUI controls, and
+restores the prior application. Its locator bridge exposes semantics but has no
+actions. The 25-second flow covers dashboard geometry, session detail, stop,
+confirmed forced delete, disabled and cancel new-session paths, the empty
+state, and focus restoration. An allowlisted test mutant disconnects Stop and
+must make the same journey fail. This test-only path is otherwise dormant.
 
 The per-user watchdog has an additional launch-readiness rule. macOS can report
 an approved agent as enabled while no launchd job was loaded after the approval

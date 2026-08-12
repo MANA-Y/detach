@@ -83,13 +83,18 @@
 - `tests/tmux-runtime.sh` — pinned tmux source/provenance, arm64-only packaging,
   linkage, signing, and bundled native-helper contract checks.
 - `tests/ui-e2e-contract.sh` and `tests/ui-e2e.sh` — freshness-marker negative
-  contracts and the bounded Accessibility smoke for the freshly built app.
-  The smoke uses a stripped background-only copy, fake CLI, and private
+  contracts and the bounded real-control smoke for the freshly built app.
+  The smoke uses a stripped background-only copy, a fake CLI, and private
   HOME/preferences/state below `/private/tmp`; it cannot use the installed
-  Detach or user session state. Run the app build first. The UI smoke needs a
-  logged-in WindowServer session but must not be granted broader filesystem or
-  production payload access. Its fake CLI allowlist covers only the exact
-  status/stop flow and completed-session forced delete asserted by the smoke.
+  Detach or user session state. It temporarily activates the isolated app,
+  posts AppKit mouse events to measured SwiftUI controls, and restores the
+  prior application. The locator bridge has no application actions. Run the
+  app build first. The UI smoke needs a logged-in WindowServer session but no
+  Accessibility approval. Do not grant it broader filesystem or production
+  payload access. Its fake CLI allowlist covers only the exact status and stop
+  flow and the completed-session forced delete asserted by the smoke. The
+  contract also disconnects the test-only Stop handler and requires the real
+  control journey to fail.
 - `tests/release-preflight.sh` and `tests/publish-preflight.sh` — hermetic release
   tooling, arm64 appcast, production-DMG verification, exact artifact allowlist,
   and explicit publication-confirmation guards.

@@ -102,7 +102,7 @@ struct RootView: View {
             guard AppSettings.uiE2E == nil else { return }
             await notifications.configure(enabled: notificationsEnabled)
         }
-        .task { await UIE2ETestDriver.runIfRequested() }
+        .task { UIE2ETestDriver.startIfRequested() }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             Task {
@@ -125,8 +125,7 @@ struct RootView: View {
             if AppSettings.uiE2E != nil {
                 UIE2EAccessibilityBridge(
                     store: store,
-                    selectedID: $selectedID,
-                    navigation: navigation)
+                    selectedID: selectedID)
                     .frame(width: 0, height: 0)
             }
         }

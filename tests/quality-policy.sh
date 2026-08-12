@@ -43,9 +43,9 @@ policy_version="$("$ROOT/scripts/quality-policy" version)"
   fail 'critical requirement inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" capabilities | wc -l | tr -d ' ')" = 11 ] || \
   fail 'capability inventory is incomplete'
-[ "$("$ROOT/scripts/quality-policy" journeys | wc -l | tr -d ' ')" = 26 ] || \
+[ "$("$ROOT/scripts/quality-policy" journeys | wc -l | tr -d ' ')" = 28 ] || \
   fail 'journey inventory is incomplete'
-[ "$("$ROOT/scripts/quality-policy" scenarios | wc -l | tr -d ' ')" = 33 ] || \
+[ "$("$ROOT/scripts/quality-policy" scenarios | wc -l | tr -d ' ')" = 37 ] || \
   fail 'scenario inventory is incomplete'
 first_json="$("$ROOT/scripts/quality-policy" render-json | shasum -a 256 | awk '{print $1}')"
 second_json="$("$ROOT/scripts/quality-policy" render-json | shasum -a 256 | awk '{print $1}')"

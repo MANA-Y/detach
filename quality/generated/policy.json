@@ -56,9 +56,11 @@
       "id": "app-experience",
       "journeys": [
         "J-APP-DASHBOARD",
+        "J-APP-DETAIL",
         "J-APP-EMPTY",
         "J-APP-FAILURE",
-        "J-APP-FOCUS"
+        "J-APP-FOCUS",
+        "J-APP-NEW-SESSION"
       ],
       "requirements": [
         "QC-HEALTH-FRESHNESS",
@@ -260,7 +262,8 @@
       ],
       "scenarios": [
         "SC-SESSION-STOP-CODEX",
-        "SC-SESSION-STOP-CLAUDE"
+        "SC-SESSION-STOP-CLAUDE",
+        "SC-UI-SESSION-STOP"
       ],
       "summary": "A user stops only the selected owned session."
     },
@@ -273,7 +276,8 @@
       ],
       "scenarios": [
         "SC-SESSION-DELETE-CODEX",
-        "SC-SESSION-DELETE-CLAUDE"
+        "SC-SESSION-DELETE-CLAUDE",
+        "SC-UI-SESSION-DELETE"
       ],
       "summary": "A user deletes one completed session without affecting another session."
     },
@@ -338,6 +342,17 @@
     },
     {
       "capability": "app-experience",
+      "id": "J-APP-DETAIL",
+      "requirements": [
+        "QC-HEALTH-PRESENTATION"
+      ],
+      "scenarios": [
+        "SC-UI-SESSION-DETAIL"
+      ],
+      "summary": "A user selects a session and sees its details."
+    },
+    {
+      "capability": "app-experience",
       "id": "J-APP-EMPTY",
       "requirements": [
         "QC-HEALTH-PRESENTATION",
@@ -369,6 +384,17 @@
         "SC-UI-FOCUS"
       ],
       "summary": "Background status checks do not steal keyboard focus."
+    },
+    {
+      "capability": "app-experience",
+      "id": "J-APP-NEW-SESSION",
+      "requirements": [
+        "QC-HEALTH-PRESENTATION"
+      ],
+      "scenarios": [
+        "SC-UI-NEW-SESSION"
+      ],
+      "summary": "A user opens the new-session form and cannot launch without a project."
     },
     {
       "capability": "onboarding",
@@ -504,7 +530,7 @@
     "pr_feedback_seconds": 600,
     "review_seconds": 180
   },
-  "policy": 18,
+  "policy": 19,
   "release_domains": [
     {
       "gates": "-",
@@ -1644,12 +1670,36 @@
     },
     {
       "command": "tests/ui-e2e.sh",
+      "id": "SC-UI-SESSION-DETAIL",
+      "stage": "ui-e2e",
+      "status": "instrumented"
+    },
+    {
+      "command": "tests/ui-e2e.sh",
+      "id": "SC-UI-SESSION-DELETE",
+      "stage": "ui-e2e",
+      "status": "instrumented"
+    },
+    {
+      "command": "tests/ui-e2e.sh",
+      "id": "SC-UI-SESSION-STOP",
+      "stage": "ui-e2e",
+      "status": "instrumented"
+    },
+    {
+      "command": "tests/ui-e2e.sh",
+      "id": "SC-UI-NEW-SESSION",
+      "stage": "ui-e2e",
+      "status": "instrumented"
+    },
+    {
+      "command": "tests/ui-e2e.sh",
       "id": "SC-UI-EMPTY",
       "stage": "ui-e2e",
       "status": "instrumented"
     },
     {
-      "command": "pending out-of-process UI journey",
+      "command": "pending hermetic packaged-app journey",
       "id": "SC-UI-FAILURE",
       "stage": "ui-e2e",
       "status": "planned"
@@ -1661,25 +1711,25 @@
       "status": "instrumented"
     },
     {
-      "command": "pending out-of-process UI journey",
+      "command": "pending hermetic packaged-app journey",
       "id": "SC-UI-ONBOARD-FIRST-RUN",
       "stage": "ui-e2e",
       "status": "planned"
     },
     {
-      "command": "pending out-of-process UI journey",
+      "command": "pending hermetic packaged-app journey",
       "id": "SC-UI-ONBOARD-PROVIDER",
       "stage": "ui-e2e",
       "status": "planned"
     },
     {
-      "command": "pending out-of-process UI journey",
+      "command": "pending hermetic packaged-app journey",
       "id": "SC-UI-ONBOARD-APPROVAL",
       "stage": "ui-e2e",
       "status": "planned"
     },
     {
-      "command": "pending out-of-process UI journey",
+      "command": "pending hermetic packaged-app journey",
       "id": "SC-UI-SETTINGS",
       "stage": "ui-e2e",
       "status": "planned"
