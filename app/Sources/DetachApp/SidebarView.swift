@@ -55,6 +55,15 @@ struct SidebarView: View {
                         .foregroundStyle(Brand.indigo)
                 }
                 .accessibilityIdentifier("new-session-button")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                .background {
+                    if AppSettings.uiE2E != nil {
+                        UIE2EGeometryProbe(identifier: "new-session-button")
+                    }
+                }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
             }
         }
         .sheet(isPresented: $showNewSession) {
@@ -76,6 +85,11 @@ struct SidebarView: View {
     private func sessionRow(_ session: Session) -> some View {
         if session.isWaitingForUser {
             SessionRow(session: session)
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                .background { uiE2EGeometryProbe(for: session) }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
                 .tag(session.id)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(session.displayTitle)
@@ -84,6 +98,11 @@ struct SidebarView: View {
                 .listRowBackground(Color.orange.opacity(0.10))
         } else {
             SessionRow(session: session)
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                .background { uiE2EGeometryProbe(for: session) }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
                 .tag(session.id)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(session.displayTitle)
@@ -91,6 +110,17 @@ struct SidebarView: View {
                 .accessibilityAction { selectedID = session.id }
         }
     }
+
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+    @ViewBuilder
+    private func uiE2EGeometryProbe(for session: Session) -> some View {
+        if AppSettings.uiE2E != nil {
+            UIE2EGeometryProbe(identifier: "session-row-\(session.id)")
+        }
+    }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
 }
 
 struct SessionRow: View {

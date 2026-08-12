@@ -2,6 +2,11 @@ import AppKit
 import Darwin
 import Foundation
 
+@MainActor
+enum UIE2EControlFault {
+    static var stopActionDisconnected = false
+}
+
 /// A narrowly gated, same-process accessibility driver for the packaged-app
 /// smoke test. Keeping traversal and actions inside the tested process avoids
 /// a second automation executable and its independent identity. This path is
@@ -37,14 +42,16 @@ enum UIE2ETestDriver {
     static func runIfRequested() async {
         guard let configuration = AppSettings.uiE2E, !started else { return }
         started = true
-        let report = await runScenario(configuration: configuration)
-        try? write(report, to: configuration.result)
-        NSApp.terminate(nil)
-        // A SwiftUI sheet can defer normal termination even after it is
-        // dismissed. The validated test copy owns no durable state, so keep
-        // the harness bounded after the atomic report is safely on disk.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.25) {
-            _exit(EXIT_SUCCESS)
+        Task { @MainActor in
+            let report = await runScenario(configuration: configuration)
+            try? write(report, to: configuration.result)
+            NSApp.terminate(nil)
+            // A SwiftUI sheet can defer normal termination even after it is
+            // dismissed. The validated test copy owns no durable state, so keep
+            // the harness bounded after the atomic report is safely on disk.
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.25) {
+                _exit(EXIT_SUCCESS)
+            }
         }
     }
 
@@ -52,28 +59,55 @@ enum UIE2ETestDriver {
         configuration: UIE2EConfiguration
     ) async -> Report {
         var checks: [String] = []
+        let previousFrontmost = NSWorkspace.shared.frontmostApplication
+        let previousActivationPolicy = NSApp.activationPolicy()
+        defer { UIE2EControlFault.stopActionDisconnected = false }
         do {
+            trace("driver started")
             guard !NSApp.isActive else {
                 throw Failure(message: "background test app stole keyboard focus")
             }
+            checks.append("background-app-starts-without-focus")
+            guard let mainWindow = NSApp.windows.first(where: {
+                $0.identifier?.rawValue == "main"
+            }) else {
+                throw Failure(message: "main test window is missing")
+            }
+            guard NSApp.setActivationPolicy(.regular) else {
+                throw Failure(message: "cannot enable test app activation")
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            mainWindow.makeKeyAndOrderFront(nil)
+            try await waitUntil("test app activation") {
+                NSApp.isActive && mainWindow.isKeyWindow
+            }
+            try await Task.sleep(nanoseconds: 200_000_000)
+            trace("test app activated")
 
             let dashboard = try await element(role: .splitGroup)
             try requireGeometry(dashboard, name: "dashboard")
             checks.append("dashboard-accessible")
+            trace("dashboard accessible")
 
             let completedID = "detach-claude-ui-completed"
             let completedRow = try await element(
                 identifier: "session-row-\(completedID)")
             try requireSemanticControl(completedRow, name: "completed session row")
-            try press(completedRow, name: "completed session row")
-            let completedDetail = try await element(
-                identifier: "session-detail-\(completedID)")
+            let completedDetail = try await clickUntilElement(
+                completedRow,
+                name: "completed session row",
+                resultIdentifier: "session-detail-\(completedID)")
             try requireGeometry(completedDetail, name: "completed session detail")
             let deleteButton = try await element(identifier: "session-action-delete")
             try requireSemanticControl(deleteButton, name: "delete action")
             checks.append("sidebar-selects-completed-session")
+            trace("completed session selected")
 
-            try press(deleteButton, name: "delete action")
+            try await click(deleteButton, name: "delete action")
+            let confirmDelete = try await sheetButton(
+                label: "Delete")
+            try requireSemanticControl(confirmDelete, name: "delete confirmation")
+            try await click(confirmDelete, name: "delete confirmation")
             try await waitUntil("fake CLI records delete action") {
                 let actions = try? String(
                     contentsOf: configuration.root
@@ -83,17 +117,38 @@ enum UIE2ETestDriver {
                     "claude delete --force \(completedID)") == true
             }
             checks.append("safe-delete-reaches-fake-cli")
+            trace("delete reached fake CLI")
+            try await waitUntil("delete confirmation dismissal") {
+                NSApp.windows.allSatisfy(\.sheets.isEmpty)
+            }
+            try await Task.sleep(nanoseconds: 200_000_000)
 
             let runningID = "detach-codex-ui-running"
             let runningRow = try await element(
                 identifier: "session-row-\(runningID)")
             try requireSemanticControl(runningRow, name: "running session row")
-            try press(runningRow, name: "running session row")
-            _ = try await element(identifier: "session-detail-\(runningID)")
+            _ = try await clickUntilElement(
+                runningRow,
+                name: "running session row",
+                resultIdentifier: "session-detail-\(runningID)")
             let stopButton = try await element(identifier: "session-action-stop")
             try requireSemanticControl(stopButton, name: "stop action")
-            try press(stopButton, name: "stop action")
-            try await waitUntil("fake CLI records stop action") {
+            UIE2EControlFault.stopActionDisconnected = true
+            try await click(stopButton, name: "disconnected stop action")
+            try await Task.sleep(nanoseconds: 500_000_000)
+            let disconnectedActions = try? String(
+                contentsOf: configuration.root
+                    .appendingPathComponent("fake/actions.log"),
+                encoding: .utf8)
+            guard disconnectedActions?.contains("codex stop \(runningID)") != true else {
+                throw Failure(message: "disconnected stop action reached fake CLI")
+            }
+            checks.append("disconnected-stop-blocks-action")
+            UIE2EControlFault.stopActionDisconnected = false
+            try await clickUntil(
+                stopButton,
+                name: "stop action",
+                outcome: "fake CLI records stop action") {
                 let actions = try? String(
                     contentsOf: configuration.root
                         .appendingPathComponent("fake/actions.log"),
@@ -101,34 +156,40 @@ enum UIE2ETestDriver {
                 return actions?.contains("codex stop \(runningID)") == true
             }
             checks.append("safe-action-reaches-fake-cli")
+            trace("stop reached fake CLI")
 
             let newSession = try await element(identifier: "new-session-button")
             try requireSemanticControl(newSession, name: "new session action")
-            try press(newSession, name: "new session action")
-            let sheet = try await element(identifier: "new-session-sheet")
-            try requireGeometry(sheet, name: "new session sheet")
-            let launch = try await element(identifier: "new-session-launch")
-            guard !isEnabled(launch) else {
-                throw Failure(message: "new-session launch enabled without a project")
+            try await click(newSession, name: "new session action")
+            _ = try await measuredFrame(
+                identifier: "new-session-sheet", name: "new session sheet")
+            let launchFrame = try await measuredFrame(
+                identifier: "new-session-launch", name: "new session launch")
+            try await click(frame: launchFrame, name: "disabled new session launch")
+            try await Task.sleep(nanoseconds: 200_000_000)
+            guard NSApp.windows.contains(where: { !$0.sheets.isEmpty }) else {
+                throw Failure(message: "new-session launch is active without a project")
             }
-            let cancel = try await element(identifier: "new-session-cancel")
-            try requireSemanticControl(cancel, name: "new session cancel")
-            try press(cancel, name: "new session cancel")
+            let cancelFrame = try await measuredFrame(
+                identifier: "new-session-cancel", name: "new session cancel")
+            try await click(frame: cancelFrame, name: "new session cancel")
             try await waitUntil("new-session sheet closes") {
-                find(identifier: "new-session-sheet") == nil
+                NSApp.windows.allSatisfy(\.sheets.isEmpty)
             }
             checks.append("new-session-sheet-semantics")
+            trace("new-session sheet closed")
 
             try Data("empty\n".utf8).write(
                 to: configuration.fixtureState, options: .atomic)
             let emptyGuide = try await element(identifier: "empty-sessions-guide")
             try requireGeometry(emptyGuide, name: "empty sessions guide")
             checks.append("empty-dashboard-state")
+            trace("empty dashboard visible")
 
-            guard !NSApp.isActive else {
-                throw Failure(message: "accessibility actions stole keyboard focus")
-            }
-            checks.append("installed-app-focus-undisturbed")
+            try await restoreFocus(
+                to: previousFrontmost, policy: previousActivationPolicy)
+            checks.append("installed-app-focus-restored")
+            trace("previous application focus restored")
             return Report(
                 schema: 1,
                 passed: true,
@@ -136,12 +197,35 @@ enum UIE2ETestDriver {
                 error: nil,
                 accessibilityTree: snapshots())
         } catch {
+            try? await restoreFocus(
+                to: previousFrontmost, policy: previousActivationPolicy)
             return Report(
                 schema: 1,
                 passed: false,
                 checks: checks,
                 error: error.localizedDescription,
                 accessibilityTree: snapshots())
+        }
+    }
+
+    private static func trace(_ message: String) {
+        FileHandle.standardError.write(Data("UI e2e: \(message)\n".utf8))
+    }
+
+    private static func restoreFocus(
+        to application: NSRunningApplication?,
+        policy: NSApplication.ActivationPolicy
+    ) async throws {
+        if let application, !application.isTerminated {
+            application.activate()
+        } else {
+            NSApp.hide(nil)
+        }
+        try await waitUntil("previous application focus restoration") {
+            !NSApp.isActive
+        }
+        guard NSApp.setActivationPolicy(policy) else {
+            throw Failure(message: "cannot restore test app activation policy")
         }
     }
 
@@ -162,6 +246,23 @@ enum UIE2ETestDriver {
         var result: (any NSAccessibilityProtocol)?
         try await waitUntil("accessibility role \(role.rawValue)") {
             result = elements().first { roleOf($0) == role }
+            return result != nil
+        }
+        return result!
+    }
+
+    private static func sheetButton(label: String) async throws
+        -> any NSAccessibilityProtocol
+    {
+        var result: (any NSAccessibilityProtocol)?
+        try await waitUntil("sheet button \(label)") {
+            let sheetFrames = NSApp.windows.flatMap(\.sheets).map(\.frame)
+            result = elements().first { element in
+                roleOf(element) == .button
+                    && Self.label(element) == label
+                    && sheetFrames.contains(where: { $0.contains(
+                        CGPoint(x: frame(element).midX, y: frame(element).midY)) })
+            }
             return result != nil
         }
         return result!
@@ -204,12 +305,129 @@ enum UIE2ETestDriver {
         }
     }
 
-    private static func press(
+    private static func click(
         _ element: any NSAccessibilityProtocol,
         name: String
-    ) throws {
-        guard element.accessibilityPerformPress() else {
-            throw Failure(message: "\(name) has no working accessibility press action")
+    ) async throws {
+        var targetFrame = frame(element)
+        if let identifier = identifierOf(element),
+           usesMeasuredGeometry(identifier) {
+            try await waitUntil("real control geometry for \(name)") {
+                guard let measured = UIE2EGeometryRegistry.frame(for: identifier) else {
+                    return false
+                }
+                targetFrame = measured
+                return !measured.isEmpty
+            }
+        }
+        try await click(frame: targetFrame, name: name)
+    }
+
+    private static func usesMeasuredGeometry(_ identifier: String) -> Bool {
+        identifier == "new-session-button"
+            || identifier.hasPrefix("session-row-")
+            || identifier.hasPrefix("session-action-")
+    }
+
+    private static func clickUntilElement(
+        _ control: any NSAccessibilityProtocol,
+        name: String,
+        resultIdentifier: String
+    ) async throws -> any NSAccessibilityProtocol {
+        var result: (any NSAccessibilityProtocol)?
+        for _ in 0..<3 {
+            try await click(control, name: name)
+            do {
+                try await waitUntil(
+                    "accessibility element \(resultIdentifier)", attempts: 10
+                ) {
+                    result = find(identifier: resultIdentifier)
+                    return result != nil
+                }
+                return result!
+            } catch {
+                continue
+            }
+        }
+        throw Failure(message: "\(name) did not produce \(resultIdentifier)")
+    }
+
+    private static func clickUntil(
+        _ control: any NSAccessibilityProtocol,
+        name: String,
+        outcome: String,
+        condition: () -> Bool
+    ) async throws {
+        for _ in 0..<3 {
+            try await click(control, name: name)
+            do {
+                try await waitUntil(outcome, attempts: 10, condition: condition)
+                return
+            } catch {
+                continue
+            }
+        }
+        throw Failure(message: "\(name) did not produce \(outcome)")
+    }
+
+    private static func measuredFrame(
+        identifier: String,
+        name: String
+    ) async throws -> CGRect {
+        var result: CGRect?
+        try await waitUntil("real control geometry for \(name)") {
+            result = UIE2EGeometryRegistry.frame(for: identifier)
+            return result?.isEmpty == false
+        }
+        if identifier.hasPrefix("new-session-"),
+           let sheet = NSApp.windows.flatMap(\.sheets).first,
+           let localFrame = result,
+           !sheet.frame.contains(CGPoint(
+               x: localFrame.midX, y: localFrame.midY)) {
+            result = CGRect(
+                x: sheet.frame.minX + localFrame.minX,
+                y: sheet.frame.minY + localFrame.minY,
+                width: localFrame.width,
+                height: localFrame.height)
+        }
+        trace("measured \(name): \(result!)")
+        return result!
+    }
+
+    private static func click(frame targetFrame: CGRect, name: String) async throws {
+        let screenPoint = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
+        let candidateWindows = NSApp.windows.flatMap(\.sheets) + NSApp.windows
+        guard let window = candidateWindows.first(where: { candidate in
+            candidate.frame.contains(screenPoint)
+        }) else {
+            throw Failure(message: "\(name) is outside every visible test window")
+        }
+        trace("clicking \(name) at \(screenPoint.x),\(screenPoint.y)")
+        let windowPoint = window.convertPoint(fromScreen: screenPoint)
+        if let contentView = window.contentView {
+            let contentPoint = contentView.convert(windowPoint, from: nil)
+            var view = contentView.hitTest(contentPoint)
+            var names: [String] = []
+            while let current = view {
+                names.append(String(describing: type(of: current)))
+                view = current.superview
+            }
+            trace("hit chain for \(name): \(names.joined(separator: " > "))")
+        }
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            guard let event = NSEvent.mouseEvent(
+                with: type,
+                location: windowPoint,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 1,
+                pressure: type == .leftMouseDown ? 1 : 0)
+            else { continue }
+            NSApp.postEvent(event, atStart: false)
+            try await Task.sleep(nanoseconds: 100_000_000)
         }
     }
 

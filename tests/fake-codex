@@ -72,7 +72,24 @@ sqlite "$db" "INSERT OR REPLACE INTO threads (id, rollout_path, created_at_ms, u
 
 printf 'fake Codex started in %s\n' "$cwd"
 printf 'mode=%s id=%s\n' "$mode" "$id"
-sleep "${FAKE_CODEX_SLEEP:-4}"
+if [ -n "${FAKE_CODEX_RELEASE_FILE:-}" ]; then
+  case "$FAKE_CODEX_RELEASE_FILE" in
+    /*) ;;
+    *) printf 'fake Codex release file must be absolute\n' >&2; exit 2 ;;
+  esac
+  release_attempts=0
+  while { [ ! -f "$FAKE_CODEX_RELEASE_FILE" ] || [ -L "$FAKE_CODEX_RELEASE_FILE" ]; } && \
+        [ "$release_attempts" -lt 600 ]; do
+    release_attempts=$((release_attempts + 1))
+    sleep 0.1
+  done
+  if [ ! -f "$FAKE_CODEX_RELEASE_FILE" ] || [ -L "$FAKE_CODEX_RELEASE_FILE" ]; then
+    printf 'timed out waiting for fake Codex release file\n' >&2
+    exit 124
+  fi
+else
+  sleep "${FAKE_CODEX_SLEEP:-4}"
+fi
 printf '{"timestamp":"2099-01-01T00:05:00Z","type":"event_msg","payload":{"type":"agent_message","message":"checkpoint me"}}\n' >>"$rollout"
 printf 'fake Codex finished\n'
 exit "${FAKE_CODEX_EXIT:-7}"

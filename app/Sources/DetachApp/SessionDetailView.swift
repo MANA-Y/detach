@@ -330,11 +330,36 @@ struct SessionDetailView: View {
         case .stop:
             Button(L10n.string("Stop"), role: .destructive) { run(.stop) }
                 .accessibilityIdentifier("session-action-stop")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                .background {
+                    uiE2EGeometryProbe(identifier: "session-action-stop")
+                }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
         case .delete:
             Button(L10n.string("Delete"), role: .destructive) { confirmDelete = true }
                 .accessibilityIdentifier("session-action-delete")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                .background {
+                    uiE2EGeometryProbe(identifier: "session-action-delete")
+                }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
         }
     }
+
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+    @ViewBuilder
+    private func uiE2EGeometryProbe(identifier: String) -> some View {
+        if AppSettings.uiE2E != nil {
+            UIE2EGeometryProbe(identifier: identifier)
+        }
+    }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
 
     @MainActor
     private func openInTerminal(_ command: String) {
@@ -351,6 +376,14 @@ struct SessionDetailView: View {
     }
 
     private func run(_ action: SessionAction) {
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+        if action == .stop, AppSettings.uiE2E != nil,
+           UIE2EControlFault.stopActionDisconnected {
+            return
+        }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
         Task {
             if let message = await store.perform(action, on: session) {
                 actionError = message

@@ -131,9 +131,16 @@ printf '#!/bin/bash\nprintf breach >%q\nexit 91\n' "$BREACH" \
   >"$TEST_HOME/.local/bin/detach"
 chmod 0755 "$TEST_HOME/.local/bin/detach"
 
-"$ROOT/scripts/quality-scenarios" event begin SC-UI-DASHBOARD
-"$ROOT/scripts/quality-scenarios" event begin SC-UI-EMPTY
-"$ROOT/scripts/quality-scenarios" event begin SC-UI-FOCUS
+for scenario in \
+  SC-UI-DASHBOARD \
+  SC-UI-SESSION-DETAIL \
+  SC-UI-SESSION-DELETE \
+  SC-UI-SESSION-STOP \
+  SC-UI-NEW-SESSION \
+  SC-UI-EMPTY \
+  SC-UI-FOCUS; do
+  "$ROOT/scripts/quality-scenarios" event begin "$scenario"
+done
 
 HOME="$TEST_HOME" \
 CFFIXED_USER_HOME="$TEST_HOME" \
@@ -211,13 +218,15 @@ fi
 
 check_index=0
 for check in \
+  background-app-starts-without-focus \
   dashboard-accessible \
   sidebar-selects-completed-session \
   safe-delete-reaches-fake-cli \
+  disconnected-stop-blocks-action \
   safe-action-reaches-fake-cli \
   new-session-sheet-semantics \
   empty-dashboard-state \
-  installed-app-focus-undisturbed; do
+  installed-app-focus-restored; do
   actual="$(plutil -extract "checks.$check_index" raw -o - "$RESULT")"
   [ "$actual" = "$check" ] || {
     printf 'UI e2e: check %s is %s, expected %s\n' \
@@ -225,13 +234,27 @@ for check in \
     exit 1
   }
   case "$check" in
+    background-app-starts-without-focus|disconnected-stop-blocks-action)
+      ;;
     dashboard-accessible)
       "$ROOT/scripts/quality-scenarios" event pass SC-UI-DASHBOARD
+      ;;
+    sidebar-selects-completed-session)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-SESSION-DETAIL
+      ;;
+    safe-delete-reaches-fake-cli)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-SESSION-DELETE
+      ;;
+    safe-action-reaches-fake-cli)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-SESSION-STOP
+      ;;
+    new-session-sheet-semantics)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-NEW-SESSION
       ;;
     empty-dashboard-state)
       "$ROOT/scripts/quality-scenarios" event pass SC-UI-EMPTY
       ;;
-    installed-app-focus-undisturbed)
+    installed-app-focus-restored)
       "$ROOT/scripts/quality-scenarios" event pass SC-UI-FOCUS
       ;;
   esac

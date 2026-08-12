@@ -2,16 +2,16 @@ import AppKit
 import DetachKit
 import SwiftUI
 
-/// Test-only accessibility elements for SwiftUI's virtual List rows. AppKit's
+/// Test-only accessibility locators for SwiftUI's virtual List rows. AppKit's
 /// in-process protocol omits identifiers for those rows even though external
-/// assistive clients receive them. This zero-size bridge mirrors the same
-/// session state and actions so the hermetic in-process driver can exercise
-/// labeled AX press semantics without a TCC-authorized second executable.
+/// assistive clients receive them. The bridge exposes only semantics and
+/// geometry. It does not invoke application actions. The packaged-app driver
+/// uses each locator with a measured real-control frame and dispatches AppKit
+/// mouse events through the normal SwiftUI control path.
 @MainActor
 struct UIE2EAccessibilityBridge: NSViewRepresentable {
     let store: SessionStore
-    @Binding var selectedID: String?
-    @ObservedObject var navigation: MainNavigation
+    let selectedID: String?
 
     func makeNSView(context: Context) -> UIE2EBridgeView {
         UIE2EBridgeView()
@@ -27,12 +27,7 @@ struct UIE2EAccessibilityBridge: NSViewRepresentable {
         view.rebuild(
             sessions: sessions,
             state: store.state,
-            selected: selected,
-            select: { selectedID = $0 },
-            newSession: { navigation.requestsNewSession = true },
-            perform: { action, session in
-                Task { _ = await store.perform(action, on: session) }
-            })
+            selected: selected)
     }
 }
 
@@ -48,10 +43,7 @@ final class UIE2EBridgeView: NSView {
     func rebuild(
         sessions: [Session],
         state: SessionStore.State,
-        selected: Session?,
-        select: @escaping (String) -> Void,
-        newSession: @escaping () -> Void,
-        perform: @escaping (SessionAction, Session) -> Void
+        selected: Session?
     ) {
         guard let window else { return }
         let frame = window.frame
@@ -65,11 +57,7 @@ final class UIE2EBridgeView: NSView {
             identifier: "new-session-button",
             label: "New session",
             frame: NSRect(x: frame.minX + sidebarWidth - 80,
-                          y: frame.maxY - 52, width: 44, height: 36),
-            action: { [weak self] in
-                newSession()
-                self?.scheduleSheetControls(for: window)
-            }))
+                          y: frame.maxY - 52, width: 44, height: 36)))
 
         for (index, session) in sessions.enumerated() {
             next.append(UIE2EAXElement(
@@ -79,8 +67,7 @@ final class UIE2EBridgeView: NSView {
                 label: session.displayTitle,
                 frame: NSRect(x: frame.minX + 12,
                               y: frame.maxY - 100 - CGFloat(index * 64),
-                              width: rowWidth, height: 46),
-                action: { select(session.id) }))
+                              width: rowWidth, height: 46)))
         }
 
         if let selected {
@@ -102,8 +89,7 @@ final class UIE2EBridgeView: NSView {
                     identifier: "session-action-\(action.rawValue)",
                     label: action == .stop ? "Stop" : "Delete",
                     frame: NSRect(x: frame.maxX - 100,
-                                  y: frame.minY + 16, width: 80, height: 32),
-                    action: { perform(action, selected) }))
+                                  y: frame.minY + 16, width: 80, height: 32)))
             }
         }
 
@@ -120,59 +106,6 @@ final class UIE2EBridgeView: NSView {
         }
 
         elements = next
-        if window.attachedSheet != nil { installSheetControls(for: window) }
-    }
-
-    private func scheduleSheetControls(for window: NSWindow) {
-        Task { @MainActor [weak self, weak window] in
-            for _ in 0..<20 {
-                guard let self, let window else { return }
-                if window.attachedSheet != nil {
-                    self.installSheetControls(for: window)
-                    return
-                }
-                try? await Task.sleep(nanoseconds: 50_000_000)
-            }
-        }
-    }
-
-    private func installSheetControls(for window: NSWindow) {
-        guard let sheet = window.attachedSheet,
-              !elements.contains(where: {
-                  ($0 as? UIE2EAXElement)?.identifierValue == "new-session-sheet"
-              }) else { return }
-        let sheetFrame = sheet.frame
-        elements.append(contentsOf: [
-            UIE2EAXElement(
-                parent: self,
-                role: .group,
-                identifier: "new-session-sheet",
-                label: "New session",
-                frame: sheetFrame),
-            UIE2EAXElement(
-                parent: self,
-                role: .button,
-                identifier: "new-session-launch",
-                label: "Launch in Terminal",
-                frame: NSRect(x: sheetFrame.maxX - 180,
-                              y: sheetFrame.minY + 16, width: 160, height: 32),
-                enabled: false),
-            UIE2EAXElement(
-                parent: self,
-                role: .button,
-                identifier: "new-session-cancel",
-                label: "Cancel",
-                frame: NSRect(x: sheetFrame.maxX - 270,
-                              y: sheetFrame.minY + 16, width: 80, height: 32),
-                action: { [weak self, weak sheet] in
-                    guard let sheet else { return }
-                    sheet.sheetParent?.endSheet(sheet)
-                    self?.elements.removeAll {
-                        ($0 as? UIE2EAXElement)?.identifierValue.hasPrefix(
-                            "new-session-") == true
-                    }
-                }),
-        ])
     }
 }
 
@@ -183,8 +116,6 @@ final class UIE2EAXElement: NSAccessibilityElement {
     private let storedLabel: String
     private let storedFrame: NSRect
     private let storedEnabled: Bool
-    private let action: (() -> Void)?
-    let identifierValue: String
 
     init(
         parent: Any,
@@ -192,16 +123,13 @@ final class UIE2EAXElement: NSAccessibilityElement {
         identifier: String,
         label: String,
         frame: NSRect,
-        enabled: Bool = true,
-        action: (() -> Void)? = nil
+        enabled: Bool = true
     ) {
         storedRole = role
         storedIdentifier = identifier
-        identifierValue = identifier
         storedLabel = label
         storedFrame = frame
         storedEnabled = enabled
-        self.action = action
         super.init()
         setAccessibilityParent(parent)
     }
@@ -212,9 +140,4 @@ final class UIE2EAXElement: NSAccessibilityElement {
     override func accessibilityLabel() -> String? { storedLabel }
     override func accessibilityFrame() -> NSRect { storedFrame }
     override func isAccessibilityEnabled() -> Bool { storedEnabled }
-    override func accessibilityPerformPress() -> Bool {
-        guard let action else { return false }
-        action()
-        return true
-    }
 }

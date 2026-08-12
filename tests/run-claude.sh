@@ -12,6 +12,7 @@ TMUX_SOCKET_ROOT="$TEST_INSTALL_STATE_ROOT/tmux"
 SOCKET="detach-claude-test-$$"
 SOCKET_PATH="$TMUX_SOCKET_ROOT/$SOCKET.sock"
 ARTIFACT_DIR="${DETACH_PROVIDER_TEST_ARTIFACT_DIR:-}"
+FAILURE_LINE=""
 
 if [ -n "${DETACH_TEST_STATE_BIN:-}" ]; then
   STATE_HELPER="$DETACH_TEST_STATE_BIN"
@@ -73,6 +74,7 @@ preserve_failure_diagnostics() {
   done
   {
     printf 'schema\t1\nexit_status\t%s\n' "$status"
+    printf 'failure_line\t%s\n' "${FAILURE_LINE:--}"
     printf 'socket_root_present\t%s\n' "$([ -d "$TMUX_SOCKET_ROOT" ] && printf true || printf false)"
     printf 'socket_present\t%s\n' "$([ -S "$SOCKET_PATH" ] && printf true || printf false)"
     printf 'temporary_state_present\t%s\n' "$([ -d "$TMP_ROOT" ] && printf true || printf false)"
@@ -81,11 +83,19 @@ preserve_failure_diagnostics() {
   find "$TMP_ROOT" -maxdepth 3 -type f -print 2>/dev/null | \
     sed "s#^$TMP_ROOT#TMP_ROOT#" | LC_ALL=C sort >"$ARTIFACT_DIR/file-inventory.txt"
   chmod 0600 "$ARTIFACT_DIR/file-inventory.txt"
+  [ -z "$FAILURE_LINE" ] || printf 'Claude test failed at line %s\n' "$FAILURE_LINE" >&2
   printf 'Claude diagnostics preserved at %s\n' "$ARTIFACT_DIR" >&2
+}
+
+record_failure() {
+  local status="$?"
+  FAILURE_LINE="$1"
+  return "$status"
 }
 
 cleanup() {
   local status="${1:-0}"
+  trap - ERR
   preserve_failure_diagnostics "$status"
   if [ "${DETACH_CLAUDE_TEST_KEEP:-0}" = "1" ]; then
     printf 'Preserved test state: %s (socket=%s, tmux_tmpdir=%s)\n' "$TMP_ROOT" "$SOCKET_PATH" "${TMUX_TMPDIR:-unset}" >&2
@@ -96,6 +106,7 @@ cleanup() {
     rm -rf "$TMP_ROOT"
   fi
 }
+trap 'record_failure "$LINENO"' ERR
 trap 'cleanup $?' EXIT
 
 export DETACH_STATE_ROOT="$TMP_ROOT/detach-state"

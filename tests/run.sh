@@ -18,6 +18,7 @@ CWD_SOCKET_PATH="$TMUX_SOCKET_ROOT/$CWD_SOCKET.sock"
 OUTER_SOCKET_PATH="$TMUX_SOCKET_ROOT/$OUTER_SOCKET.sock"
 SESSION="detach-codex-integration"
 ARTIFACT_DIR="${DETACH_PROVIDER_TEST_ARTIFACT_DIR:-}"
+FAILURE_LINE=""
 
 if [ -n "${DETACH_TEST_STATE_BIN:-}" ]; then
   STATE_HELPER="$DETACH_TEST_STATE_BIN"
@@ -96,6 +97,7 @@ preserve_failure_diagnostics() {
   done
   {
     printf 'schema\t1\nexit_status\t%s\n' "$status"
+    printf 'failure_line\t%s\n' "${FAILURE_LINE:--}"
     printf 'socket_root_present\t%s\n' "$([ -d "$TMUX_SOCKET_ROOT" ] && printf true || printf false)"
     printf 'socket_present\t%s\n' "$([ -S "$SOCKET_PATH" ] && printf true || printf false)"
     printf 'temporary_state_present\t%s\n' "$([ -d "$TMP_ROOT" ] && printf true || printf false)"
@@ -104,11 +106,19 @@ preserve_failure_diagnostics() {
   find "$TMP_ROOT" -maxdepth 3 -type f -print 2>/dev/null | \
     sed "s#^$TMP_ROOT#TMP_ROOT#" | LC_ALL=C sort >"$ARTIFACT_DIR/file-inventory.txt"
   chmod 0600 "$ARTIFACT_DIR/file-inventory.txt"
+  [ -z "$FAILURE_LINE" ] || printf 'Codex test failed at line %s\n' "$FAILURE_LINE" >&2
   printf 'Codex diagnostics preserved at %s\n' "$ARTIFACT_DIR" >&2
+}
+
+record_failure() {
+  local status="$?"
+  FAILURE_LINE="$1"
+  return "$status"
 }
 
 cleanup() {
   local status="${1:-0}"
+  trap - ERR
   preserve_failure_diagnostics "$status"
   if [ "${DETACH_CODEX_TEST_KEEP:-0}" = "1" ]; then
     printf 'Preserved test state: %s (socket=%s, tmux_tmpdir=%s)\n' "$TMP_ROOT" "$SOCKET_PATH" "${TMUX_TMPDIR:-unset}" >&2
@@ -121,6 +131,7 @@ cleanup() {
     rm -rf "$TMP_ROOT"
   fi
 }
+trap 'record_failure "$LINENO"' ERR
 trap 'cleanup $?' EXIT
 
 process_group_exists() {
@@ -555,6 +566,8 @@ DETACH="$SCRIPT"
 marker="$TMP_ROOT/must-not-exist"
 literal_prompt="spaces ; \$(touch $marker) * \"quotes\""
 export FAKE_CODEX_SLEEP=12
+integration_release="$TMP_ROOT/integration-provider-release"
+export FAKE_CODEX_RELEASE_FILE="$integration_release"
 "$ROOT/scripts/quality-scenarios" event begin SC-SESSION-CREATE-CODEX
 "$ROOT/scripts/quality-scenarios" event begin SC-SESSION-PERSIST-CODEX
 "$ROOT/scripts/quality-scenarios" event begin SC-SESSION-RECOVER-CODEX
@@ -813,6 +826,8 @@ rollout="$("$STATE_HELPER" meta get "$meta" rollout_path)"
 [ -s "$checkpoint/rollout.jsonl" ]
 [ -s "$checkpoint/codex-state.sqlite" ]
 
+: >"$integration_release"
+unset FAKE_CODEX_RELEASE_FILE
 attempts=0
 while [ "$(tmux -L "$SOCKET" display-message -p -t "$pane_id" '#{pane_dead}')" = "0" ] && \
       [ "$attempts" -lt 160 ]; do

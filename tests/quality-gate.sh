@@ -674,11 +674,18 @@ set -eu
 [ -f "${GATE_ORDER_ROOT:?}/swift" ]
 : >"$GATE_ORDER_ROOT/app"
 SH
-for ordered_stage in ui-e2e codex claude tmux-runtime gate-contract; do
+cat >"$REPO/tests/quality-gate-fixtures/ui-e2e" <<'SH'
+#!/bin/bash
+set -eu
+[ -f "${GATE_ORDER_ROOT:?}/app" ]
+: >"$GATE_ORDER_ROOT/ui-e2e"
+SH
+for ordered_stage in codex claude tmux-runtime gate-contract; do
   cat >"$REPO/tests/quality-gate-fixtures/$ordered_stage" <<SH
 #!/bin/bash
 set -eu
 [ -f "\${GATE_ORDER_ROOT:?}/app" ]
+[ -f "\${GATE_ORDER_ROOT:?}/ui-e2e" ]
 : >"\$GATE_ORDER_ROOT/$ordered_stage"
 SH
 done

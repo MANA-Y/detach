@@ -77,19 +77,27 @@
 - Add `DETACH_CODEX_TEST_KEEP=1` to the Codex command above to keep its
   temporary state and tmux server for inspection. Use
   `DETACH_CLAUDE_TEST_KEEP=1` with the Claude command.
+- Long-lived provider fixtures use bounded release files. They do not use a
+  fixed sleep window for liveness checks. Failure artifacts identify the
+  failing test line.
 - `tests/distribution.sh` — immutable install/upgrade/repair/doctor/uninstall
   coverage for the fixed payload (`detach`, `detach-core`, `detach-install`,
   `detach-state`, `detach-power`, and `tmux`) with a temporary home.
 - `tests/tmux-runtime.sh` — pinned tmux source/provenance, arm64-only packaging,
   linkage, signing, and bundled native-helper contract checks.
 - `tests/ui-e2e-contract.sh` and `tests/ui-e2e.sh` — freshness-marker negative
-  contracts and the bounded Accessibility smoke for the freshly built app.
-  The smoke uses a stripped background-only copy, fake CLI, and private
+  contracts and the bounded real-control smoke for the freshly built app.
+  The smoke uses a stripped background-only copy, a fake CLI, and private
   HOME/preferences/state below `/private/tmp`; it cannot use the installed
-  Detach or user session state. Run the app build first. The UI smoke needs a
-  logged-in WindowServer session but must not be granted broader filesystem or
-  production payload access. Its fake CLI allowlist covers only the exact
-  status/stop flow and completed-session forced delete asserted by the smoke.
+  Detach or user session state. It temporarily activates the isolated app,
+  posts AppKit mouse events to measured SwiftUI controls, and restores the
+  prior application. The locator bridge has no application actions. Run the
+  app build first. The UI smoke needs a logged-in WindowServer session but no
+  Accessibility approval. Do not grant it broader filesystem or production
+  payload access. Its fake CLI allowlist covers only the exact status and stop
+  flow and the completed-session forced delete asserted by the smoke. The
+  same run disconnects Stop, proves that no action occurs, reconnects it, and
+  requires the exact action.
 - `tests/release-preflight.sh` and `tests/publish-preflight.sh` — hermetic release
   tooling, arm64 appcast, production-DMG verification, exact artifact allowlist,
   and explicit publication-confirmation guards.
@@ -101,9 +109,13 @@
   identities, aggregate coverage, and coverage for the 13 critical sources.
   CI rejects a reduction from the last green `main` artifact. It also rejects
   changed executable Swift-line coverage below 90 percent. New critical
-  sources start at 100 percent. `tests/quality-metrics.sh` covers missing,
-  malformed, removed-test, aggregate, critical-file, and changed-line
-  regressions. `tests/release-budget-ratchet-contract.sh` protects timing.
+  sources start at 100 percent. The quality policy owns each coverage
+  exclusion and links it to automated scenario evidence. Excluded sources do
+  not enter aggregate or changed-line denominators. Named test-only regions in
+  product files stay in aggregate coverage but use their automated scenario as
+  changed-line evidence. `tests/quality-metrics.sh` covers missing, malformed,
+  removed-test, aggregate, critical-file, and changed-line regressions.
+  `tests/release-budget-ratchet-contract.sh` protects timing.
 - `tests/quality-mutation.sh` checks source restoration, timeout handling,
   failure classification, score enforcement, remote evidence restore, and the
   scheduled workflow contract. A nonzero compiler exit without the declared

@@ -17,6 +17,7 @@ from typing import Any, Optional, Tuple
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+from quality_metrics import build_metrics, collect_coverage  # noqa: E402
 from quality_policy import POLICY_FILE, Policy  # noqa: E402
 
 
@@ -31,7 +32,9 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def segments(covered: int, total: int) -> list[list[Any]]:
-    result: list[list[Any]] = [[1, 1, 1, True, True, False]]
+    result: list[list[Any]] = []
+    if covered:
+        result.append([1, 1, 1, True, True, False])
     if covered < total:
         result.append([covered + 1, 1, 0, True, True, False])
     result.append([total + 1, 1, 0, False, False, False])
@@ -42,7 +45,10 @@ def coverage_document(
     *, ui_covered: int = 9, critical_override: Optional[Tuple[str, int]] = None
 ) -> dict[str, Any]:
     files = []
-    sources = [("app/Sources/DetachApp/Synthetic.swift", ui_covered)]
+    sources = [
+        ("app/Sources/DetachApp/Synthetic.swift", ui_covered),
+        ("app/Sources/DetachApp/UIE2ETestDriver.swift", 0),
+    ]
     sources.extend((path, 9) for path, _ in POLICY.critical)
     for path, covered in sources:
         if critical_override and path == critical_override[0]:
@@ -197,8 +203,58 @@ def main() -> None:
         )
         document = json.loads(current.read_text(encoding="utf-8"))
         assert document["comparison"]["status"] == "passed"
+        assert document["suites"]["ui"]["line_coverage"]["percent"] == 90.0
         assert document["changed_lines"]["status"] == "passed"
         assert document["changed_lines"]["line_coverage"]["percent"] == 90.0
+
+        write_json(
+            changed,
+            {"app/Sources/DetachApp/UIE2ETestDriver.swift": list(range(1, 11))},
+        )
+        excluded = root / "excluded.json"
+        invoke(
+            evaluate_arguments(
+                coverage,
+                tests,
+                excluded,
+                changed,
+                baseline=baseline_root,
+                authority="ci-merge",
+            )
+        )
+        excluded_document = json.loads(excluded.read_text(encoding="utf-8"))
+        assert excluded_document["changed_lines"]["status"] == "not-applicable"
+        assert excluded_document["changed_lines"]["files"] == []
+
+        region_path = "app/Sources/DetachApp/SidebarView.swift"
+        region_lines = POLICY.coverage_region_lines(region_path)
+        source_lines = (ROOT / region_path).read_text(encoding="utf-8").splitlines()
+        region_line = min(
+            line
+            for line in region_lines
+            if "quality-coverage:" not in source_lines[line - 1]
+        )
+        region_coverage = collect_coverage(coverage_document())
+        region_coverage[region_path] = {
+            "covered": 0,
+            "total": 1,
+            "lines": {region_line: False},
+        }
+        region_metrics = build_metrics(
+            region_coverage,
+            set(test_lines()),
+            POLICY,
+            SOURCE_COMMIT,
+            BASE_COMMIT,
+            None,
+            "none",
+            changed_override={region_path: {region_line}},
+            allow_incomplete_sources=True,
+        )
+        assert region_metrics["changed_lines"]["status"] == "not-applicable"
+        assert region_metrics["changed_lines"]["files"] == []
+
+        write_json(changed, {"app/Sources/DetachApp/Synthetic.swift": list(range(1, 11))})
 
         missing = invoke(
             evaluate_arguments(

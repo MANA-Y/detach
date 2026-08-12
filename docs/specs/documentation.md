@@ -44,7 +44,9 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   into authoritative evidence.
 - Quality policy files contain only the current policy version and state. Git
   is the policy history. Runtime tools do not keep migration decoders for old
-  policy schemas.
+  policy schemas. The last green metrics artifact can use an earlier policy
+  number only when its evidence schema is current. This preserves metric
+  continuity and does not decode an old policy.
 - Instrumented user scenarios emit addressable begin and pass events. Gate
   evidence records their requirement and journey links, duration, result, and
   bounded rerun command. A passed stage with missing scenario events fails.
@@ -57,7 +59,12 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
 - CI gets quality metrics from the last green `main` artifact. Test identities,
   aggregate coverage, and critical-source coverage cannot decrease. Changed
   executable Swift lines need at least 90 percent coverage. A person does not
-  edit or raise coverage floors.
+  edit or raise coverage floors. Coverage exclusions exist only in the quality
+  policy. Each exclusion links to automated scenario evidence and applies to
+  both aggregate and changed-line metrics. A critical source cannot be
+  excluded. A test-only region in a product source has a policy-owned name,
+  checked source markers, and automated scenario evidence. The region is
+  omitted only from changed-line metrics, not aggregate coverage.
 - A scheduled, manually dispatchable mutation workflow checks a small
   deterministic safety corpus. It runs mutants in parallel, gives each test a
   240-second deadline, and requires a 100-percent score. Mutation work does not
