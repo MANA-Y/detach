@@ -39,11 +39,13 @@ enum UIE2ETestDriver {
 
     private static var started = false
 
-    static func runIfRequested() async {
+    static func runIfRequested(installation: InstallationStore) async {
         guard let configuration = AppSettings.uiE2E, !started else { return }
         started = true
         Task { @MainActor in
-            let report = await runScenario(configuration: configuration)
+            let report = await runScenario(
+                configuration: configuration,
+                installation: installation)
             try? write(report, to: configuration.result)
             NSApp.terminate(nil)
             // A SwiftUI sheet can defer normal termination even after it is
@@ -56,6 +58,30 @@ enum UIE2ETestDriver {
     }
 
     private static func runScenario(
+        configuration: UIE2EConfiguration,
+        installation: InstallationStore
+    ) async -> Report {
+        switch configuration.scenario {
+        case "onboarding-first-run":
+            return await runOnboardingFirstRun(
+                configuration: configuration,
+                installation: installation)
+        case "onboarding-provider":
+            return await runOnboardingPresentation(
+                viewIdentifier: "onboarding-provider",
+                evidenceIdentifier: "onboarding-provider-detected",
+                check: "onboarding-detects-provider")
+        case "onboarding-approval":
+            return await runOnboardingPresentation(
+                viewIdentifier: "onboarding-approval",
+                evidenceIdentifier: "onboarding-open-system-settings",
+                check: "onboarding-explains-approval")
+        default:
+            return await runMainScenario(configuration: configuration)
+        }
+    }
+
+    private static func runMainScenario(
         configuration: UIE2EConfiguration
     ) async -> Report {
         var checks: [String] = []
@@ -76,11 +102,7 @@ enum UIE2ETestDriver {
             guard NSApp.setActivationPolicy(.regular) else {
                 throw Failure(message: "cannot enable test app activation")
             }
-            NSApp.activate(ignoringOtherApps: true)
-            mainWindow.makeKeyAndOrderFront(nil)
-            try await waitUntil("test app activation") {
-                NSApp.isActive && mainWindow.isKeyWindow
-            }
+            try await activate(mainWindow)
             try await Task.sleep(nanoseconds: 200_000_000)
             trace("test app activated")
 
@@ -188,6 +210,28 @@ enum UIE2ETestDriver {
             checks.append("empty-dashboard-state")
             trace("empty dashboard visible")
 
+            try Data("error\n".utf8).write(
+                to: configuration.fixtureState, options: .atomic)
+            let errorStatus = try await element(identifier: "session-status-error")
+            try requireGeometry(errorStatus, name: "actionable session failure")
+            checks.append("actionable-failure-presentation")
+            trace("actionable failure visible")
+
+            try await keyPress(",", keyCode: 43, modifiers: [.command])
+            let tipsToggle = try await element(identifier: "settings-show-tips")
+            try requireSemanticControl(tipsToggle, name: "settings tips toggle")
+            let priorTips = AppSettings.defaults.bool(
+                forKey: AppSettings.tipsEnabledKey)
+            try await clickUntil(
+                tipsToggle,
+                name: "settings tips toggle",
+                outcome: "settings value persists") {
+                    AppSettings.defaults.bool(
+                        forKey: AppSettings.tipsEnabledKey) != priorTips
+                }
+            checks.append("settings-change-persists")
+            trace("settings change persisted")
+
             try await restoreFocus(
                 to: previousFrontmost, policy: previousActivationPolicy)
             checks.append("installed-app-focus-restored")
@@ -205,6 +249,80 @@ enum UIE2ETestDriver {
                 schema: 1,
                 passed: false,
                 checks: checks,
+                error: error.localizedDescription,
+                accessibilityTree: snapshots())
+        }
+    }
+
+    private static func runOnboardingFirstRun(
+        configuration: UIE2EConfiguration,
+        installation: InstallationStore
+    ) async -> Report {
+        var checks: [String] = []
+        do {
+            guard let mainWindow = NSApp.windows.first(where: {
+                $0.identifier?.rawValue == "main"
+            }) else {
+                throw Failure(message: "main test window is missing")
+            }
+            guard NSApp.setActivationPolicy(.regular) else {
+                throw Failure(message: "cannot enable test app activation")
+            }
+            try await activate(mainWindow)
+            _ = try await element(identifier: "onboarding-ready")
+            let openDashboard = try await element(
+                identifier: "onboarding-open-dashboard")
+            try await waitUntil("onboarding dashboard action enabled") {
+                isEnabled(openDashboard)
+            }
+            try requireSemanticControl(
+                openDashboard, name: "onboarding dashboard action")
+            try await clickUntil(
+                openDashboard,
+                name: "onboarding dashboard action",
+                outcome: "first-run dashboard") {
+                    installation.onboardingStep == .mainApp
+                        && find(identifier: "detach-dashboard") != nil
+                }
+            checks.append("onboarding-first-run-completes")
+            return Report(
+                schema: 1, passed: true, checks: checks, error: nil,
+                accessibilityTree: snapshots())
+        } catch {
+            return Report(
+                schema: 1, passed: false, checks: checks,
+                error: error.localizedDescription,
+                accessibilityTree: snapshots())
+        }
+    }
+
+    private static func runOnboardingPresentation(
+        viewIdentifier: String,
+        evidenceIdentifier: String,
+        check: String
+    ) async -> Report {
+        var checks: [String] = []
+        do {
+            guard let mainWindow = NSApp.windows.first(where: {
+                $0.identifier?.rawValue == "main"
+            }) else {
+                throw Failure(message: "main test window is missing")
+            }
+            guard NSApp.setActivationPolicy(.regular) else {
+                throw Failure(message: "cannot enable test app activation")
+            }
+            try await activate(mainWindow)
+            let view = try await element(identifier: viewIdentifier)
+            let evidence = try await element(identifier: evidenceIdentifier)
+            try requireGeometry(view, name: viewIdentifier)
+            try requireSemanticControl(evidence, name: evidenceIdentifier)
+            checks.append(check)
+            return Report(
+                schema: 1, passed: true, checks: checks, error: nil,
+                accessibilityTree: snapshots())
+        } catch {
+            return Report(
+                schema: 1, passed: false, checks: checks,
                 error: error.localizedDescription,
                 accessibilityTree: snapshots())
         }
@@ -433,6 +551,46 @@ enum UIE2ETestDriver {
         }
     }
 
+    private static func keyPress(
+        _ characters: String,
+        keyCode: UInt16,
+        modifiers: NSEvent.ModifierFlags
+    ) async throws {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            guard let event = NSEvent.keyEvent(
+                with: type,
+                location: .zero,
+                modifierFlags: modifiers,
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: NSApp.keyWindow?.windowNumber ?? 0,
+                context: nil,
+                characters: characters,
+                charactersIgnoringModifiers: characters,
+                isARepeat: false,
+                keyCode: keyCode)
+            else { throw Failure(message: "cannot create settings keyboard event") }
+            NSApp.postEvent(event, atStart: false)
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+
+    private static func activate(_ mainWindow: NSWindow) async throws {
+        for _ in 0..<20 {
+            if #available(macOS 14.0, *) {
+                NSApp.activate()
+            } else {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            _ = NSRunningApplication.current.activate(
+                options: [.activateAllWindows])
+            NSApp.unhide(nil)
+            mainWindow.makeKeyAndOrderFront(nil)
+            if NSApp.isActive && mainWindow.isKeyWindow { return }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        throw Failure(message: "timed out waiting for test app activation")
+    }
+
     private static func find(identifier: String) -> (any NSAccessibilityProtocol)? {
         elements().first { identifierOf($0) == identifier }
     }
@@ -441,7 +599,7 @@ enum UIE2ETestDriver {
         var result: [any NSAccessibilityProtocol] = []
         var roots: [any NSAccessibilityProtocol] = []
         let mainWindows = NSApp.windows.filter {
-            $0.identifier?.rawValue == "main" || $0.title == "Detach"
+            $0.isVisible && $0.level == .normal
         }
         for window in mainWindows {
             roots.append(window)

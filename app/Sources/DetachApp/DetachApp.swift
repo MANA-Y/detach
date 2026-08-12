@@ -7,6 +7,7 @@ struct UIE2EConfiguration: Sendable {
     let cli: URL
     let result: URL
     let fixtureState: URL
+    let scenario: String
 
     static func fromEnvironment(
         _ environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -104,11 +105,19 @@ struct UIE2EConfiguration: Sendable {
         guard fileManager.isExecutableFile(atPath: cli.path) else {
             try fail("fake CLI is not executable")
         }
+        let scenario = environment["DETACH_UI_E2E_SCENARIO"] ?? "main"
+        guard [
+            "main", "onboarding-first-run", "onboarding-provider",
+            "onboarding-approval",
+        ].contains(scenario) else {
+            try fail("DETACH_UI_E2E_SCENARIO is unsupported")
+        }
         return UIE2EConfiguration(
             root: root,
             cli: cli,
             result: try requiredURL("DETACH_UI_E2E_RESULT"),
-            fixtureState: try requiredURL("DETACH_UI_E2E_FIXTURE_STATE"))
+            fixtureState: try requiredURL("DETACH_UI_E2E_FIXTURE_STATE"),
+            scenario: scenario)
     }
 }
 

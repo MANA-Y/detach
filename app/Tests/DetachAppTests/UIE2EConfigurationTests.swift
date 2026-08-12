@@ -13,6 +13,26 @@ final class UIE2EConfigurationTests: XCTestCase {
                 configuration.result.deletingLastPathComponent().path,
                 configuration.root.path)
             XCTAssertEqual(configuration.result.lastPathComponent, "result.json")
+            XCTAssertEqual(configuration.scenario, "main")
+        }
+    }
+
+    func testAcceptsOnlyKnownScenarios() throws {
+        try withFixture { fixture in
+            for scenario in [
+                "main", "onboarding-first-run", "onboarding-provider",
+                "onboarding-approval",
+            ] {
+                var environment = fixture.environment
+                environment["DETACH_UI_E2E_SCENARIO"] = scenario
+                XCTAssertEqual(
+                    try fixture.validate(environment).scenario, scenario)
+            }
+            var environment = fixture.environment
+            environment["DETACH_UI_E2E_SCENARIO"] = "release"
+            XCTAssertThrowsError(try fixture.validate(environment)) { error in
+                XCTAssertTrue(error.localizedDescription.contains("unsupported"))
+            }
         }
     }
 

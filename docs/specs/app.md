@@ -50,11 +50,11 @@ symlink resolution. An escape, unsafe identity, build mismatch, or payload
 fails closed. The smoke proves that startup does not take focus. It then
 activates the copy, posts AppKit mouse events to measured SwiftUI controls, and
 restores the prior application. Its locator bridge exposes semantics but has no
-actions. The 25-second flow covers dashboard geometry, session detail, stop,
-confirmed forced delete, disabled and cancel new-session paths, the empty
-state, and focus restoration. The same run first disconnects Stop and proves
-that no action occurs. It then reconnects Stop and requires the exact action.
-This test-only path is otherwise dormant.
+actions. The 40-second stage uses isolated app launches. It covers the
+dashboard, session actions, new-session sheet, empty and failure states,
+Settings, onboarding, and focus restoration. It disconnects Stop before it
+proves that the real control invokes the action. Onboarding fixture
+states are isolated; only a visible control completes first-run setup.
 
 The per-user watchdog has an additional launch-readiness rule. macOS can report
 an approved agent as enabled while no launchd job was loaded after the approval

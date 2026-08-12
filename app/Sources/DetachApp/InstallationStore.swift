@@ -41,6 +41,7 @@ final class InstallationStore {
     /// closed, and a session started then would fail to acquire protection.
     private(set) var powerHelperReadinessConfirmed = false
     private(set) var onboardingEverCompleted: Bool
+    private var uiE2EOnboardingStep: OnboardingStep?
 
     private static let onboardingCompletedKey = "onboardingCompleted"
     private let detachPath: String
@@ -81,6 +82,12 @@ final class InstallationStore {
         onboardingEverCompleted = defaults.bool(
             forKey: Self.onboardingCompletedKey)
         self.contextOperationOverride = contextOperationOverride
+        switch AppSettings.uiE2E?.scenario {
+        case "onboarding-first-run": uiE2EOnboardingStep = .done
+        case "onboarding-provider": uiE2EOnboardingStep = .provider
+        case "onboarding-approval": uiE2EOnboardingStep = .permissions
+        default: uiE2EOnboardingStep = nil
+        }
         bundleURL = bundle.bundleURL.standardizedFileURL
         let candidate = bundle.bundleURL
             .appendingPathComponent("Contents/Resources/DetachCLI", isDirectory: true)
@@ -100,6 +107,7 @@ final class InstallationStore {
     }
 
     var hasDistributionPayload: Bool { payloadDirectory != nil }
+    var presentsUIE2EOnboarding: Bool { uiE2EOnboardingStep != nil }
     var isStableApplicationLocation: Bool {
         guard hasDistributionPayload else { return true }
         return UpdateConfiguration.isStableApplicationLocation(bundleURL)
@@ -130,6 +138,7 @@ final class InstallationStore {
         guard watchdogHeartbeat.healthy else { return }
         onboardingEverCompleted = true
         defaults.set(true, forKey: Self.onboardingCompletedKey)
+        uiE2EOnboardingStep = nil
     }
 
     var providerCheckPassed: Bool {
@@ -139,6 +148,7 @@ final class InstallationStore {
     /// The assistant card derived from current state; `.mainApp` means the
     /// dashboard is shown instead of onboarding.
     var onboardingStep: OnboardingStep {
+        if let uiE2EOnboardingStep { return uiE2EOnboardingStep }
         var failureMessage: String?
         if case .failed(let message) = phase { failureMessage = message }
         return Self.onboardingStep(

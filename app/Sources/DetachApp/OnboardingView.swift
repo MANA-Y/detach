@@ -50,7 +50,19 @@ struct OnboardingView: View {
 
     init(store: InstallationStore) {
         self.store = store
-        _poller = State(initialValue: OnboardingLivePoller(store: store))
+        if AppSettings.uiE2E != nil {
+            _poller = State(initialValue: OnboardingLivePoller(
+                refreshStatuses: {},
+                servicesEnabled: { false },
+                readinessConfirmed: { false },
+                providerCheckPassed: { false },
+                reconcile: { false },
+                locate: { ProviderAvailability(codex: true) },
+                heartbeatIsHealthy: { store.watchdogHeartbeat.healthy },
+                installedCopyExists: { false }))
+        } else {
+            _poller = State(initialValue: OnboardingLivePoller(store: store))
+        }
     }
 
     private var step: OnboardingStep { store.onboardingStep }
@@ -85,6 +97,8 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(onboardingIdentifier)
         .task(id: step) { poller.update(for: step) }
         .onDisappear { poller.stop() }
     }
@@ -100,6 +114,16 @@ struct OnboardingView: View {
     /// default in-app text size.
     private var scale: CGFloat {
         onboardingFontSize / CGFloat(AppFontSize.defaultValue)
+    }
+
+    private var onboardingIdentifier: String {
+        switch step {
+        case .moveToApplications: "onboarding-move"
+        case .autoSetup: "onboarding-first-run"
+        case .permissions: "onboarding-approval"
+        case .provider: "onboarding-provider"
+        case .done, .mainApp: "onboarding-ready"
+        }
     }
 
     // MARK: - Progress
@@ -318,6 +342,7 @@ struct OnboardingView: View {
                     statusRow(
                         icon: "checkmark.circle.fill", tint: Brand.teal,
                         text: L10n.string("Detected — verifying…"))
+                        .accessibilityIdentifier("onboarding-provider-detected")
                 } else if let startedAt = guidedInstallStartedAt,
                           Date().timeIntervalSince(startedAt) > 120 {
                     statusRow(
@@ -394,12 +419,14 @@ struct OnboardingView: View {
                         store.openPowerHelperApprovalSettings()
                     }
                     .buttonStyle(.link)
+                    .accessibilityIdentifier("onboarding-open-system-settings")
                 } else {
                     Button(L10n.string("Open System Settings")) {
                         store.openPowerHelperApprovalSettings()
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Brand.indigo)
+                    .accessibilityIdentifier("onboarding-open-system-settings")
                 }
                 Button(L10n.string("What exactly is enabled and why?")) {
                     showsPermissionsExplainer.toggle()
@@ -443,6 +470,7 @@ struct OnboardingView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Brand.teal)
                 .disabled(!poller.heartbeatHealthy)
+                .accessibilityIdentifier("onboarding-open-dashboard")
             }
 
         case .mainApp:
@@ -451,6 +479,7 @@ struct OnboardingView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Brand.teal)
+            .accessibilityIdentifier("onboarding-open-dashboard")
         }
     }
 

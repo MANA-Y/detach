@@ -426,6 +426,7 @@ struct SettingsView: View {
                         .frame(minWidth: 44, alignment: .trailing)
                 }
                 Toggle(L10n.string("Show tips"), isOn: $tipsEnabled)
+                    .accessibilityIdentifier("settings-show-tips")
             }
             Section(L10n.string("Menu Bar")) {
                 Toggle(

@@ -13,6 +13,11 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 HEAD = "a" * 40
 MERGE = "b" * 40
+POLICY = int(next(
+    line.split("\t", 1)[1]
+    for line in (ROOT / "quality/policy.tsv").read_text(encoding="utf-8").splitlines()
+    if line.startswith("policy\t")
+))
 
 
 def fake_gh(path: Path) -> None:
@@ -112,7 +117,7 @@ elif arguments[:2] == ["pr", "merge"]:
         required = {{"9", "--repo", "owner/repository", "--auto", "--merge", "--match-head-commit", "{HEAD}"}}
         if not required <= set(arguments):
             raise SystemExit("exact-head auto-merge arguments are missing")
-        if "Quality-Policy: 27\\nQuality-Repair-Attempt: 0" not in arguments:
+        if "Quality-Policy: {POLICY}\\nQuality-Repair-Attempt: 0" not in arguments:
             raise SystemExit("bounded merge evidence trailers are missing")
         if mode != "merge-timeout":
             (state / "merged").write_text("yes")

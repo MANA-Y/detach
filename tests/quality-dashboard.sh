@@ -199,7 +199,8 @@ grep -F 'J-ONBOARD-FIRST-RUN' "$OUTPUT/index.html" >/dev/null || \
   fail 'impacted journey is missing'
 grep -F 'Specifications</span><br>app' "$OUTPUT/index.html" >/dev/null || \
   fail 'impacted specification is missing'
-grep -F 'planned' "$OUTPUT/index.html" >/dev/null || fail 'planned gap is hidden'
+grep -F 'Planned gaps</span><strong>0' "$OUTPUT/index.html" >/dev/null || \
+  fail 'closed scenario set still reports a planned gap'
 grep -F 'changed lines 90.00%' "$OUTPUT/index.html" >/dev/null || \
   fail 'measured changed-line coverage is missing'
 grep -F '100% · 1/1 killed · passed' "$OUTPUT/index.html" >/dev/null || \
@@ -219,7 +220,7 @@ assert data["schema"] == 2
 assert data["run"]["authority"] == "ci-merge"
 assert data["run"]["result"] == "passed"
 assert [spec["id"] for spec in data["specifications"]] == ["app"]
-assert data["quality"]["planned_scenarios"] == 3
+assert data["quality"]["planned_scenarios"] == 0
 assert data["quality"]["coverage"]["comparison"]["mode"] == "green-main-artifact"
 assert data["quality"]["mutation"]["score_percent"] == 100
 assert data["quality"]["merge"] == "not-yet-emitted"

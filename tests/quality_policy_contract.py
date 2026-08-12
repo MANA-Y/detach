@@ -111,6 +111,10 @@ def main() -> None:
             "scenario\tSC-APP-SETTINGS-UNIT\tswift\tlegacy-stage\t",
             "scenario\tSC-APP-SETTINGS-UNIT\tswift\tplanned\t",
             1,
+        ).replace(
+            "scenario\tSC-UI-SETTINGS\tui-e2e\tinstrumented\t",
+            "scenario\tSC-UI-SETTINGS\tui-e2e\tplanned\t",
+            1,
         ),
         "requirement has no automated verification scenario: QC-APP-SETTINGS",
     )

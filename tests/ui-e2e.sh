@@ -98,6 +98,7 @@ RESULT="$TEST_ROOT/result.json"
 BREACH="$TEST_ROOT/production-cli-breach"
 APP_LOG="$TEST_ROOT/app.log"
 IDENTIFIER="dev.tsarev.detach.ui-e2e.$$"
+UI_E2E_DEADLINE=$((SECONDS + 38))
 
 mkdir -p "$TEST_HOME/.local/bin" "$TEST_HOME/Library/Preferences" \
   "$TEST_ROOT/state" "$TEST_ROOT/power" "$FAKE_DIR"
@@ -138,86 +139,130 @@ for scenario in \
   SC-UI-SESSION-STOP \
   SC-UI-NEW-SESSION \
   SC-UI-EMPTY \
-  SC-UI-FOCUS; do
+  SC-UI-FOCUS \
+  SC-UI-FAILURE \
+  SC-UI-ONBOARD-FIRST-RUN \
+  SC-UI-ONBOARD-PROVIDER \
+  SC-UI-ONBOARD-APPROVAL \
+  SC-UI-SETTINGS; do
   "$ROOT/scripts/quality-scenarios" event begin "$scenario"
 done
 
-HOME="$TEST_HOME" \
-CFFIXED_USER_HOME="$TEST_HOME" \
-XDG_STATE_HOME="$TEST_ROOT/state" \
-DETACH_STATE_ROOT="$TEST_ROOT/state/detach" \
-DETACH_POWER_STATE_ROOT="$TEST_ROOT/power" \
-DETACH_UI_E2E_ROOT="$TEST_ROOT" \
-DETACH_UI_E2E_CLI="$FAKE_CLI" \
-DETACH_UI_E2E_RESULT="$RESULT" \
-DETACH_UI_E2E_FIXTURE_STATE="$FIXTURE_STATE" \
-LANG=en_US.UTF-8 \
-LC_ALL=en_US.UTF-8 \
-  "$TEST_APP/Contents/MacOS/Detach" >"$APP_LOG" 2>&1 &
-APP_PID=$!
+run_app_scenario() {
+  local scenario="$1" fixture="$2" scenario_budget="$3"
+  local app_status check_index=0 actual check scenario_deadline
+  shift 3
+  scenario_deadline=$((SECONDS + scenario_budget))
+  RESULT="$TEST_ROOT/result-$scenario.json"
+  APP_LOG="$TEST_ROOT/app-$scenario.log"
+  printf '%s\n' "$fixture" >"$FIXTURE_STATE"
+  if [ "$scenario" = onboarding-first-run ]; then
+    printf '{"schema":1,"state":"ok","power_state":"protected","checked_at":"%s","thermal_state":"nominal","thermal_safety_active":false,"exit_status":0}\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      >"$TEST_ROOT/power/watchdog-status.json"
+  fi
 
-for _ in $(seq 1 250); do
-  [ ! -f "$RESULT" ] || break
-  if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi
-  sleep 0.1
-done
+  HOME="$TEST_HOME" \
+  CFFIXED_USER_HOME="$TEST_HOME" \
+  XDG_STATE_HOME="$TEST_ROOT/state" \
+  DETACH_STATE_ROOT="$TEST_ROOT/state/detach" \
+  DETACH_POWER_STATE_ROOT="$TEST_ROOT/power" \
+  DETACH_UI_E2E_ROOT="$TEST_ROOT" \
+  DETACH_UI_E2E_CLI="$FAKE_CLI" \
+  DETACH_UI_E2E_RESULT="$RESULT" \
+  DETACH_UI_E2E_FIXTURE_STATE="$FIXTURE_STATE" \
+  DETACH_UI_E2E_SCENARIO="$scenario" \
+  LANG=en_US.UTF-8 \
+  LC_ALL=en_US.UTF-8 \
+    "$TEST_APP/Contents/MacOS/Detach" >"$APP_LOG" 2>&1 &
+  APP_PID=$!
 
-if [ ! -f "$RESULT" ]; then
-  kill -TERM "$APP_PID" 2>/dev/null || true
+  while [ "$SECONDS" -lt "$scenario_deadline" ] \
+      && [ "$SECONDS" -lt "$UI_E2E_DEADLINE" ]; do
+    [ ! -f "$RESULT" ] || break
+    if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi
+    sleep 0.1
+  done
+  if [ ! -f "$RESULT" ]; then
+    kill -TERM "$APP_PID" 2>/dev/null || true
+    set +e
+    wait "$APP_PID"
+    app_status=$?
+    set -e
+    APP_PID=""
+    printf 'UI e2e: %s produced no result within its %ss budget (status %s)\n' \
+      "$scenario" "$scenario_budget" "$app_status" >&2
+    sed -n '1,240p' "$APP_LOG" >&2
+    exit 1
+  fi
+  for _ in $(seq 1 10); do
+    if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi
+    [ "$SECONDS" -lt "$UI_E2E_DEADLINE" ] || break
+    sleep 0.1
+  done
+  if kill -0 "$APP_PID" 2>/dev/null; then
+    kill -TERM "$APP_PID" 2>/dev/null || true
+    wait "$APP_PID" 2>/dev/null || true
+    APP_PID=""
+    printf 'UI e2e: %s did not terminate after writing its result\n' \
+      "$scenario" >&2
+    exit 1
+  fi
   set +e
   wait "$APP_PID"
-  APP_STATUS=$?
+  app_status=$?
   set -e
   APP_PID=""
-  printf 'UI e2e: app produced no result before the 25s deadline (status %s)\n' \
-    "$APP_STATUS" >&2
-  sed -n '1,240p' "$APP_LOG" >&2
-  exit 1
-fi
+  [ "$app_status" -eq 0 ] || {
+    printf 'UI e2e: %s exited with status %s\n' "$scenario" "$app_status" >&2
+    sed -n '1,240p' "$APP_LOG" >&2
+    exit 1
+  }
+  [ ! -e "$BREACH" ] || {
+    printf 'UI e2e: app attempted to use its normal installed-CLI path\n' >&2
+    exit 1
+  }
+  [ "$(plutil -extract schema raw -o - "$RESULT")" = 1 ]
+  if [ "$(plutil -extract passed raw -o - "$RESULT")" != true ]; then
+    printf 'UI e2e %s failed: %s\n' "$scenario" \
+      "$(plutil -extract error raw -o - "$RESULT" 2>/dev/null || true)" >&2
+    plutil -p "$RESULT" >&2
+    sed -n '1,240p' "$APP_LOG" >&2
+    exit 1
+  fi
 
-for _ in $(seq 1 50); do
-  if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi
-  sleep 0.1
-done
-if kill -0 "$APP_PID" 2>/dev/null; then
-  kill -TERM "$APP_PID" 2>/dev/null || true
-  wait "$APP_PID" 2>/dev/null || true
-  APP_PID=""
-  printf 'UI e2e: app did not terminate after writing its result\n' >&2
-  exit 1
-fi
-
-set +e
-wait "$APP_PID"
-APP_STATUS=$?
-set -e
-APP_PID=""
-
-[ "$APP_STATUS" -eq 0 ] || {
-  printf 'UI e2e: app exited with status %s\n' "$APP_STATUS" >&2
-  sed -n '1,240p' "$APP_LOG" >&2
-  exit 1
+  for check in "$@"; do
+    actual="$(plutil -extract "checks.$check_index" raw -o - "$RESULT")"
+    [ "$actual" = "$check" ] || {
+      printf 'UI e2e %s: check %s is %s, expected %s\n' \
+        "$scenario" "$check_index" "$actual" "$check" >&2
+      exit 1
+    }
+    case "$check" in
+      background-app-starts-without-focus|disconnected-stop-blocks-action) ;;
+      dashboard-accessible) pass=SC-UI-DASHBOARD ;;
+      sidebar-selects-completed-session) pass=SC-UI-SESSION-DETAIL ;;
+      safe-delete-reaches-fake-cli) pass=SC-UI-SESSION-DELETE ;;
+      safe-action-reaches-fake-cli) pass=SC-UI-SESSION-STOP ;;
+      new-session-sheet-semantics) pass=SC-UI-NEW-SESSION ;;
+      empty-dashboard-state) pass=SC-UI-EMPTY ;;
+      installed-app-focus-restored) pass=SC-UI-FOCUS ;;
+      actionable-failure-presentation) pass=SC-UI-FAILURE ;;
+      onboarding-first-run-completes) pass=SC-UI-ONBOARD-FIRST-RUN ;;
+      onboarding-detects-provider) pass=SC-UI-ONBOARD-PROVIDER ;;
+      onboarding-explains-approval) pass=SC-UI-ONBOARD-APPROVAL ;;
+      settings-change-persists) pass=SC-UI-SETTINGS ;;
+      *) printf 'UI e2e: unowned check: %s\n' "$check" >&2; exit 1 ;;
+    esac
+    if [ -n "${pass:-}" ]; then
+      "$ROOT/scripts/quality-scenarios" event pass "$pass"
+      pass=""
+    fi
+    check_index=$((check_index + 1))
+  done
 }
-[ -f "$RESULT" ] || {
-  printf 'UI e2e: app produced no bounded result\n' >&2
-  sed -n '1,240p' "$APP_LOG" >&2
-  exit 1
-}
-[ ! -e "$BREACH" ] || {
-  printf 'UI e2e: app attempted to use its normal installed-CLI path\n' >&2
-  exit 1
-}
-[ "$(plutil -extract schema raw -o - "$RESULT")" = 1 ]
-if [ "$(plutil -extract passed raw -o - "$RESULT")" != true ]; then
-  printf 'UI e2e failed: %s\n' \
-    "$(plutil -extract error raw -o - "$RESULT" 2>/dev/null || true)" >&2
-  plutil -p "$RESULT" >&2
-  sed -n '1,240p' "$APP_LOG" >&2
-  exit 1
-fi
 
-check_index=0
-for check in \
+run_app_scenario main sessions 20 \
   background-app-starts-without-focus \
   dashboard-accessible \
   sidebar-selects-completed-session \
@@ -226,40 +271,12 @@ for check in \
   safe-action-reaches-fake-cli \
   new-session-sheet-semantics \
   empty-dashboard-state \
-  installed-app-focus-restored; do
-  actual="$(plutil -extract "checks.$check_index" raw -o - "$RESULT")"
-  [ "$actual" = "$check" ] || {
-    printf 'UI e2e: check %s is %s, expected %s\n' \
-      "$check_index" "$actual" "$check" >&2
-    exit 1
-  }
-  case "$check" in
-    background-app-starts-without-focus|disconnected-stop-blocks-action)
-      ;;
-    dashboard-accessible)
-      "$ROOT/scripts/quality-scenarios" event pass SC-UI-DASHBOARD
-      ;;
-    sidebar-selects-completed-session)
-      "$ROOT/scripts/quality-scenarios" event pass SC-UI-SESSION-DETAIL
-      ;;
-    safe-delete-reaches-fake-cli)
-      "$ROOT/scripts/quality-scenarios" event pass SC-UI-SESSION-DELETE
-      ;;
-    safe-action-reaches-fake-cli)
-      "$ROOT/scripts/quality-scenarios" event pass SC-UI-SESSION-STOP
-      ;;
-    new-session-sheet-semantics)
-      "$ROOT/scripts/quality-scenarios" event pass SC-UI-NEW-SESSION
-      ;;
-    empty-dashboard-state)
-      "$ROOT/scripts/quality-scenarios" event pass SC-UI-EMPTY
-      ;;
-    installed-app-focus-restored)
-      "$ROOT/scripts/quality-scenarios" event pass SC-UI-FOCUS
-      ;;
-  esac
-  check_index=$((check_index + 1))
-done
+  actionable-failure-presentation \
+  settings-change-persists \
+  installed-app-focus-restored
+run_app_scenario onboarding-first-run empty 5 onboarding-first-run-completes
+run_app_scenario onboarding-provider empty 5 onboarding-detects-provider
+run_app_scenario onboarding-approval empty 5 onboarding-explains-approval
 
 [ -s "$FAKE_DIR/invocations.log" ]
 if grep -Ev '^(list --json|(codex|claude) logs --ansi detach-(codex-ui-running|claude-ui-completed)|codex stop detach-codex-ui-running|claude delete --force detach-claude-ui-completed)$' \

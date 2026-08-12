@@ -30,7 +30,8 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if installation.hasDistributionPayload
+            if (installation.hasDistributionPayload
+                    || installation.presentsUIE2EOnboarding)
                 && installation.onboardingStep != .mainApp {
                 OnboardingView(store: installation)
             } else if store.state == .cliMissing && store.sessions.isEmpty {
@@ -102,7 +103,7 @@ struct RootView: View {
             guard AppSettings.uiE2E == nil else { return }
             await notifications.configure(enabled: notificationsEnabled)
         }
-        .task { await UIE2ETestDriver.runIfRequested() }
+        .task { await UIE2ETestDriver.runIfRequested(installation: installation) }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             Task {

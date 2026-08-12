@@ -624,7 +624,7 @@
     "mutation_timeout_seconds": 240,
     "pr_feedback_seconds": 600
   },
-  "policy": 27,
+  "policy": 28,
   "release_domains": [
     {
       "gates": "-",
@@ -1997,10 +1997,10 @@
       "status": "instrumented"
     },
     {
-      "command": "pending hermetic packaged-app journey",
+      "command": "tests/ui-e2e.sh",
       "id": "SC-UI-FAILURE",
       "stage": "ui-e2e",
-      "status": "planned"
+      "status": "instrumented"
     },
     {
       "command": "tests/ui-e2e.sh",
@@ -2009,28 +2009,28 @@
       "status": "instrumented"
     },
     {
-      "command": "pending hermetic packaged-app journey",
+      "command": "tests/ui-e2e.sh",
       "id": "SC-UI-ONBOARD-FIRST-RUN",
       "stage": "ui-e2e",
-      "status": "planned"
+      "status": "instrumented"
     },
     {
-      "command": "pending hermetic packaged-app journey",
+      "command": "tests/ui-e2e.sh",
       "id": "SC-UI-ONBOARD-PROVIDER",
       "stage": "ui-e2e",
-      "status": "planned"
+      "status": "instrumented"
     },
     {
-      "command": "pending hermetic packaged-app journey",
+      "command": "tests/ui-e2e.sh",
       "id": "SC-UI-ONBOARD-APPROVAL",
       "stage": "ui-e2e",
-      "status": "planned"
+      "status": "instrumented"
     },
     {
-      "command": "pending hermetic packaged-app journey",
+      "command": "tests/ui-e2e.sh",
       "id": "SC-UI-SETTINGS",
       "stage": "ui-e2e",
-      "status": "planned"
+      "status": "instrumented"
     },
     {
       "command": "tests/release-preflight.sh",
@@ -2719,10 +2719,10 @@
               "status": "instrumented"
             },
             {
-              "command": "pending hermetic packaged-app journey",
+              "command": "tests/ui-e2e.sh",
               "id": "SC-UI-FAILURE",
               "stage": "ui-e2e",
-              "status": "planned"
+              "status": "instrumented"
             },
             {
               "command": "tests/ui-e2e.sh",
@@ -2784,22 +2784,22 @@
               "status": "legacy-stage"
             },
             {
-              "command": "pending hermetic packaged-app journey",
+              "command": "tests/ui-e2e.sh",
               "id": "SC-UI-ONBOARD-FIRST-RUN",
               "stage": "ui-e2e",
-              "status": "planned"
+              "status": "instrumented"
             },
             {
-              "command": "pending hermetic packaged-app journey",
+              "command": "tests/ui-e2e.sh",
               "id": "SC-UI-ONBOARD-PROVIDER",
               "stage": "ui-e2e",
-              "status": "planned"
+              "status": "instrumented"
             },
             {
-              "command": "pending hermetic packaged-app journey",
+              "command": "tests/ui-e2e.sh",
               "id": "SC-UI-ONBOARD-APPROVAL",
               "stage": "ui-e2e",
-              "status": "planned"
+              "status": "instrumented"
             }
           ],
           "summary": "Onboarding leads a new user through supported provider and approval setup."
@@ -2817,10 +2817,10 @@
               "status": "legacy-stage"
             },
             {
-              "command": "pending hermetic packaged-app journey",
+              "command": "tests/ui-e2e.sh",
               "id": "SC-UI-SETTINGS",
               "stage": "ui-e2e",
-              "status": "planned"
+              "status": "instrumented"
             }
           ],
           "summary": "Settings changes persist and affect only their declared behavior."

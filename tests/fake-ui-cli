@@ -22,6 +22,10 @@ if [ "$#" -eq 2 ] && [ "$1" = list ] && [ "$2" = --json ]; then
   if [ "$(<"$STATE")" = empty ]; then
     exit 0
   fi
+  if [ "$(<"$STATE")" = error ]; then
+    printf 'The session list is temporarily unavailable; retry from the dashboard.\n' >&2
+    exit 75
+  fi
   printf '%s\n' \
     '{"schema":1,"provider":"codex","session_name":"detach-codex-ui-running","name":"UI Running","effective_status":"running","created_at":"2026-07-22T08:00:00Z","model":"gpt-ui-fixture","agent_turn_state":"working","session_color":"#36C5F0","power_protection_state":"protected","health_actions":["stop"]}' \
     '{"schema":1,"provider":"claude","session_name":"detach-claude-ui-completed","name":"UI Completed","effective_status":"completed","created_at":"2026-07-22T07:00:00Z","finished_at":"2026-07-22T07:30:00Z","exit_status":0,"session_color":"#A855F7","power_protection_state":"allowed","health_actions":["delete"]}'
