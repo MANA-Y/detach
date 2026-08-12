@@ -29,6 +29,15 @@ state = Path(os.environ["MERGE_STATE"])
 state.mkdir(parents=True, exist_ok=True)
 (state / "calls.log").open("a", encoding="utf-8").write(json.dumps(arguments) + "\\n")
 
+if (
+    mode == "transient-api"
+    and arguments[:1] == ["api"]
+    and not (state / "transient").exists()
+):
+    (state / "transient").write_text("yes")
+    print("unexpected end of JSON input", file=sys.stderr)
+    raise SystemExit(1)
+
 rules = [
     {{"type": "deletion"}},
     {{"type": "non_fast_forward"}},
@@ -175,6 +184,13 @@ def main() -> None:
         assert summary["repair_attempt"] == 0
         assert summary["gate_run"] == 123
         assert summary["ruleset"] == 77
+
+        transient = invoke(root, fake, "transient-api")
+        assert transient.returncode == 0, transient.stdout
+        transient_summary = json.loads(
+            (root / "transient-api-0.json").read_text(encoding="utf-8")
+        )
+        assert transient_summary["status"] == "passed"
 
         require_failure(invoke(root, fake, "unprotected"), "one exact active PR-only")
         require_failure(invoke(root, fake, "review-required"), "one exact active PR-only")
