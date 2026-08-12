@@ -24,6 +24,8 @@ UPDATE_ASSETS="$APP_ROOT/build/update-assets"
 UPDATE_ZIP="$UPDATE_ASSETS/Detach-$VERSION.zip"
 APPCAST="$UPDATE_ASSETS/appcast.xml"
 RELEASE_MANIFEST="$UPDATE_ASSETS/release-manifest.json"
+RELEASE_SBOM="$UPDATE_ASSETS/release-sbom.spdx.json"
+SBOM_TOOL="$REPO_ROOT/scripts/release-sbom"
 NOTARY_EVIDENCE="$APP_ROOT/build/notarization-$VERSION"
 APPCAST_VERIFIER="$APP_ROOT/scripts/verify-appcast.sh"
 BUNDLE_MODE_POLICY="$APP_ROOT/scripts/bundle-modes.sh"
@@ -310,11 +312,25 @@ APPCAST_SHA256="$(awk '{print $1}' "$APPCAST.sha256")"
 # rewritten lockfile, or concurrent worktree edit can never be attributed to
 # the preflight commit.
 verify_source_provenance
+"$SBOM_TOOL" generate \
+  --version "$VERSION" \
+  --tag "$TAG" \
+  --commit "$GIT_COMMIT" \
+  --repository "$REPOSITORY" \
+  --output "$RELEASE_SBOM"
+chmod 0644 "$RELEASE_SBOM"
+(
+  cd -P "$UPDATE_ASSETS"
+  shasum -a 256 "$(basename "$RELEASE_SBOM")" \
+    >"$(basename "$RELEASE_SBOM").sha256"
+  chmod 0644 "$(basename "$RELEASE_SBOM").sha256"
+)
+SBOM_SHA256="$(awk '{print $1}' "$RELEASE_SBOM.sha256")"
 # `plutil -insert` on a JSON input tries to round-trip through the unsupported
 # OpenStep writer on some macOS versions. Build as an XML plist, then convert
 # the finished dictionary to JSON atomically before checksumming it.
 plutil -create xml1 "$RELEASE_MANIFEST"
-plutil -insert schema -integer 1 "$RELEASE_MANIFEST"
+plutil -insert schema -integer 2 "$RELEASE_MANIFEST"
 plutil -insert version -string "$VERSION" "$RELEASE_MANIFEST"
 plutil -insert build -string "$BUILD_VERSION" "$RELEASE_MANIFEST"
 plutil -insert tag -string "$TAG" "$RELEASE_MANIFEST"
@@ -326,6 +342,7 @@ plutil -insert download_url -string "$DOWNLOAD_URL" "$RELEASE_MANIFEST"
 plutil -insert dmg_sha256 -string "$DMG_SHA256" "$RELEASE_MANIFEST"
 plutil -insert update_sha256 -string "$UPDATE_SHA256" "$RELEASE_MANIFEST"
 plutil -insert appcast_sha256 -string "$APPCAST_SHA256" "$RELEASE_MANIFEST"
+plutil -insert sbom_sha256 -string "$SBOM_SHA256" "$RELEASE_MANIFEST"
 plutil -convert json "$RELEASE_MANIFEST"
 plutil -p "$RELEASE_MANIFEST" >/dev/null
 chmod 0644 "$RELEASE_MANIFEST"
@@ -343,6 +360,8 @@ public_artifacts=(
   "$UPDATE_ZIP.sha256"
   "$APPCAST"
   "$APPCAST.sha256"
+  "$RELEASE_SBOM"
+  "$RELEASE_SBOM.sha256"
   "$RELEASE_MANIFEST"
   "$RELEASE_MANIFEST.sha256"
 )

@@ -19,9 +19,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$TEST_APP/scripts" "$FAKE_BIN"
+mkdir -p "$TEST_APP/scripts" "$TEST_REPO/scripts" "$TEST_REPO/tools" "$FAKE_BIN"
 install -m 0755 "$ROOT/app/scripts/publish-release.sh" \
   "$TEST_APP/scripts/publish-release.sh"
+install -m 0755 "$ROOT/scripts/release-sbom" "$TEST_REPO/scripts/release-sbom"
+install -m 0755 "$ROOT/scripts/build-tmux.sh" "$TEST_REPO/scripts/build-tmux.sh"
+install -m 0644 "$ROOT/tools/release_sbom.py" "$TEST_REPO/tools/release_sbom.py"
+install -m 0644 "$ROOT/app/Package.resolved" "$TEST_APP/Package.resolved"
 printf '%s\n' 1.2.3 >"$TEST_REPO/VERSION"
 grep -F '"$APPCAST_VERIFIER" "$APPCAST"' \
   "$TEST_APP/scripts/publish-release.sh" >/dev/null || {
@@ -76,6 +80,8 @@ for artifact in \
   "$UPDATE_ASSETS/Detach-1.2.3.zip.sha256" \
   "$UPDATE_ASSETS/appcast.xml" \
   "$UPDATE_ASSETS/appcast.xml.sha256" \
+  "$UPDATE_ASSETS/release-sbom.spdx.json" \
+  "$UPDATE_ASSETS/release-sbom.spdx.json.sha256" \
   "$UPDATE_ASSETS/release-manifest.json" \
   "$UPDATE_ASSETS/release-manifest.json.sha256"; do
   : >"$artifact"
@@ -106,6 +112,8 @@ chmod 0644 \
   "$UPDATE_ASSETS/Detach-1.2.3.zip.sha256" \
   "$UPDATE_ASSETS/appcast.xml" \
   "$UPDATE_ASSETS/appcast.xml.sha256" \
+  "$UPDATE_ASSETS/release-sbom.spdx.json" \
+  "$UPDATE_ASSETS/release-sbom.spdx.json.sha256" \
   "$UPDATE_ASSETS/release-manifest.json" \
   "$UPDATE_ASSETS/release-manifest.json.sha256"
 chmod 0600 "$BUILD/Detach.dmg"
@@ -163,8 +171,15 @@ GIT_COMMIT="$(git -C "$TEST_REPO" rev-parse HEAD)"
 DMG_SHA256="$(shasum -a 256 "$BUILD/Detach.dmg" | awk '{print $1}')"
 UPDATE_SHA256="$(shasum -a 256 "$UPDATE_ASSETS/Detach-1.2.3.zip" | awk '{print $1}')"
 APPCAST_SHA256="$(shasum -a 256 "$UPDATE_ASSETS/appcast.xml" | awk '{print $1}')"
+"$TEST_REPO/scripts/release-sbom" generate \
+  --version 1.2.3 \
+  --tag "$TAG" \
+  --commit "$GIT_COMMIT" \
+  --repository "$REPOSITORY" \
+  --output "$UPDATE_ASSETS/release-sbom.spdx.json"
+SBOM_SHA256="$(shasum -a 256 "$UPDATE_ASSETS/release-sbom.spdx.json" | awk '{print $1}')"
 cat >"$UPDATE_ASSETS/release-manifest.json" <<JSON
-{"schema":1,"version":"1.2.3","build":"13","tag":"$TAG","git_commit":"$GIT_COMMIT","feed_url":"https://github.com/$REPOSITORY/releases/latest/download/appcast.xml","update_url":"https://github.com/$REPOSITORY/releases/download/$TAG/Detach-1.2.3.zip","download_url":"https://github.com/$REPOSITORY/releases/latest","dmg_sha256":"$DMG_SHA256","update_sha256":"$UPDATE_SHA256","appcast_sha256":"$APPCAST_SHA256"}
+{"schema":2,"version":"1.2.3","build":"13","tag":"$TAG","git_commit":"$GIT_COMMIT","feed_url":"https://github.com/$REPOSITORY/releases/latest/download/appcast.xml","update_url":"https://github.com/$REPOSITORY/releases/download/$TAG/Detach-1.2.3.zip","download_url":"https://github.com/$REPOSITORY/releases/latest","dmg_sha256":"$DMG_SHA256","update_sha256":"$UPDATE_SHA256","appcast_sha256":"$APPCAST_SHA256","sbom_sha256":"$SBOM_SHA256"}
 JSON
 (
   cd -P "$BUILD"
@@ -173,6 +188,7 @@ JSON
 for checksum_target in \
   Detach-1.2.3.zip \
   appcast.xml \
+  release-sbom.spdx.json \
   release-manifest.json; do
   (
     cd -P "$UPDATE_ASSETS"
@@ -186,6 +202,8 @@ chmod 0644 \
   "$UPDATE_ASSETS/Detach-1.2.3.zip.sha256" \
   "$UPDATE_ASSETS/appcast.xml" \
   "$UPDATE_ASSETS/appcast.xml.sha256" \
+  "$UPDATE_ASSETS/release-sbom.spdx.json" \
+  "$UPDATE_ASSETS/release-sbom.spdx.json.sha256" \
   "$UPDATE_ASSETS/release-manifest.json" \
   "$UPDATE_ASSETS/release-manifest.json.sha256"
 
@@ -451,6 +469,8 @@ print_asset_names() {
       Detach-1.2.3.zip.sha256 \
       appcast.xml \
       appcast.xml.sha256 \
+      release-sbom.spdx.json \
+      release-sbom.spdx.json.sha256 \
       release-manifest.json \
       release-manifest.json.sha256
   fi

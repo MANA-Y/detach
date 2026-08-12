@@ -6,7 +6,6 @@ on:
   push:
     branches:
       - main
-      - "detach-release/**"
 
 permissions:
   actions: read
@@ -70,11 +69,6 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.promoted-main.outputs.promoted != 'true')
         env:
           DETACH_QUALITY_AUTHORITY: ci-main
-        run: scripts/quality-gate --mode repository --keep-going --without-release-budget
-      - name: Run release repository gate
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/detach-release/')
-        env:
-          DETACH_QUALITY_AUTHORITY: release
         run: scripts/quality-gate --mode repository --keep-going --without-release-budget
       - name: Save Swift and tmux caches
         if: always() && steps.promoted-main.outputs.promoted != 'true' && steps.swift-cache.outputs.cache-hit != 'true'

@@ -207,8 +207,9 @@ The dashboard generator validates the current manifest, summary, metric and
 mutation digests. It also validates the care policy, source commit, schema, and
 input digests. It shows authority, result, exact commit, exact CI run,
 freshness, fingerprint, durations, coverage, affected journeys, scenario gaps,
-mutation score, workflow evals, feedback p95 and SLO, review state, security
-state, and recent latency.
+mutation score, workflow evals, feedback p95 and SLO, security state, and recent
+latency. Code review stays a read-only step in the active agent workflow. It is
+not a repository gate or a second merge authority.
 
 The same artifact opens locally and deploys to GitHub Pages. Main and mutation
 workflows deploy only after a green `ci-main` gate or a green mutation score for
@@ -225,9 +226,33 @@ pull request merge commit has an authoritative `quality-gates` PASS, affected
 public docs and durable specs match the behavior, and `git diff --check` is
 clean. A narrow test or stage rerun is diagnostic only.
 
-The active `main` ruleset has no bypass actor. It requires the current
-`quality-gates` check. A pull request or administrator push cannot update
+The active `main` ruleset has no bypass actor. It requires a pull request, one
+current strict `quality-gates` check from GitHub Actions, and a merge commit. It
+requires zero approving reviews. It also rejects branch deletion and
+non-fast-forward updates. A pull request or administrator push cannot update
 `main` when the check is missing, pending, failed, or stale.
+
+After a pull request opens, run:
+
+```text
+scripts/quality-merge --repository OWNER/REPOSITORY \
+  --pull-request NUMBER --head HEAD_SHA --repair-attempt ATTEMPT
+```
+
+The command waits no longer than `pr_feedback_seconds` for the authoritative
+check. It enables native auto-merge only for `HEAD_SHA`, then waits no longer
+than `merge_wait_seconds`. It disables auto-merge on timeout. The command
+rejects a changed head, a weaker ruleset, and an attempt above
+`max_repair_loops`. Its JSON evidence is current-policy state under
+`app/build/`; Git remains the history.
+
+## Security care
+
+Dependabot checks immutable GitHub Actions pins and Swift package pins each
+week. The bounded security workflow scans both GitHub Actions source and arm64
+Swift source with CodeQL after a `main` change and on a weekly schedule. The
+Swift scan uses an explicit build. These care jobs do not extend pull-request
+feedback and cannot run release commands.
 
 Release readiness also requires the tracked reference-Mac time budgets and the
 release-only gates below. Ordinary implementation must not run them.

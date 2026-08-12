@@ -14,12 +14,13 @@ change real power state, upload assets, or claim publication.
   must match the latest published manifest; `VERSION` and `BUILD`
   change together in one release commit.
 - Invoking `scripts/release-version X.Y.Z` authorizes its automated commit,
-  tag, and publication steps. Push the release commit first to its unique
-  `detach-release/vX.Y.Z` ref. The commit must pass the official GitHub Actions
-  `quality-gates` job. Then make sure that remote `main` did not change.
-  Atomically push the approved commit and annotated tag. Verify both refs and
-  remove only the matching temporary ref. No actor has a general `main`
-  ruleset bypass.
+  tag, and publication steps. Push the release head to its unique
+  `detach-release/vX.Y.Z` branch. `scripts/release-pr` creates or resumes one
+  exact pull request. The normal strict `quality-gates` job must pass before
+  bounded auto-merge. The final merge must have the tested source and release
+  head as its ordered parents and the tested tree. Tag that merge, verify the
+  remote `main` and tag, and remove only the matching temporary branch. No
+  actor has a general `main` ruleset bypass or direct-main release path.
 - The app, watchdog, bundled tmux, state helper, power client, root helper, and
   Sparkle executables contain only `arm64`. Intel Macs are unsupported.
 - The pinned tmux source build may reuse only an arm64 product keyed by the
@@ -55,6 +56,11 @@ change real power state, upload assets, or claim publication.
   all selected gates pass. After upload, every remote asset is downloaded and
   its digest is independently matched. Missing, extra, changed, or mismatched
   assets fail closed.
+- Each release includes a deterministic SPDX 2.3 SBOM. It lists the exact
+  Swift resolution and the checksummed tmux, libevent, and utf8proc sources.
+  The SBOM names the exact tag and commit. The release manifest binds its
+  digest to the signed and notarized artifacts. Publication validates the SBOM
+  before upload and after an independent remote download.
 - Reference-machine timing budgets are mandatory by default. When the release
   Mac is intentionally busy, the owner may set
   `DETACH_RELEASE_IGNORE_TIMING=1` for one `release-version` invocation and
@@ -89,7 +95,8 @@ change real power state, upload assets, or claim publication.
 
 ## Owned paths
 
-`scripts/release-version`, `scripts/release-lid-probe`,
+`scripts/release-version`, `scripts/release-pr`, `scripts/release-lid-probe`,
+`scripts/release-sbom`, `tools/release_pr.py`, `tools/release_sbom.py`,
 `app/scripts/release.sh`, `app/scripts/publish-release.sh`,
 `app/scripts/make-dmg.sh`, `app/scripts/verify-appcast.sh`,
 `VERSION`, `BUILD`, release/publish workflow tests, and release CI.

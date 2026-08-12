@@ -46,13 +46,13 @@ policy_version="$("$ROOT/scripts/quality-policy" version)"
   fail 'critical source inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" suites | wc -l | tr -d ' ')" = 12 ] || \
   fail 'required Swift suite inventory is incomplete'
-[ "$("$ROOT/scripts/quality-policy" requirements | wc -l | tr -d ' ')" = 22 ] || \
+[ "$("$ROOT/scripts/quality-policy" requirements | wc -l | tr -d ' ')" = 23 ] || \
   fail 'critical requirement inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" capabilities | wc -l | tr -d ' ')" = 11 ] || \
   fail 'capability inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" journeys | wc -l | tr -d ' ')" = 28 ] || \
   fail 'journey inventory is incomplete'
-[ "$("$ROOT/scripts/quality-policy" scenarios | wc -l | tr -d ' ')" = 40 ] || \
+[ "$("$ROOT/scripts/quality-policy" scenarios | wc -l | tr -d ' ')" = 44 ] || \
   fail 'scenario inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" coverage-exclusions | wc -l | tr -d ' ')" = 4 ] || \
   fail 'coverage exclusion inventory is incomplete'

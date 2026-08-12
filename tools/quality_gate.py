@@ -1755,6 +1755,30 @@ def run_gate_contract_stage(root: Path) -> int:
             "Quality promotion contracts passed",
         ),
         (
+            "quality-merge.log",
+            [str(root / "tests/quality-merge.sh")],
+            {},
+            "Quality merge contracts passed",
+        ),
+        (
+            "security-automation.log",
+            [str(root / "tests/security-contract.sh")],
+            {},
+            "Security automation contracts passed",
+        ),
+        (
+            "release-sbom.log",
+            [str(root / "tests/release-sbom.sh")],
+            {},
+            "Release SBOM contracts passed",
+        ),
+        (
+            "release-pr.log",
+            [str(root / "tests/release-pr.sh")],
+            {},
+            "Release PR contracts passed",
+        ),
+        (
             "quality-mutation.log",
             [str(root / "tests/quality-mutation.sh")],
             {},

@@ -13,6 +13,8 @@ UPDATE_ASSETS="$APP_ROOT/build/update-assets"
 UPDATE_ZIP="$UPDATE_ASSETS/Detach-$VERSION.zip"
 APPCAST="$UPDATE_ASSETS/appcast.xml"
 RELEASE_MANIFEST="$UPDATE_ASSETS/release-manifest.json"
+RELEASE_SBOM="$UPDATE_ASSETS/release-sbom.spdx.json"
+SBOM_TOOL="$REPO_ROOT/scripts/release-sbom"
 DOWNLOAD_URL_PREFIX="${DETACH_SPARKLE_DOWNLOAD_URL_PREFIX:-https://github.com/$REPOSITORY/releases/download/$TAG/}"
 DOWNLOAD_URL="${DETACH_DOWNLOAD_URL:-https://github.com/$REPOSITORY/releases/latest}"
 FEED_URL="${DETACH_SPARKLE_FEED_URL:-https://github.com/$REPOSITORY/releases/latest/download/appcast.xml}"
@@ -189,6 +191,7 @@ command -v gh >/dev/null 2>&1 || {
 }
 [ -f "$UPDATE_ZIP" ] && [ -f "$UPDATE_ZIP.sha256" ] && \
   [ -f "$APPCAST" ] && [ -f "$APPCAST.sha256" ] && \
+  [ -f "$RELEASE_SBOM" ] && [ -f "$RELEASE_SBOM.sha256" ] && \
   [ -f "$RELEASE_MANIFEST" ] && [ -f "$RELEASE_MANIFEST.sha256" ] || {
     printf 'Sparkle update assets are missing; run app/scripts/release.sh first\n' >&2
     exit 1
@@ -201,6 +204,8 @@ assets=(
   "$UPDATE_ZIP.sha256"
   "$APPCAST"
   "$APPCAST.sha256"
+  "$RELEASE_SBOM"
+  "$RELEASE_SBOM.sha256"
   "$RELEASE_MANIFEST"
   "$RELEASE_MANIFEST.sha256"
 )
@@ -213,6 +218,7 @@ while IFS= read -r -d '' update_asset; do
   case "$(basename "$update_asset")" in
     "$(basename "$UPDATE_ZIP")"|"$(basename "$UPDATE_ZIP").sha256"|\
     appcast.xml|appcast.xml.sha256|\
+    release-sbom.spdx.json|release-sbom.spdx.json.sha256|\
     release-manifest.json|release-manifest.json.sha256) ;;
     *)
       printf 'Refusing unexpected updater asset: %s\n' \
@@ -251,7 +257,8 @@ APPCAST_LINK="$(xmllint --xpath \
 manifest_value() {
   plutil -extract "$1" raw -o - "$RELEASE_MANIFEST"
 }
-[ "$(manifest_value version)" = "$VERSION" ] && \
+[ "$(manifest_value schema)" = 2 ] && \
+  [ "$(manifest_value version)" = "$VERSION" ] && \
   [ "$(manifest_value tag)" = "$TAG" ] && \
   [ "$(manifest_value feed_url)" = "$FEED_URL" ] && \
   [ "$(manifest_value update_url)" = "$EXPECTED_UPDATE_URL" ] && \
@@ -270,9 +277,11 @@ APPCAST_BUILD="$(xmllint --xpath \
 DMG_SHA256="$(shasum -a 256 "$DMG" | awk '{print $1}')"
 UPDATE_SHA256="$(shasum -a 256 "$UPDATE_ZIP" | awk '{print $1}')"
 APPCAST_SHA256="$(shasum -a 256 "$APPCAST" | awk '{print $1}')"
+SBOM_SHA256="$(shasum -a 256 "$RELEASE_SBOM" | awk '{print $1}')"
 [ "$(manifest_value dmg_sha256)" = "$DMG_SHA256" ] && \
   [ "$(manifest_value update_sha256)" = "$UPDATE_SHA256" ] && \
-  [ "$(manifest_value appcast_sha256)" = "$APPCAST_SHA256" ] || {
+  [ "$(manifest_value appcast_sha256)" = "$APPCAST_SHA256" ] && \
+  [ "$(manifest_value sbom_sha256)" = "$SBOM_SHA256" ] || {
     printf 'Release artifact hashes do not match the manifest\n' >&2
     exit 1
   }
@@ -281,6 +290,12 @@ GIT_COMMIT="$(manifest_value git_commit)"
   printf 'Release manifest contains an invalid git commit\n' >&2
   exit 1
 }
+"$SBOM_TOOL" validate \
+  --version "$VERSION" \
+  --tag "$TAG" \
+  --commit "$GIT_COMMIT" \
+  --repository "$REPOSITORY" \
+  --input "$RELEASE_SBOM"
 [ "$(git -C "$REPO_ROOT" rev-list -n 1 "$TAG" 2>/dev/null || true)" = "$GIT_COMMIT" ] || {
   printf 'Current tag does not match the built release manifest\n' >&2
   exit 1
@@ -308,6 +323,7 @@ fi
 for update_checksum in \
   "$UPDATE_ZIP.sha256" \
   "$APPCAST.sha256" \
+  "$RELEASE_SBOM.sha256" \
   "$RELEASE_MANIFEST.sha256"; do
   (
     cd -P "$UPDATE_ASSETS"
