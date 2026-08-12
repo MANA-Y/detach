@@ -38,8 +38,14 @@ jobs:
           category: /language:actions
 
   swift:
+    name: swift-${{ matrix.scope }}
     runs-on: macos-26
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        scope: [kit, app, processes]
     permissions:
       actions: read
       contents: read
@@ -61,21 +67,29 @@ jobs:
         run: swift package --package-path app --force-resolved-versions resolve
       - name: Remove cached products before tracing
         run: swift package --package-path app clean
+      - name: Prepare shared Swift source outside scope tracing
+        if: matrix.scope != 'kit'
+        run: swift build --package-path app --target DetachKit --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions
       - name: Initialize Swift analysis
         uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
         with:
           languages: swift
           build-mode: manual
           queries: security-extended
+      - name: Build Swift kit source for analysis
+        if: matrix.scope == 'kit'
+        run: swift build --package-path app --target DetachKit --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions
       - name: Build Swift app source for analysis
+        if: matrix.scope == 'app'
         run: swift build --package-path app --target DetachApp --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions
       - name: Build Swift process entry points for analysis
+        if: matrix.scope == 'processes'
         run: |
           swift build --package-path app --target DetachPower --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions
           swift build --package-path app --target DetachPowerHelper --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions
           swift build --package-path app --target DetachState --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions
           swift build --package-path app --target DetachWatchdog --arch arm64 --jobs 3 --disable-index-store --disable-sandbox --force-resolved-versions
-      - name: Analyze Swift
+      - name: Analyze Swift scope
         uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
         with:
-          category: /language:swift
+          category: /language:swift-${{ matrix.scope }}

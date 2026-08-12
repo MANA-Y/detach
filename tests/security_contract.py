@@ -31,11 +31,13 @@ def main() -> None:
     cache = workflow.index("Restore the Swift dependency graph")
     resolve = workflow.index("Resolve the locked Swift dependencies")
     clean = workflow.index("Remove cached products before tracing")
+    prepare = workflow.index("Prepare shared Swift source outside scope tracing")
     swift_init = workflow.index("Initialize Swift analysis")
+    kit_build = workflow.index("Build Swift kit source for analysis")
     swift_build = workflow.index("Build Swift app source for analysis")
     process_build = workflow.index("Build Swift process entry points for analysis")
-    swift_analyze = workflow.index("Analyze Swift")
-    require(cache < resolve < clean < swift_init < swift_build
+    swift_analyze = workflow.index("Analyze Swift scope")
+    require(cache < resolve < clean < prepare < swift_init < kit_build < swift_build
             < process_build < swift_analyze,
             "Swift preparation, target builds, and analysis are out of order")
     require("actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830" in workflow,
@@ -44,12 +46,25 @@ def main() -> None:
             "Swift analysis must resolve the tracked lock before tracing")
     require("swift package --package-path app clean" in workflow,
             "Swift analysis must rebuild repository sources after cache restore")
-    require(workflow.count("--force-resolved-versions") == 6,
-            "Swift resolve and every target build must reject lock drift")
-    require(workflow.count("--jobs 3") == 5,
+    require("scope: [kit, app, processes]" in workflow,
+            "Swift analysis must cover the kit, app, and process scopes")
+    require("max-parallel: 3" in workflow and "fail-fast: false" in workflow,
+            "Swift analysis scopes must run independently with bounded fan-out")
+    require("if: matrix.scope != 'kit'" in workflow,
+            "app and process scopes must prepare shared source before tracing")
+    for scope in ("kit", "app", "processes"):
+        require(f"if: matrix.scope == '{scope}'" in workflow,
+                f"Swift analysis is missing its {scope} scope condition")
+    require("category: /language:swift-${{ matrix.scope }}" in workflow,
+            "Swift scopes must publish distinct CodeQL categories")
+    require(workflow.count("--force-resolved-versions") == 8,
+            "Swift resolve, preparation, and every scope build must reject lock drift")
+    require(workflow.count("--jobs 3") == 7,
             "Swift target builds must match the three-thread extractor")
-    require(workflow.count("--disable-index-store") == 5,
+    require(workflow.count("--disable-index-store") == 7,
             "Swift security builds must not pay for unused index data")
+    require(workflow.count("--target DetachKit") == 2,
+            "shared Swift source needs one preparation and one traced build command")
     for target in ("DetachApp", "DetachPower", "DetachPowerHelper",
                    "DetachState", "DetachWatchdog"):
         require(f"--target {target}" in workflow,
