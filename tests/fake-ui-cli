@@ -32,6 +32,23 @@ if [ "$#" -eq 2 ] && [ "$1" = list ] && [ "$2" = --json ]; then
   exit 0
 fi
 
+if [ "$#" -eq 2 ] && [ "$1" = storage ] && [ "$2" = --json ]; then
+  printf '{"schema":1,"state_root":"%s/state/detach","complete":true,"allocated_bytes":0,"logical_bytes":0,"categories":{"session_data_bytes":0,"checkpoint_bytes":0,"log_bytes":0,"other_state_bytes":0},"sessions":[],"issues":[]}\n' \
+    "$ROOT"
+  exit 0
+fi
+
+if [ "$#" -eq 2 ] && [ "$1" = config ] && [ "$2" = tmux-style ]; then
+  printf 'inherit\n'
+  exit 0
+fi
+
+if [ "$#" -eq 2 ] && [ "$1" = config ] \
+    && [ "$2" = tmux-extended-keys ]; then
+  printf 'off\n'
+  exit 0
+fi
+
 if [ "$#" -eq 4 ] && [ "$2" = logs ] && [ "$3" = --ansi ]; then
   printf '\033[32mUI fixture log for %s\033[0m\n' "$4"
   exit 0

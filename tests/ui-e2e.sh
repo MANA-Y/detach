@@ -10,6 +10,25 @@ ARTIFACT_DIR="${DETACH_UI_E2E_ARTIFACT_DIR:-}"
 TEST_ROOT=""
 APP_PID=""
 
+approved_invocation() {
+  case "$1" in
+    'list --json'|\
+    'codex logs --ansi detach-codex-ui-running'|\
+    'claude logs --ansi detach-claude-ui-completed'|\
+    'codex stop detach-codex-ui-running'|\
+    'claude delete --force detach-claude-ui-completed'|\
+    'storage --json'|\
+    'config tmux-style'|\
+    'config tmux-extended-keys') return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if [ "${DETACH_UI_E2E_VALIDATE_INVOCATION+x}" = x ]; then
+  approved_invocation "$DETACH_UI_E2E_VALIDATE_INVOCATION"
+  exit
+fi
+
 preserve_failure_diagnostics() {
   local status="$1" source destination
   [ "$status" -ne 0 ] && [ -n "$ARTIFACT_DIR" ] && [ -n "$TEST_ROOT" ] || return 0
@@ -285,11 +304,12 @@ run_app_scenario onboarding-provider empty 8 onboarding-detects-provider
 run_app_scenario onboarding-approval empty 8 onboarding-explains-approval
 
 [ -s "$FAKE_DIR/invocations.log" ]
-if grep -Ev '^(list --json|(codex|claude) logs --ansi detach-(codex-ui-running|claude-ui-completed)|codex stop detach-codex-ui-running|claude delete --force detach-claude-ui-completed)$' \
-    "$FAKE_DIR/invocations.log" >/dev/null; then
-  printf 'UI e2e: fake CLI observed an unapproved command\n' >&2
-  cat "$FAKE_DIR/invocations.log" >&2
-  exit 1
-fi
+while IFS= read -r invocation; do
+  if ! approved_invocation "$invocation"; then
+    printf 'UI e2e: fake CLI observed an unapproved command: %s\n' \
+      "$invocation" >&2
+    exit 1
+  fi
+done <"$FAKE_DIR/invocations.log"
 
 printf 'Packaged Detach.app UI e2e smoke passed\n'
