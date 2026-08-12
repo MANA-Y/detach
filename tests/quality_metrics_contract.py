@@ -24,6 +24,7 @@ from quality_policy import POLICY_FILE, Policy  # noqa: E402
 POLICY = Policy(POLICY_FILE)
 BASE_COMMIT = "a" * 40
 SOURCE_COMMIT = "b" * 40
+TESTED_COMMIT = "c" * 40
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -81,6 +82,9 @@ def create_baseline(
     *,
     include_metrics: bool = True,
     manifest_policy: Optional[int] = None,
+    authority: str = "ci-main",
+    source_commit: str = BASE_COMMIT,
+    promotion_main: Optional[str] = None,
 ) -> Path:
     run_dir = root / "run"
     run_dir.mkdir(parents=True)
@@ -97,12 +101,35 @@ def create_baseline(
     (run_dir / "manifest.tsv").write_text(
         "schema\t4\n"
         f"policy\t{manifest_policy if manifest_policy is not None else POLICY.version}\n"
-        "authority\tci-main\n"
+        f"authority\t{authority}\n"
         "result\tpassed\n"
-        f"source_commit\t{BASE_COMMIT}\n"
+        f"source_commit\t{source_commit}\n"
+        f"base_commit\t{'d' * 40}\n"
         f"artifacts_sha256\t{digest(artifacts)}\n",
         encoding="utf-8",
     )
+    if promotion_main is not None:
+        manifest = run_dir / "manifest.tsv"
+        (run_dir / "promotion.tsv").write_text(
+            "schema\t1\n"
+            "authority\tci-main\n"
+            "result\tpassed\n"
+            "repository\towner/repository\n"
+            f"main_commit\t{promotion_main}\n"
+            f"main_tree\t{'e' * 40}\n"
+            f"base_commit\t{'d' * 40}\n"
+            f"head_commit\t{'f' * 40}\n"
+            f"tested_commit\t{source_commit}\n"
+            f"tested_tree\t{'e' * 40}\n"
+            "pull_request\t25\n"
+            "merged_at\t2026-08-12T12:00:00Z\n"
+            "source_run\t123\n"
+            "source_run_attempt\t1\n"
+            "source_run_url\thttps://github.com/owner/repository/actions/runs/123\n"
+            "source_artifact\tquality-gate-evidence-123-1\n"
+            f"source_manifest_sha256\t{digest(manifest)}\n",
+            encoding="utf-8",
+        )
     return run_dir
 
 
@@ -206,6 +233,72 @@ def main() -> None:
         assert document["suites"]["ui"]["line_coverage"]["percent"] == 90.0
         assert document["changed_lines"]["status"] == "passed"
         assert document["changed_lines"]["line_coverage"]["percent"] == 90.0
+
+        promoted_metrics = root / "promoted-metrics.json"
+        promoted_document = json.loads(baseline_metrics.read_text(encoding="utf-8"))
+        promoted_document["source_commit"] = TESTED_COMMIT
+        write_json(promoted_metrics, promoted_document)
+        promoted_root = root / "promoted-baseline"
+        promoted_run = create_baseline(
+            promoted_root,
+            promoted_metrics,
+            authority="ci-merge",
+            source_commit=TESTED_COMMIT,
+            promotion_main=BASE_COMMIT,
+        )
+        promoted_current = root / "promoted-current.json"
+        invoke(
+            evaluate_arguments(
+                coverage,
+                tests,
+                promoted_current,
+                changed,
+                baseline=promoted_root,
+                authority="ci-merge",
+            )
+        )
+        promoted_result = json.loads(promoted_current.read_text(encoding="utf-8"))
+        assert promoted_result["comparison"]["baseline_source_commit"] == BASE_COMMIT
+
+        missing_promotion_root = root / "missing-promotion"
+        create_baseline(
+            missing_promotion_root,
+            promoted_metrics,
+            authority="ci-merge",
+            source_commit=TESTED_COMMIT,
+        )
+        missing_promotion = invoke(
+            evaluate_arguments(
+                coverage,
+                tests,
+                root / "missing-promotion.json",
+                changed,
+                baseline=missing_promotion_root,
+                authority="ci-merge",
+            ),
+            expected=2,
+        )
+        require_text(missing_promotion, "no direct or promoted ci-main authority")
+
+        promotion_path = promoted_run / "promotion.tsv"
+        promotion_text = promotion_path.read_text(encoding="utf-8")
+        promotion_path.write_text(
+            promotion_text.replace(f"tested_tree\t{'e' * 40}", f"tested_tree\t{'0' * 40}"),
+            encoding="utf-8",
+        )
+        tampered_promotion = invoke(
+            evaluate_arguments(
+                coverage,
+                tests,
+                root / "tampered-promotion.json",
+                changed,
+                baseline=promoted_root,
+                authority="ci-merge",
+            ),
+            expected=2,
+        )
+        require_text(tampered_promotion, "does not bind the tested manifest")
+        promotion_path.write_text(promotion_text, encoding="utf-8")
 
         write_json(
             changed,

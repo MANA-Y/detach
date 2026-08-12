@@ -7,8 +7,10 @@ TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-quality-dashboard.XXXXXX")"
 RESULT_ROOT="$TMP_ROOT/results"
 RUN_DIR="$RESULT_ROOT/20260811T100000Z-1"
 OUTPUT="$TMP_ROOT/dashboard"
+PROMOTED_OUTPUT="$TMP_ROOT/promoted-dashboard"
 MUTATION_SUMMARY="$TMP_ROOT/mutation-summary.json"
 POLICY_VERSION="$("$ROOT/scripts/quality-policy" version)"
+MAIN_COMMIT=8989898989898989898989898989898989898989
 trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
 
 fail() {
@@ -98,7 +100,7 @@ EOF
 PRIOR_RUN="$RESULT_ROOT/20260810T100000Z-1"
 mkdir -p "$PRIOR_RUN"
 awk -F '\t' -v OFS='\t' \
-  '$1 == "policy" {$2=21} $1 != "specs" {print}' \
+  '$1 == "policy" {$2=21} {print}' \
   "$RUN_DIR/manifest.tsv" >"$PRIOR_RUN/manifest.tsv"
 
 cat >"$MUTATION_SUMMARY" <<JSON
@@ -177,6 +179,57 @@ assert [journey["id"] for journey in data["journeys"]] == [
     "J-ONBOARD-FIRST-RUN", "J-ONBOARD-PROVIDER", "J-ONBOARD-APPROVAL"
 ]
 PY
+
+manifest_digest="$(shasum -a 256 "$RUN_DIR/manifest.tsv" | awk '{print $1}')"
+cat >"$RUN_DIR/promotion.tsv" <<EOF
+schema	1
+authority	ci-main
+result	passed
+repository	owner/repository
+main_commit	$MAIN_COMMIT
+main_tree	eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+base_commit	fedcba9876543210fedcba9876543210fedcba98
+head_commit	bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+tested_commit	0123456789abcdef0123456789abcdef01234567
+tested_tree	eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+pull_request	25
+merged_at	2026-08-11T10:00:30Z
+source_run	1
+source_run_attempt	1
+source_run_url	https://github.com/owner/repository/actions/runs/1
+source_artifact	quality-gate-evidence-1-1
+source_manifest_sha256	$manifest_digest
+EOF
+"$ROOT/scripts/quality-dashboard" generate --result-root "$RESULT_ROOT" \
+  --output "$PROMOTED_OUTPUT" \
+  --run-url 'https://github.com/owner/repository/actions/runs/2' \
+  --mutation-summary "$MUTATION_SUMMARY" >/dev/null
+grep -F "Tested merge <code>0123456789abcdef0123456789abcdef01234567</code>" \
+  "$PROMOTED_OUTPUT/index.html" >/dev/null || fail 'promotion provenance is missing'
+python3 - "$PROMOTED_OUTPUT/data.json" "$MAIN_COMMIT" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    data = json.load(source)
+assert data["run"]["authority"] == "ci-main"
+assert data["run"]["commit"] == sys.argv[2]
+assert data["run"]["tested_commit"] == "0123456789abcdef0123456789abcdef01234567"
+assert data["run"]["promotion"]["source_run"] == "1"
+assert len(data["trends"]) == 2
+PY
+
+cp "$RUN_DIR/promotion.tsv" "$TMP_ROOT/promotion.tsv"
+sed 's/^tested_tree.*/tested_tree\t0000000000000000000000000000000000000000/' \
+  "$TMP_ROOT/promotion.tsv" >"$RUN_DIR/promotion.tsv"
+if "$ROOT/scripts/quality-dashboard" generate --result-root "$RESULT_ROOT" \
+    --output "$TMP_ROOT/tampered-promotion" \
+    >"$TMP_ROOT/tampered-promotion.out" 2>&1; then
+  fail 'tampered promotion evidence was accepted'
+fi
+grep -F 'promotion evidence does not bind' \
+  "$TMP_ROOT/tampered-promotion.out" >/dev/null || \
+  fail 'tampered promotion failure is unclear'
+mv "$TMP_ROOT/promotion.tsv" "$RUN_DIR/promotion.tsv"
 
 cp "$RUN_DIR/manifest.tsv" "$TMP_ROOT/current-manifest.tsv"
 awk -F '\t' '$1 != "specs" {print}' "$TMP_ROOT/current-manifest.tsv" \

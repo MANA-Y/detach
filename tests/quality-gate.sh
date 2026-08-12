@@ -23,6 +23,14 @@ grep -F 'run: scripts/quality-gate --mode repository --base "$BASE_SHA" --keep-g
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'run: scripts/quality-gate --mode repository --keep-going --without-release-budget' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'name: Promote exact pull-request evidence' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F '  pull-requests: read' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'promotion_root="$(scripts/quality-promote 2>"$error_log")"' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F "steps.promoted-main.outputs.promoted != 'true'" \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F -- '- "detach-release/**"' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 ! grep -E 'uses:[[:space:]]+[^[:space:]]+@v[0-9]' \

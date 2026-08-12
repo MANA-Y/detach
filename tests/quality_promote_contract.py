@@ -1,0 +1,345 @@
+#!/usr/bin/env python3
+"""Deterministic contracts for exact pull-request evidence promotion."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tools"))
+
+from quality_policy import POLICY_FILE, Policy  # noqa: E402
+from quality_promote import PromotionError, read_tsv, validate_promotion  # noqa: E402
+
+
+POLICY = Policy(POLICY_FILE)
+BASE = "a" * 40
+HEAD = "b" * 40
+TESTED = "c" * 40
+MAIN = "d" * 40
+TREE = "e" * 40
+BASELINE = "f" * 40
+RUN_ID = 123
+ATTEMPT = 2
+
+
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def write_json(path: Path, value: object) -> None:
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def metrics_document() -> dict[str, object]:
+    return {
+        "schema": 1,
+        "policy": POLICY.version,
+        "source_commit": TESTED,
+        "suites": {
+            "business": {
+                "line_coverage": {"covered": 9, "percent": 90.0, "total": 10},
+                "test_count": 1,
+                "tests": ["DetachKitTests.Sample/testOne"],
+            },
+            "ui": {
+                "line_coverage": {"covered": 3, "percent": 30.0, "total": 10},
+                "test_count": 1,
+                "tests": ["DetachAppTests.Sample/testOne"],
+            },
+        },
+        "critical_files": [],
+        "changed_lines": {
+            "base_commit": BASE,
+            "files": [],
+            "line_coverage": {"covered": 0, "percent": 100.0, "total": 0},
+            "minimum_percent": 90,
+            "status": "not-applicable",
+        },
+        "comparison": {
+            "baseline_policy": max(1, (POLICY.version or 1) - 1),
+            "baseline_source_commit": BASELINE,
+            "mode": "green-main-artifact",
+            "regressions": [],
+            "status": "passed",
+        },
+    }
+
+
+def create_evidence(root: Path) -> Path:
+    run_dir = root / "20260812T120000Z-1"
+    run_dir.mkdir(parents=True)
+    summary_lines = [
+        "policy\tmode\tstage\tstatus\tduration_seconds\tlog\tlog_sha256\torigin_run"
+    ]
+    stages = [stage.name for stage in POLICY.stages if stage.name != "release-budget"]
+    for stage in stages:
+        log = run_dir / f"{stage}.log"
+        log.write_text(f"{stage} passed\n", encoding="utf-8")
+        summary_lines.append(
+            f"{POLICY.version}\trepository\t{stage}\tpassed\t1\t{stage}.log\t"
+            f"{digest(log)}\t-"
+        )
+    summary = run_dir / "summary.tsv"
+    summary.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    environment = run_dir / "environment.tsv"
+    environment.write_text("schema\t1\narchitecture\ttest\n", encoding="utf-8")
+    write_json(run_dir / "quality-metrics.json", metrics_document())
+    (run_dir / "scenarios.jsonl").write_text("{}\n", encoding="utf-8")
+    (run_dir / "scenarios.junit.xml").write_text(
+        '<testsuite name="quality" tests="0"/>\n', encoding="utf-8"
+    )
+    artifacts = run_dir / "artifacts.tsv"
+    artifacts.write_text(
+        "schema\t1\n"
+        + "".join(
+            f"file\t{name}\t{digest(run_dir / name)}\n"
+            for name in (
+                "quality-metrics.json",
+                "scenarios.jsonl",
+                "scenarios.junit.xml",
+            )
+        ),
+        encoding="utf-8",
+    )
+    manifest = run_dir / "manifest.tsv"
+    manifest.write_text(
+        "schema\t4\n"
+        f"policy\t{POLICY.version}\n"
+        "mode\trepository\n"
+        "authority\tci-merge\n"
+        f"source_commit\t{TESTED}\n"
+        f"base_commit\t{BASE}\n"
+        f"input_fingerprint\t{'1' * 64}\n"
+        f"fingerprint\t{'2' * 64}\n"
+        f"stages\t{','.join(stages)}\n"
+        f"specs\t{','.join(POLICY.specs)}\n"
+        f"capabilities\t{','.join(POLICY.capabilities)}\n"
+        f"journeys\t{','.join(POLICY.journeys)}\n"
+        "started_at\t2026-08-12T12:00:00Z\n"
+        "finished_at\t2026-08-12T12:03:00Z\n"
+        "duration_seconds\t180\n"
+        "timing_wall_seconds\t180\n"
+        "resumed_from_run\t\n"
+        "resumed_from_manifest_sha256\t\n"
+        f"environment_sha256\t{digest(environment)}\n"
+        f"artifacts_sha256\t{digest(artifacts)}\n"
+        f"summary_sha256\t{digest(summary)}\n"
+        "result\tpassed\n",
+        encoding="utf-8",
+    )
+    return run_dir
+
+
+def fake_tools(root: Path) -> tuple[Path, Path]:
+    fake_git = root / "fake-git"
+    fake_git.write_text(
+        f"""#!/usr/bin/env python3
+import os
+mode = os.environ.get("FAKE_PROMOTE_MODE", "success")
+parents = "{BASE} {HEAD}" if mode != "one-parent" else "{BASE}"
+print("{MAIN}")
+print("{TREE}")
+print(parents)
+""",
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+    fake_gh = root / "fake-gh"
+    fake_gh.write_text(
+        f"""#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import shutil
+import sys
+
+arguments = sys.argv[1:]
+mode = os.environ.get("FAKE_PROMOTE_MODE", "success")
+if arguments[0] == "api":
+    path = arguments[1]
+    if path.endswith("/commits/{MAIN}/pulls"):
+        records = [] if mode == "no-pr" else [{{
+            "number": 25,
+            "state": "closed",
+            "merged_at": "2026-08-12T12:04:00Z",
+            "merge_commit_sha": "{MAIN}",
+            "base": {{"sha": "{BASE}"}},
+            "head": {{"sha": "{HEAD}"}},
+        }}]
+        print(json.dumps(records))
+    elif "workflows/quality-gates.yml/runs" in path:
+        updated = "2026-08-12T12:05:00Z" if mode == "stale-run" else "2026-08-12T12:03:30Z"
+        print(json.dumps({{"workflow_runs": [{{
+            "id": {RUN_ID},
+            "run_attempt": {ATTEMPT},
+            "event": "pull_request",
+            "conclusion": "success",
+            "head_sha": "{HEAD}",
+            "updated_at": updated,
+            "html_url": "https://github.com/owner/repository/actions/runs/{RUN_ID}",
+        }}]}}))
+    elif path.endswith("/actions/runs/{RUN_ID}/artifacts"):
+        artifacts = [{{
+            "name": "quality-gate-evidence-{RUN_ID}-{ATTEMPT}",
+            "expired": False,
+        }}]
+        if mode == "duplicate-artifact": artifacts.append(artifacts[0])
+        print(json.dumps({{"artifacts": artifacts}}))
+    elif path.endswith("/git/commits/{TESTED}"):
+        tree = "{{}}".format("{'0' * 40}" if mode == "tree-mismatch" else "{TREE}")
+        head = "{'0' * 40}" if mode == "parent-mismatch" else "{HEAD}"
+        print(json.dumps({{
+            "sha": "{TESTED}",
+            "tree": {{"sha": tree}},
+            "parents": [{{"sha": "{BASE}"}}, {{"sha": head}}],
+        }}))
+    else:
+        raise SystemExit(3)
+elif arguments[:2] == ["run", "download"]:
+    destination = Path(arguments[arguments.index("--dir") + 1])
+    source = Path(os.environ["FAKE_PROMOTE_EVIDENCE"])
+    target = destination / source.name
+    shutil.copytree(source, target)
+    if mode == "symlinked-run":
+        shutil.rmtree(target)
+        target.symlink_to(source, target_is_directory=True)
+    if mode == "tampered-artifact":
+        with (target / "quality-metrics.json").open("a", encoding="utf-8") as stream:
+            stream.write(" ")
+else:
+    raise SystemExit(3)
+""",
+        encoding="utf-8",
+    )
+    fake_gh.chmod(0o755)
+    return fake_gh, fake_git
+
+
+def invoke(
+    fake_gh: Path,
+    fake_git: Path,
+    evidence: Path,
+    output: Path,
+    *,
+    mode: str = "success",
+    expected: int = 0,
+    test_mode: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "DETACH_QUALITY_PROMOTE_GH": str(fake_gh),
+            "DETACH_QUALITY_PROMOTE_GIT": str(fake_git),
+            "FAKE_PROMOTE_EVIDENCE": str(evidence),
+            "FAKE_PROMOTE_MODE": mode,
+        }
+    )
+    if test_mode:
+        environment["DETACH_QUALITY_PROMOTE_TEST_MODE"] = "1"
+    else:
+        environment.pop("DETACH_QUALITY_PROMOTE_TEST_MODE", None)
+    result = subprocess.run(
+        [
+            str(ROOT / "scripts/quality-promote"),
+            "--repository", "owner/repository",
+            "--commit", MAIN,
+            "--output-root", str(output),
+        ],
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if result.returncode != expected:
+        raise AssertionError(
+            f"promotion returned {result.returncode}, expected {expected}\n{result.stdout}"
+        )
+    return result
+
+
+def require(result: subprocess.CompletedProcess[str], text: str) -> None:
+    if text not in result.stdout:
+        raise AssertionError(f"missing diagnostic {text!r}:\n{result.stdout}")
+
+
+def main() -> None:
+    with tempfile.TemporaryDirectory(prefix="detach-quality-promote-contract.") as raw:
+        root = Path(raw)
+        evidence = create_evidence(root / "source")
+        fake_gh, fake_git = fake_tools(root)
+
+        first = root / "first"
+        result = invoke(fake_gh, fake_git, evidence, first)
+        if Path(result.stdout.strip()) != first:
+            raise AssertionError("promotion output root is not deterministic")
+        run_dir = next(path.parent for path in first.glob("*/manifest.tsv"))
+        manifest = read_tsv(run_dir / "manifest.tsv", "manifest")
+        promotion = validate_promotion(run_dir, manifest)
+        if promotion is None or promotion["main_commit"] != MAIN:
+            raise AssertionError("promotion does not bind the main commit")
+
+        second = root / "second"
+        invoke(fake_gh, fake_git, evidence, second)
+        second_run = next(path.parent for path in second.glob("*/manifest.tsv"))
+        if (run_dir / "promotion.tsv").read_bytes() != (second_run / "promotion.tsv").read_bytes():
+            raise AssertionError("promotion evidence is not deterministic")
+        if (run_dir / "promotion.md").read_bytes() != (second_run / "promotion.md").read_bytes():
+            raise AssertionError("promotion summary is not deterministic")
+
+        for mode, diagnostic in (
+            ("one-parent", "not an exact two-parent merge"),
+            ("no-pr", "no unique exact merged pull request"),
+            ("stale-run", "no successful pre-merge"),
+            ("duplicate-artifact", "no unique exact evidence artifact"),
+            ("tree-mismatch", "do not have the same tree and parents"),
+            ("parent-mismatch", "do not have the same tree and parents"),
+            ("tampered-artifact", "artifact digest does not match"),
+            ("symlinked-run", "evidence run directory is unsafe"),
+        ):
+            output = root / mode
+            failed = invoke(
+                fake_gh, fake_git, evidence, output, mode=mode, expected=2
+            )
+            require(failed, diagnostic)
+            if output.exists():
+                raise AssertionError(f"failed promotion retained output: {mode}")
+
+        promotion_path = run_dir / "promotion.tsv"
+        original = promotion_path.read_text(encoding="utf-8")
+        promotion_path.write_text(
+            original.replace(f"main_tree\t{TREE}", f"main_tree\t{'0' * 40}"),
+            encoding="utf-8",
+        )
+        try:
+            validate_promotion(run_dir, manifest)
+        except PromotionError as error:
+            if "does not bind" not in str(error):
+                raise
+        else:
+            raise AssertionError("tampered promotion evidence was accepted")
+
+        production = invoke(
+            fake_gh,
+            fake_git,
+            evidence,
+            root / "production",
+            expected=2,
+            test_mode=False,
+        )
+        require(production, "restricted to a GitHub main push")
+
+    print("Quality promotion contracts passed")
+
+
+if __name__ == "__main__":
+    main()

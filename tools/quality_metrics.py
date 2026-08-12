@@ -14,6 +14,7 @@ import sys
 from typing import Any, NoReturn, Optional
 
 from quality_policy import POLICY_FILE, Policy, PolicyError, ROOT
+from quality_promote import PromotionError, validate_promotion
 
 
 HEX_COMMIT = re.compile(r"^[0-9a-f]{40}$")
@@ -275,7 +276,7 @@ def read_tsv_map(path: Path, label: str) -> dict[str, str]:
     return values
 
 
-def load_baseline_run(root: Path) -> tuple[Path, dict[str, str]]:
+def load_baseline_run(root: Path) -> tuple[Path, dict[str, str], str]:
     if not root.is_dir() or root.is_symlink():
         raise MetricsError(f"baseline root is missing or unsafe: {root}")
     manifests = sorted(root.glob("*/manifest.tsv"))
@@ -283,11 +284,7 @@ def load_baseline_run(root: Path) -> tuple[Path, dict[str, str]]:
         raise MetricsError("baseline root must contain exactly one quality run")
     run_dir = manifests[0].parent
     manifest = read_tsv_map(manifests[0], "baseline manifest")
-    required = {
-        "schema": "4",
-        "authority": "ci-main",
-        "result": "passed",
-    }
+    required = {"schema": "4", "result": "passed"}
     for key, expected in required.items():
         if manifest.get(key) != expected:
             raise MetricsError(f"baseline manifest {key} is not {expected}")
@@ -298,7 +295,19 @@ def load_baseline_run(root: Path) -> tuple[Path, dict[str, str]]:
     artifacts = safe_file(run_dir / "artifacts.tsv", "baseline artifact inventory")
     if sha256(artifacts) != manifest.get("artifacts_sha256"):
         raise MetricsError("baseline artifact inventory digest does not match its manifest")
-    return run_dir, manifest
+    try:
+        promotion = validate_promotion(run_dir, manifest)
+    except PromotionError as error:
+        raise MetricsError(str(error)) from error
+    if manifest.get("authority") == "ci-main":
+        if promotion is not None:
+            raise MetricsError("direct ci-main evidence cannot contain a promotion")
+        effective_source = manifest["source_commit"]
+    elif manifest.get("authority") == "ci-merge" and promotion is not None:
+        effective_source = promotion["main_commit"]
+    else:
+        raise MetricsError("baseline has no direct or promoted ci-main authority")
+    return run_dir, manifest, effective_source
 
 
 def artifact_digest(run_dir: Path, relative: str) -> Optional[str]:
@@ -470,7 +479,7 @@ def validate_metrics(document: Any, *, expected_policy: Optional[int] = None) ->
 def load_baseline(root: Optional[Path]) -> tuple[Optional[dict[str, Any]], str, str]:
     if root is None:
         return None, "none", ""
-    run_dir, manifest = load_baseline_run(root)
+    run_dir, manifest, effective_source = load_baseline_run(root)
     metrics_path = run_dir / "quality-metrics.json"
     digest = artifact_digest(run_dir, "quality-metrics.json")
     if metrics_path.exists() or digest is not None:
@@ -483,7 +492,8 @@ def load_baseline(root: Optional[Path]) -> tuple[Optional[dict[str, Any]], str, 
             raise MetricsError("baseline metrics source does not match its manifest")
         if document["policy"] != int(manifest["policy"]):
             raise MetricsError("baseline metrics policy does not match its manifest")
-        return document, "green-main-artifact", manifest["source_commit"]
+        effective_document = {**document, "source_commit": effective_source}
+        return effective_document, "green-main-artifact", effective_source
     raise MetricsError("last green main artifact has no quality metrics")
 
 
