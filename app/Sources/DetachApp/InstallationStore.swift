@@ -68,6 +68,7 @@ final class InstallationStore {
         bundle: Bundle = .main,
         powerStateRoot: URL? = nil,
         defaults: UserDefaults = .standard,
+        uiE2EScenario: String? = AppSettings.uiE2E?.scenario,
         contextOperationOverride:
             (@MainActor (InstallationContextOperation) async -> Void)? = nil
     ) {
@@ -82,7 +83,7 @@ final class InstallationStore {
         onboardingEverCompleted = defaults.bool(
             forKey: Self.onboardingCompletedKey)
         self.contextOperationOverride = contextOperationOverride
-        switch AppSettings.uiE2E?.scenario {
+        switch uiE2EScenario {
         case "onboarding-first-run": uiE2EOnboardingStep = .done
         case "onboarding-provider": uiE2EOnboardingStep = .provider
         case "onboarding-approval": uiE2EOnboardingStep = .permissions

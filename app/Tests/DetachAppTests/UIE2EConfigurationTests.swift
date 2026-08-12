@@ -164,6 +164,33 @@ final class UIE2EConfigurationTests: XCTestCase {
                 NSApplication.shared))
     }
 
+    func testOrdinaryProcessKeepsTheDefaultDetachPath() {
+        XCTAssertNil(AppSettings.uiE2E)
+        XCTAssertEqual(
+            AppSettings.initialDetachPath,
+            AppSettings.defaultDetachPath)
+    }
+
+    func testIsolatedAppDefaultsStayInTheirPrivateSuite() throws {
+        try withFixture { fixture in
+            let configuration = try fixture.validate()
+            let bundleIdentifier = "dev.tsarev.detach.ui-e2e.defaults.\(UUID())"
+            let defaults = AppSettings.makeDefaults(
+                uiE2E: configuration,
+                bundleIdentifier: bundleIdentifier)
+            let suite = bundleIdentifier + ".preferences"
+            defer { defaults.removePersistentDomain(forName: suite) }
+
+            XCTAssertEqual(
+                defaults.string(forKey: "detachPath"),
+                fixture.cli.resolvingSymlinksInPath().path)
+            XCTAssertEqual(defaults.double(forKey: "pollInterval"), 0.5)
+            XCTAssertFalse(defaults.bool(forKey: AppSettings.notificationsEnabledKey))
+            XCTAssertFalse(defaults.bool(forKey: AppSettings.tipsEnabledKey))
+            XCTAssertFalse(defaults.bool(forKey: AppSettings.menuBarIconEnabledKey))
+        }
+    }
+
     private func withFixture(_ body: (Fixture) throws -> Void) throws {
         let fixture = try Fixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }

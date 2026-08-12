@@ -71,4 +71,65 @@ final class UIE2EEventWindowResolverTests: XCTestCase {
                 candidates: [sheet, owner]),
             sheet)
     }
+
+    func testClippedControlUsesTheRealScrollerTrackTowardIt() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 100, y: 100, width: 400, height: 300),
+            styleMask: .titled,
+            backing: .buffered,
+            defer: false)
+        let scrollView = NSScrollView(
+            frame: NSRect(x: 20, y: 20, width: 200, height: 200))
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = false
+        let documentView = FlippedDocumentView(
+            frame: NSRect(x: 0, y: 0, width: 180, height: 600))
+        let measuredView = NSView(
+            frame: NSRect(x: 20, y: 560, width: 100, height: 24))
+        documentView.addSubview(measuredView)
+        scrollView.documentView = documentView
+        window.contentView?.addSubview(scrollView)
+        scrollView.tile()
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+
+        let viewport = try XCTUnwrap(UIE2EEventWindowResolver.screenFrame(
+            scrollView.contentView.bounds,
+            in: scrollView.contentView))
+        let clippedControl = CGRect(
+            x: viewport.midX - 50,
+            y: viewport.minY - 14,
+            width: 100,
+            height: 24)
+
+        XCTAssertFalse(UIE2EEventWindowResolver.isSafelyVisible(
+            clippedControl,
+            from: measuredView))
+        let pageFrame = try XCTUnwrap(UIE2EEventWindowResolver.scrollPageFrame(
+            toward: clippedControl,
+            from: measuredView))
+        let scroller = try XCTUnwrap(scrollView.verticalScroller)
+        let scrollerFrame = try XCTUnwrap(UIE2EEventWindowResolver.screenFrame(
+            scroller.bounds,
+            in: scroller))
+        XCTAssertTrue(scrollerFrame.contains(CGPoint(
+            x: pageFrame.midX,
+            y: pageFrame.midY)))
+        XCTAssertLessThan(pageFrame.midY, viewport.midY)
+
+        let visibleControl = CGRect(
+            x: viewport.midX - 50,
+            y: viewport.midY - 12,
+            width: 100,
+            height: 24)
+        XCTAssertTrue(UIE2EEventWindowResolver.isSafelyVisible(
+            visibleControl,
+            from: measuredView))
+        XCTAssertNil(UIE2EEventWindowResolver.scrollPageFrame(
+            toward: visibleControl,
+            from: measuredView))
+    }
+}
+
+private final class FlippedDocumentView: NSView {
+    override var isFlipped: Bool { true }
 }

@@ -37,6 +37,48 @@ final class InstallationStorePowerStateTests: XCTestCase {
         XCTAssertFalse(store.presentsUIE2EOnboarding)
     }
 
+    func testUIE2EOnboardingFixturesExposeOnlyTheirRequestedStep() {
+        let fixtures: [(String, OnboardingStep)] = [
+            ("onboarding-first-run", .done),
+            ("onboarding-provider", .provider),
+            ("onboarding-approval", .permissions),
+        ]
+
+        for (scenario, expectedStep) in fixtures {
+            let store = InstallationStore(
+                detachPath: "/tmp/detach-test",
+                uiE2EScenario: scenario)
+
+            XCTAssertTrue(store.presentsUIE2EOnboarding)
+            XCTAssertEqual(store.onboardingStep, expectedStep)
+        }
+    }
+
+    func testHealthyFirstRunCompletionClearsTheFixtureStep() throws {
+        let root = try makeStateRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeHeartbeat(
+            #"{"state":"ok","power_state":"protected","checked_at":"\#(stamp())"}"#,
+            to: root)
+        let suite = "detach-ui-e2e-onboarding.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = InstallationStore(
+            detachPath: "/tmp/detach-test",
+            powerStateRoot: root,
+            defaults: defaults,
+            uiE2EScenario: "onboarding-first-run")
+
+        XCTAssertEqual(store.onboardingStep, .done)
+        XCTAssertFalse(defaults.bool(forKey: "onboardingCompleted"))
+
+        store.markOnboardingCompleted()
+
+        XCTAssertFalse(store.presentsUIE2EOnboarding)
+        XCTAssertEqual(store.onboardingStep, .mainApp)
+        XCTAssertTrue(defaults.bool(forKey: "onboardingCompleted"))
+    }
+
     func testAppContextHeartbeatCheckPublishesFreshReportedPowerState() throws {
         let root = try makeStateRoot()
         defer { try? FileManager.default.removeItem(at: root) }

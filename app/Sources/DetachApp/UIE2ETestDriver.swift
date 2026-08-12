@@ -33,6 +33,63 @@ enum UIE2EEventWindowResolver {
         }
         return candidates.first { $0.frame.contains(screenPoint) }
     }
+
+    static func screenFrame(
+        _ frame: CGRect,
+        in view: NSView
+    ) -> CGRect? {
+        guard let window = view.window else { return nil }
+        let windowFrame = view.convert(frame, to: nil)
+        if window.sheetParent != nil {
+            return CGRect(
+                x: window.frame.minX + windowFrame.minX,
+                y: window.frame.minY + windowFrame.minY,
+                width: windowFrame.width,
+                height: windowFrame.height)
+        }
+        return window.convertToScreen(windowFrame)
+    }
+
+    static func isSafelyVisible(
+        _ targetFrame: CGRect,
+        from view: NSView
+    ) -> Bool {
+        guard let scrollView = view.enclosingScrollView,
+              let viewport = screenFrame(
+                scrollView.contentView.bounds,
+                in: scrollView.contentView)
+        else { return true }
+        let safeViewport = viewport.insetBy(dx: 8, dy: 8)
+        return safeViewport.contains(CGPoint(
+            x: targetFrame.midX,
+            y: targetFrame.midY))
+    }
+
+    static func scrollPageFrame(
+        toward targetFrame: CGRect,
+        from view: NSView
+    ) -> CGRect? {
+        guard !isSafelyVisible(targetFrame, from: view),
+              let scrollView = view.enclosingScrollView,
+              let scroller = scrollView.verticalScroller,
+              !scroller.isHidden,
+              let viewport = screenFrame(
+                scrollView.contentView.bounds,
+                in: scrollView.contentView)
+        else { return nil }
+        let pageFrames = [NSScroller.Part.incrementPage, .decrementPage]
+            .compactMap { part -> CGRect? in
+                let localFrame = scroller.rect(for: part)
+                guard localFrame.width > 0, localFrame.height > 0 else {
+                    return nil
+                }
+                return screenFrame(localFrame, in: scroller)
+            }
+        if targetFrame.midY < viewport.midY {
+            return pageFrames.min { $0.midY < $1.midY }
+        }
+        return pageFrames.max { $0.midY < $1.midY }
+    }
 }
 
 /// A narrowly gated, same-process accessibility driver for the packaged-app
@@ -514,6 +571,17 @@ enum UIE2ETestDriver {
                 targetFrame = measured
                 return !measured.isEmpty
             }
+            if identifier == "onboarding-open-dashboard" {
+                try await revealMeasuredControl(
+                    element,
+                    identifier: identifier,
+                    name: name)
+                guard let measured = UIE2EGeometryRegistry.frame(for: identifier)
+                else {
+                    throw Failure(message: "\(name) lost its measured geometry")
+                }
+                targetFrame = measured
+            }
         }
         try await click(
             frame: targetFrame,
@@ -527,6 +595,56 @@ enum UIE2ETestDriver {
             || identifier.hasPrefix("onboarding-")
             || identifier.hasPrefix("session-row-")
             || identifier.hasPrefix("session-action-")
+    }
+
+    private static func revealMeasuredControl(
+        _ element: any NSAccessibilityProtocol,
+        identifier: String,
+        name: String
+    ) async throws {
+        let measuredView = (element as? UIE2EGeometryView)
+            ?? elements().compactMap { $0 as? UIE2EGeometryView }.first {
+                $0.accessibilityIdentifier() == identifier
+            }
+        guard let measuredView else {
+            throw Failure(message: "\(name) has no measured control view")
+        }
+        for _ in 0..<3 {
+            measuredView.publishFrame()
+            guard let current = UIE2EGeometryRegistry.frame(for: identifier)
+            else {
+                throw Failure(message: "\(name) lost its measured geometry")
+            }
+            if UIE2EEventWindowResolver.isSafelyVisible(
+                current,
+                from: measuredView) {
+                return
+            }
+            guard let pageFrame = UIE2EEventWindowResolver.scrollPageFrame(
+                toward: current,
+                from: measuredView)
+            else {
+                throw Failure(message: "\(name) has no visible scroll target")
+            }
+            try await click(
+                frame: pageFrame,
+                name: "scroll toward \(name)",
+                owningWindow: measuredView.window)
+            try await waitUntil("visible \(name)", attempts: 10) {
+                measuredView.publishFrame()
+                guard let moved = UIE2EGeometryRegistry.frame(for: identifier)
+                else { return false }
+                return moved != current
+            }
+        }
+        measuredView.publishFrame()
+        guard let final = UIE2EGeometryRegistry.frame(for: identifier),
+              UIE2EEventWindowResolver.isSafelyVisible(
+                final,
+                from: measuredView)
+        else {
+            throw Failure(message: "\(name) remains outside its scroll viewport")
+        }
     }
 
     private static func clickUntilElement(

@@ -138,10 +138,18 @@ enum AppSettings {
     static let defaultDetachPath = ("~/.local/bin/detach" as NSString).expandingTildeInPath
     static let uiE2E = UIE2EConfiguration.fromEnvironment()
     static let initialDetachPath = uiE2E?.cli.path ?? defaultDetachPath
-    static let defaults: UserDefaults = {
+    static let defaults = makeDefaults(
+        uiE2E: uiE2E,
+        bundleIdentifier: Bundle.main.bundleIdentifier)
+
+    static func makeDefaults(
+        uiE2E: UIE2EConfiguration?,
+        bundleIdentifier: String?
+    ) -> UserDefaults {
         guard let uiE2E,
-              let identifier = Bundle.main.bundleIdentifier,
-              let defaults = UserDefaults(suiteName: identifier + ".preferences") else {
+              let bundleIdentifier,
+              let defaults = UserDefaults(
+                suiteName: bundleIdentifier + ".preferences") else {
             return .standard
         }
         defaults.set(uiE2E.cli.path, forKey: "detachPath")
@@ -150,7 +158,7 @@ enum AppSettings {
         defaults.set(false, forKey: tipsEnabledKey)
         defaults.set(false, forKey: menuBarIconEnabledKey)
         return defaults
-    }()
+    }
     static let terminalBundleIdentifierKey = "terminalBundleIdentifier"
     static let notificationsEnabledKey = "sessionNotificationsEnabled"
     static let tipsEnabledKey = "tipsEnabled"
