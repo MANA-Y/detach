@@ -7,6 +7,8 @@ struct UIE2EConfiguration: Sendable {
     let cli: URL
     let result: URL
     let fixtureState: URL
+    let scenario: String
+    let driverBudgetSeconds: Int
 
     static func fromEnvironment(
         _ environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -104,11 +106,25 @@ struct UIE2EConfiguration: Sendable {
         guard fileManager.isExecutableFile(atPath: cli.path) else {
             try fail("fake CLI is not executable")
         }
+        let scenario = environment["DETACH_UI_E2E_SCENARIO"] ?? "main"
+        guard [
+            "main", "failure", "settings", "onboarding-first-run",
+            "onboarding-provider", "onboarding-approval",
+        ].contains(scenario) else {
+            try fail("DETACH_UI_E2E_SCENARIO is unsupported")
+        }
+        guard let rawDriverBudget = environment["DETACH_UI_E2E_DRIVER_BUDGET"],
+              let driverBudgetSeconds = Int(rawDriverBudget),
+              (1...30).contains(driverBudgetSeconds) else {
+            try fail("DETACH_UI_E2E_DRIVER_BUDGET must be from 1 through 30 seconds")
+        }
         return UIE2EConfiguration(
             root: root,
             cli: cli,
             result: try requiredURL("DETACH_UI_E2E_RESULT"),
-            fixtureState: try requiredURL("DETACH_UI_E2E_FIXTURE_STATE"))
+            fixtureState: try requiredURL("DETACH_UI_E2E_FIXTURE_STATE"),
+            scenario: scenario,
+            driverBudgetSeconds: driverBudgetSeconds)
     }
 }
 
@@ -122,10 +138,18 @@ enum AppSettings {
     static let defaultDetachPath = ("~/.local/bin/detach" as NSString).expandingTildeInPath
     static let uiE2E = UIE2EConfiguration.fromEnvironment()
     static let initialDetachPath = uiE2E?.cli.path ?? defaultDetachPath
-    static let defaults: UserDefaults = {
+    static let defaults = makeDefaults(
+        uiE2E: uiE2E,
+        bundleIdentifier: Bundle.main.bundleIdentifier)
+
+    static func makeDefaults(
+        uiE2E: UIE2EConfiguration?,
+        bundleIdentifier: String?
+    ) -> UserDefaults {
         guard let uiE2E,
-              let identifier = Bundle.main.bundleIdentifier,
-              let defaults = UserDefaults(suiteName: identifier + ".preferences") else {
+              let bundleIdentifier,
+              let defaults = UserDefaults(
+                suiteName: bundleIdentifier + ".preferences") else {
             return .standard
         }
         defaults.set(uiE2E.cli.path, forKey: "detachPath")
@@ -134,7 +158,7 @@ enum AppSettings {
         defaults.set(false, forKey: tipsEnabledKey)
         defaults.set(false, forKey: menuBarIconEnabledKey)
         return defaults
-    }()
+    }
     static let terminalBundleIdentifierKey = "terminalBundleIdentifier"
     static let notificationsEnabledKey = "sessionNotificationsEnabled"
     static let tipsEnabledKey = "tipsEnabled"

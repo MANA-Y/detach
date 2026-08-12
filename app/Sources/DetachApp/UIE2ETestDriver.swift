@@ -7,6 +7,91 @@ enum UIE2EControlFault {
     static var stopActionDisconnected = false
 }
 
+@MainActor
+enum UIE2EEventWindowResolver {
+    static func owner(
+        of element: any NSAccessibilityProtocol
+    ) -> NSWindow? {
+        if let window = element as? NSWindow { return window }
+        if let view = element as? NSView, let window = view.window { return window }
+        return element.accessibilityWindow() as? NSWindow
+    }
+
+    static func resolve(
+        owningWindow: NSWindow?,
+        at screenPoint: CGPoint,
+        candidates: [NSWindow]
+    ) -> NSWindow? {
+        if let owningWindow {
+            if let sheet = candidates.first(where: {
+                $0.sheetParent === owningWindow
+                    && $0.frame.contains(screenPoint)
+            }) {
+                return sheet
+            }
+            return owningWindow.frame.contains(screenPoint) ? owningWindow : nil
+        }
+        return candidates.first { $0.frame.contains(screenPoint) }
+    }
+
+    static func screenFrame(
+        _ frame: CGRect,
+        in view: NSView
+    ) -> CGRect? {
+        guard let window = view.window else { return nil }
+        let windowFrame = view.convert(frame, to: nil)
+        if window.sheetParent != nil {
+            return CGRect(
+                x: window.frame.minX + windowFrame.minX,
+                y: window.frame.minY + windowFrame.minY,
+                width: windowFrame.width,
+                height: windowFrame.height)
+        }
+        return window.convertToScreen(windowFrame)
+    }
+
+    static func isSafelyVisible(
+        _ targetFrame: CGRect,
+        from view: NSView
+    ) -> Bool {
+        guard let scrollView = view.enclosingScrollView,
+              let viewport = screenFrame(
+                scrollView.contentView.bounds,
+                in: scrollView.contentView)
+        else { return true }
+        let safeViewport = viewport.insetBy(dx: 8, dy: 8)
+        return safeViewport.contains(CGPoint(
+            x: targetFrame.midX,
+            y: targetFrame.midY))
+    }
+
+    static func scrollPageFrame(
+        toward targetFrame: CGRect,
+        from view: NSView
+    ) -> CGRect? {
+        guard !isSafelyVisible(targetFrame, from: view),
+              let scrollView = view.enclosingScrollView,
+              let scroller = scrollView.verticalScroller,
+              !scroller.isHidden,
+              let viewport = screenFrame(
+                scrollView.contentView.bounds,
+                in: scrollView.contentView)
+        else { return nil }
+        let pageFrames = [NSScroller.Part.incrementPage, .decrementPage]
+            .compactMap { part -> CGRect? in
+                let localFrame = scroller.rect(for: part)
+                guard localFrame.width > 0, localFrame.height > 0 else {
+                    return nil
+                }
+                return screenFrame(localFrame, in: scroller)
+            }
+        if targetFrame.midY < viewport.midY {
+            return pageFrames.min { $0.midY < $1.midY }
+        }
+        return pageFrames.max { $0.midY < $1.midY }
+    }
+}
+
 /// A narrowly gated, same-process accessibility driver for the packaged-app
 /// smoke test. Keeping traversal and actions inside the tested process avoids
 /// a second automation executable and its independent identity. This path is
@@ -38,12 +123,21 @@ enum UIE2ETestDriver {
     }
 
     private static var started = false
+    private static var scenarioDeadline = TimeInterval.greatestFiniteMagnitude
 
-    static func runIfRequested() async {
+    static func runIfRequested(installation: InstallationStore) async {
         guard let configuration = AppSettings.uiE2E, !started else { return }
         started = true
         Task { @MainActor in
-            let report = await runScenario(configuration: configuration)
+            scenarioDeadline = ProcessInfo.processInfo.systemUptime
+                + Double(configuration.driverBudgetSeconds)
+            trace(
+                "\(configuration.scenario) driver started "
+                    + "(budget \(configuration.driverBudgetSeconds)s)")
+            let report = await runScenario(
+                configuration: configuration,
+                installation: installation)
+            trace("\(configuration.scenario) driver finished: \(report.passed)")
             try? write(report, to: configuration.result)
             NSApp.terminate(nil)
             // A SwiftUI sheet can defer normal termination even after it is
@@ -56,6 +150,34 @@ enum UIE2ETestDriver {
     }
 
     private static func runScenario(
+        configuration: UIE2EConfiguration,
+        installation: InstallationStore
+    ) async -> Report {
+        switch configuration.scenario {
+        case "failure":
+            return await runFailurePresentation()
+        case "settings":
+            return await runSettings()
+        case "onboarding-first-run":
+            return await runOnboardingFirstRun(
+                configuration: configuration,
+                installation: installation)
+        case "onboarding-provider":
+            return await runOnboardingPresentation(
+                viewIdentifier: "onboarding-provider",
+                evidenceIdentifier: "onboarding-provider-detected",
+                check: "onboarding-detects-provider")
+        case "onboarding-approval":
+            return await runOnboardingPresentation(
+                viewIdentifier: "onboarding-approval",
+                evidenceIdentifier: "onboarding-open-system-settings",
+                check: "onboarding-explains-approval")
+        default:
+            return await runMainScenario(configuration: configuration)
+        }
+    }
+
+    private static func runMainScenario(
         configuration: UIE2EConfiguration
     ) async -> Report {
         var checks: [String] = []
@@ -76,11 +198,7 @@ enum UIE2ETestDriver {
             guard NSApp.setActivationPolicy(.regular) else {
                 throw Failure(message: "cannot enable test app activation")
             }
-            NSApp.activate(ignoringOtherApps: true)
-            mainWindow.makeKeyAndOrderFront(nil)
-            try await waitUntil("test app activation") {
-                NSApp.isActive && mainWindow.isKeyWindow
-            }
+            try await activate(mainWindow)
             try await Task.sleep(nanoseconds: 200_000_000)
             trace("test app activated")
 
@@ -210,6 +328,133 @@ enum UIE2ETestDriver {
         }
     }
 
+    private static func runFailurePresentation() async -> Report {
+        var checks: [String] = []
+        do {
+            let mainWindow = try testWindow()
+            try await activate(mainWindow)
+            let errorStatus = try await element(identifier: "session-status-error")
+            guard label(errorStatus)?.isEmpty == false else {
+                throw Failure(message: "actionable session failure has no semantics")
+            }
+            _ = try await measuredFrame(
+                identifier: "session-status-error",
+                name: "actionable session failure")
+            checks.append("actionable-failure-presentation")
+            return Report(
+                schema: 1, passed: true, checks: checks, error: nil,
+                accessibilityTree: snapshots())
+        } catch {
+            return Report(
+                schema: 1, passed: false, checks: checks,
+                error: error.localizedDescription,
+                accessibilityTree: snapshots())
+        }
+    }
+
+    private static func runSettings() async -> Report {
+        var checks: [String] = []
+        do {
+            let mainWindow = try testWindow()
+            try await activate(mainWindow)
+            try await keyPress(",", keyCode: 43, modifiers: [.command])
+            let tipsToggle = try await element(identifier: "settings-show-tips")
+            try requireSemanticControl(tipsToggle, name: "settings tips toggle")
+            let priorTips = AppSettings.defaults.bool(
+                forKey: AppSettings.tipsEnabledKey)
+            try await clickUntil(
+                tipsToggle,
+                name: "settings tips toggle",
+                outcome: "settings value persists") {
+                    AppSettings.defaults.bool(
+                        forKey: AppSettings.tipsEnabledKey) != priorTips
+                }
+            checks.append("settings-change-persists")
+            return Report(
+                schema: 1, passed: true, checks: checks, error: nil,
+                accessibilityTree: snapshots())
+        } catch {
+            return Report(
+                schema: 1, passed: false, checks: checks,
+                error: error.localizedDescription,
+                accessibilityTree: snapshots())
+        }
+    }
+
+    private static func runOnboardingFirstRun(
+        configuration: UIE2EConfiguration,
+        installation: InstallationStore
+    ) async -> Report {
+        var checks: [String] = []
+        do {
+            guard let mainWindow = NSApp.windows.first(where: {
+                $0.identifier?.rawValue == "main"
+            }) else {
+                throw Failure(message: "main test window is missing")
+            }
+            guard NSApp.setActivationPolicy(.regular) else {
+                throw Failure(message: "cannot enable test app activation")
+            }
+            try await activate(mainWindow)
+            _ = try await element(identifier: "onboarding-ready")
+            let openDashboard = try await element(
+                identifier: "onboarding-open-dashboard")
+            try await waitUntil("onboarding dashboard action enabled") {
+                isEnabled(openDashboard)
+            }
+            try requireSemanticControl(
+                openDashboard, name: "onboarding dashboard action")
+            try await clickUntil(
+                openDashboard,
+                name: "onboarding dashboard action",
+                outcome: "first-run dashboard") {
+                    installation.onboardingStep == .mainApp
+                        && elements().contains { roleOf($0) == .splitGroup }
+                }
+            checks.append("onboarding-first-run-completes")
+            return Report(
+                schema: 1, passed: true, checks: checks, error: nil,
+                accessibilityTree: snapshots())
+        } catch {
+            return Report(
+                schema: 1, passed: false, checks: checks,
+                error: error.localizedDescription,
+                accessibilityTree: snapshots())
+        }
+    }
+
+    private static func runOnboardingPresentation(
+        viewIdentifier: String,
+        evidenceIdentifier: String,
+        check: String
+    ) async -> Report {
+        var checks: [String] = []
+        do {
+            guard let mainWindow = NSApp.windows.first(where: {
+                $0.identifier?.rawValue == "main"
+            }) else {
+                throw Failure(message: "main test window is missing")
+            }
+            guard NSApp.setActivationPolicy(.regular) else {
+                throw Failure(message: "cannot enable test app activation")
+            }
+            try await activate(mainWindow)
+            let view = try await element(identifier: viewIdentifier)
+            let evidence = try await element(identifier: evidenceIdentifier)
+            try requireGeometry(view, name: viewIdentifier)
+            try requireSemanticControl(evidence, name: evidenceIdentifier)
+            checks.append(check)
+            return Report(
+                schema: 1, passed: true, checks: checks, error: nil,
+                accessibilityTree: snapshots())
+        } catch {
+            return Report(
+                schema: 1, passed: false, checks: checks,
+                error: error.localizedDescription,
+                accessibilityTree: snapshots())
+        }
+    }
+
     private static func trace(_ message: String) {
         FileHandle.standardError.write(Data("UI e2e: \(message)\n".utf8))
     }
@@ -277,6 +522,10 @@ enum UIE2ETestDriver {
     ) async throws {
         for _ in 0..<attempts {
             if condition() { return }
+            guard ProcessInfo.processInfo.systemUptime < scenarioDeadline else {
+                throw Failure(
+                    message: "scenario budget expired while waiting for \(description)")
+            }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
         throw Failure(message: "timed out waiting for \(description)")
@@ -312,6 +561,7 @@ enum UIE2ETestDriver {
         name: String
     ) async throws {
         var targetFrame = frame(element)
+        let owningWindow = UIE2EEventWindowResolver.owner(of: element)
         if let identifier = identifierOf(element),
            usesMeasuredGeometry(identifier) {
             try await waitUntil("real control geometry for \(name)") {
@@ -321,14 +571,80 @@ enum UIE2ETestDriver {
                 targetFrame = measured
                 return !measured.isEmpty
             }
+            if identifier == "onboarding-open-dashboard" {
+                try await revealMeasuredControl(
+                    element,
+                    identifier: identifier,
+                    name: name)
+                guard let measured = UIE2EGeometryRegistry.frame(for: identifier)
+                else {
+                    throw Failure(message: "\(name) lost its measured geometry")
+                }
+                targetFrame = measured
+            }
         }
-        try await click(frame: targetFrame, name: name)
+        try await click(
+            frame: targetFrame,
+            name: name,
+            owningWindow: owningWindow)
     }
 
     private static func usesMeasuredGeometry(_ identifier: String) -> Bool {
         identifier == "new-session-button"
+            || identifier == "settings-show-tips"
+            || identifier.hasPrefix("onboarding-")
             || identifier.hasPrefix("session-row-")
             || identifier.hasPrefix("session-action-")
+    }
+
+    private static func revealMeasuredControl(
+        _ element: any NSAccessibilityProtocol,
+        identifier: String,
+        name: String
+    ) async throws {
+        let measuredView = (element as? UIE2EGeometryView)
+            ?? elements().compactMap { $0 as? UIE2EGeometryView }.first {
+                $0.accessibilityIdentifier() == identifier
+            }
+        guard let measuredView else {
+            throw Failure(message: "\(name) has no measured control view")
+        }
+        for _ in 0..<3 {
+            measuredView.publishFrame()
+            guard let current = UIE2EGeometryRegistry.frame(for: identifier)
+            else {
+                throw Failure(message: "\(name) lost its measured geometry")
+            }
+            if UIE2EEventWindowResolver.isSafelyVisible(
+                current,
+                from: measuredView) {
+                return
+            }
+            guard let pageFrame = UIE2EEventWindowResolver.scrollPageFrame(
+                toward: current,
+                from: measuredView)
+            else {
+                throw Failure(message: "\(name) has no visible scroll target")
+            }
+            try await click(
+                frame: pageFrame,
+                name: "scroll toward \(name)",
+                owningWindow: measuredView.window)
+            try await waitUntil("visible \(name)", attempts: 10) {
+                measuredView.publishFrame()
+                guard let moved = UIE2EGeometryRegistry.frame(for: identifier)
+                else { return false }
+                return moved != current
+            }
+        }
+        measuredView.publishFrame()
+        guard let final = UIE2EGeometryRegistry.frame(for: identifier),
+              UIE2EEventWindowResolver.isSafelyVisible(
+                final,
+                from: measuredView)
+        else {
+            throw Failure(message: "\(name) remains outside its scroll viewport")
+        }
     }
 
     private static func clickUntilElement(
@@ -396,15 +712,27 @@ enum UIE2ETestDriver {
         return result!
     }
 
-    private static func click(frame targetFrame: CGRect, name: String) async throws {
+    private static func click(
+        frame targetFrame: CGRect,
+        name: String,
+        owningWindow: NSWindow? = nil
+    ) async throws {
         let screenPoint = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
         let candidateWindows = NSApp.windows.flatMap(\.sheets) + NSApp.windows
-        guard let window = candidateWindows.first(where: { candidate in
-            candidate.frame.contains(screenPoint)
-        }) else {
-            throw Failure(message: "\(name) is outside every visible test window")
+        guard let window = UIE2EEventWindowResolver.resolve(
+            owningWindow: owningWindow,
+            at: screenPoint,
+            candidates: candidateWindows)
+        else {
+            let scope = owningWindow == nil
+                ? "every visible test window"
+                : "its owning window"
+            throw Failure(message: "\(name) is outside \(scope)")
         }
-        trace("clicking \(name) at \(screenPoint.x),\(screenPoint.y)")
+        let windowName = window.identifier?.rawValue ?? window.title
+        trace(
+            "clicking \(name) at \(screenPoint.x),\(screenPoint.y) "
+                + "in window \(windowName)")
         let windowPoint = window.convertPoint(fromScreen: screenPoint)
         if let contentView = window.contentView {
             let contentPoint = contentView.convert(windowPoint, from: nil)
@@ -433,6 +761,49 @@ enum UIE2ETestDriver {
         }
     }
 
+    private static func keyPress(
+        _ characters: String,
+        keyCode: UInt16,
+        modifiers: NSEvent.ModifierFlags
+    ) async throws {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            guard let event = NSEvent.keyEvent(
+                with: type,
+                location: .zero,
+                modifierFlags: modifiers,
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: NSApp.keyWindow?.windowNumber ?? 0,
+                context: nil,
+                characters: characters,
+                charactersIgnoringModifiers: characters,
+                isARepeat: false,
+                keyCode: keyCode)
+            else { throw Failure(message: "cannot create settings keyboard event") }
+            NSApp.postEvent(event, atStart: false)
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+
+    private static func activate(_ mainWindow: NSWindow) async throws {
+        NSApp.activate(ignoringOtherApps: true)
+        mainWindow.makeKeyAndOrderFront(nil)
+        try await waitUntil("test app activation") {
+            NSApp.isActive && mainWindow.isKeyWindow
+        }
+    }
+
+    private static func testWindow() throws -> NSWindow {
+        guard let mainWindow = NSApp.windows.first(where: {
+            $0.identifier?.rawValue == "main"
+        }) else {
+            throw Failure(message: "main test window is missing")
+        }
+        guard NSApp.setActivationPolicy(.regular) else {
+            throw Failure(message: "cannot enable test app activation")
+        }
+        return mainWindow
+    }
+
     private static func find(identifier: String) -> (any NSAccessibilityProtocol)? {
         elements().first { identifierOf($0) == identifier }
     }
@@ -441,7 +812,7 @@ enum UIE2ETestDriver {
         var result: [any NSAccessibilityProtocol] = []
         var roots: [any NSAccessibilityProtocol] = []
         let mainWindows = NSApp.windows.filter {
-            $0.identifier?.rawValue == "main" || $0.title == "Detach"
+            $0.isVisible && $0.level == .normal
         }
         for window in mainWindows {
             roots.append(window)

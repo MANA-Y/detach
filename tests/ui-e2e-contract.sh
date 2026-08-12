@@ -5,10 +5,14 @@ set -euo pipefail
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/app/build/Detach.app"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-ui-e2e-contract.XXXXXX")"
+FAKE_ROOT=""
 
 cleanup() {
   case "$TMP_ROOT" in
     "${TMPDIR:-/tmp}"/detach-ui-e2e-contract.*) rm -rf "$TMP_ROOT" ;;
+  esac
+  case "$FAKE_ROOT" in
+    /private/tmp/detach-ui-e2e.contract.*) rm -rf "$FAKE_ROOT" ;;
   esac
 }
 trap cleanup EXIT
@@ -18,6 +22,54 @@ run_validation() {
 }
 
 run_validation "$APP"
+
+for invocation in \
+  'list --json' \
+  'codex logs --ansi detach-codex-ui-running' \
+  'claude logs --ansi detach-claude-ui-completed' \
+  'codex stop detach-codex-ui-running' \
+  'claude delete --force detach-claude-ui-completed' \
+  'storage --json' \
+  'config tmux-style' \
+  'config tmux-extended-keys'; do
+  DETACH_UI_E2E_VALIDATE_INVOCATION="$invocation" "$ROOT/tests/ui-e2e.sh"
+done
+
+for invocation in \
+  'config tmux-style detach' \
+  'config tmux-extended-keys on' \
+  'storage cleanup --dry-run --json' \
+  'codex stop detach-codex-ui-completed'; do
+  if DETACH_UI_E2E_VALIDATE_INVOCATION="$invocation" \
+      "$ROOT/tests/ui-e2e.sh"; then
+    printf 'UI e2e invocation policy accepted mutation: %s\n' \
+      "$invocation" >&2
+    exit 1
+  fi
+done
+
+FAKE_ROOT="$(mktemp -d /private/tmp/detach-ui-e2e.contract.XXXXXX)"
+mkdir -p "$FAKE_ROOT/fake"
+FAKE_STATE="$FAKE_ROOT/fake/state"
+printf 'empty\n' >"$FAKE_STATE"
+
+run_fake() {
+  DETACH_UI_E2E_ROOT="$FAKE_ROOT" \
+  DETACH_UI_E2E_FIXTURE_STATE="$FAKE_STATE" \
+    "$ROOT/tests/fake-ui-cli" "$@"
+}
+
+storage_json="$(run_fake storage --json)"
+[ "$(printf '%s\n' "$storage_json" | plutil -extract schema raw -o - -)" = 1 ]
+[ "$(printf '%s\n' "$storage_json" | plutil -extract complete raw -o - -)" = true ]
+[ "$(printf '%s\n' "$storage_json" | plutil -extract state_root raw -o - -)" = \
+  "$FAKE_ROOT/state/detach" ]
+[ "$(run_fake config tmux-style)" = inherit ]
+[ "$(run_fake config tmux-extended-keys)" = off ]
+if run_fake config tmux-style detach >/dev/null 2>&1; then
+  printf 'Fake UI CLI accepted a Settings mutation\n' >&2
+  exit 1
+fi
 
 mkdir -p "$TMP_ROOT/mismatch.app/Contents/MacOS" \
   "$TMP_ROOT/mismatch.app/Contents/Resources"

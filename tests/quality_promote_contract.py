@@ -166,7 +166,10 @@ mode = os.environ.get("FAKE_PROMOTE_MODE", "success")
 if arguments[0] == "api":
     path = arguments[1]
     if path.endswith("/commits/{MAIN}/pulls"):
-        records = [] if mode == "no-pr" else [{{
+        marker = Path(os.environ["FAKE_PROMOTE_EVIDENCE"]).parent / "eventual-pr-seen"
+        missing = mode == "no-pr" or (mode == "eventual-pr" and not marker.exists())
+        if mode == "eventual-pr": marker.write_text("yes")
+        records = [] if missing else [{{
             "number": 25,
             "state": "closed",
             "merged_at": "2026-08-12T12:04:00Z",
@@ -240,12 +243,15 @@ def invoke(
             "DETACH_QUALITY_PROMOTE_GIT": str(fake_git),
             "FAKE_PROMOTE_EVIDENCE": str(evidence),
             "FAKE_PROMOTE_MODE": mode,
+            "DETACH_QUALITY_PROMOTE_RETRY_SECONDS": "0.01",
         }
     )
     if test_mode:
         environment["DETACH_QUALITY_PROMOTE_TEST_MODE"] = "1"
     else:
         environment.pop("DETACH_QUALITY_PROMOTE_TEST_MODE", None)
+        for name in ("GITHUB_ACTIONS", "GITHUB_EVENT_NAME", "GITHUB_REF"):
+            environment.pop(name, None)
     result = subprocess.run(
         [
             str(ROOT / "scripts/quality-promote"),
@@ -295,6 +301,11 @@ def main() -> None:
             raise AssertionError("promotion evidence is not deterministic")
         if (run_dir / "promotion.md").read_bytes() != (second_run / "promotion.md").read_bytes():
             raise AssertionError("promotion summary is not deterministic")
+
+        eventual = root / "eventual-pr"
+        invoke(fake_gh, fake_git, evidence, eventual, mode="eventual-pr")
+        if not next(eventual.glob("*/promotion.tsv"), None):
+            raise AssertionError("promotion did not retry eventual PR association")
 
         for mode, diagnostic in (
             ("one-parent", "not an exact two-parent merge"),

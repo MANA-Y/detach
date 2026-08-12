@@ -111,6 +111,18 @@ def main() -> None:
             "scenario\tSC-APP-SETTINGS-UNIT\tswift\tlegacy-stage\t",
             "scenario\tSC-APP-SETTINGS-UNIT\tswift\tplanned\t",
             1,
+        ).replace(
+            "scenario\tSC-UI-SETTINGS\tui-e2e\tinstrumented\t",
+            "scenario\tSC-UI-SETTINGS\tui-e2e\tplanned\t",
+            1,
+        ).replace(
+            ",SC-UI-SETTINGS\tThe packaged real-control journeys own this test harness.",
+            "\tThe packaged real-control journeys own this test harness.",
+            1,
+        ).replace(
+            "\tSC-UI-SETTINGS\tThe packaged Settings journey covers its semantic control.",
+            "\tSC-UI-DASHBOARD\tThe packaged Settings journey covers its semantic control.",
+            1,
         ),
         "requirement has no automated verification scenario: QC-APP-SETTINGS",
     )

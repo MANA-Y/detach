@@ -50,7 +50,21 @@ struct OnboardingView: View {
 
     init(store: InstallationStore) {
         self.store = store
-        _poller = State(initialValue: OnboardingLivePoller(store: store))
+// quality-coverage:begin ui-e2e-instrumentation
+        if AppSettings.uiE2E != nil {
+            _poller = State(initialValue: OnboardingLivePoller(
+                refreshStatuses: {},
+                servicesEnabled: { false },
+                readinessConfirmed: { false },
+                providerCheckPassed: { false },
+                reconcile: { false },
+                locate: { ProviderAvailability(codex: true) },
+                heartbeatIsHealthy: { store.watchdogHeartbeat.healthy },
+                installedCopyExists: { false }))
+        } else {
+            _poller = State(initialValue: OnboardingLivePoller(store: store))
+        }
+// quality-coverage:end ui-e2e-instrumentation
     }
 
     private var step: OnboardingStep { store.onboardingStep }
@@ -85,6 +99,14 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
+// quality-coverage:begin ui-e2e-instrumentation
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(onboardingIdentifier)
+        .uiE2ESemanticProbe(
+            identifier: onboardingIdentifier,
+            label: title,
+            role: .group)
+// quality-coverage:end ui-e2e-instrumentation
         .task(id: step) { poller.update(for: step) }
         .onDisappear { poller.stop() }
     }
@@ -101,6 +123,18 @@ struct OnboardingView: View {
     private var scale: CGFloat {
         onboardingFontSize / CGFloat(AppFontSize.defaultValue)
     }
+
+// quality-coverage:begin ui-e2e-instrumentation
+    private var onboardingIdentifier: String {
+        switch step {
+        case .moveToApplications: "onboarding-move"
+        case .autoSetup: "onboarding-first-run"
+        case .permissions: "onboarding-approval"
+        case .provider: "onboarding-provider"
+        case .done, .mainApp: "onboarding-ready"
+        }
+    }
+// quality-coverage:end ui-e2e-instrumentation
 
     // MARK: - Progress
 
@@ -318,6 +352,13 @@ struct OnboardingView: View {
                     statusRow(
                         icon: "checkmark.circle.fill", tint: Brand.teal,
                         text: L10n.string("Detected — verifying…"))
+// quality-coverage:begin ui-e2e-instrumentation
+                        .accessibilityIdentifier("onboarding-provider-detected")
+                        .uiE2ESemanticProbe(
+                            identifier: "onboarding-provider-detected",
+                            label: L10n.string("Detected — verifying…"),
+                            role: .staticText)
+// quality-coverage:end ui-e2e-instrumentation
                 } else if let startedAt = guidedInstallStartedAt,
                           Date().timeIntervalSince(startedAt) > 120 {
                     statusRow(
@@ -394,12 +435,26 @@ struct OnboardingView: View {
                         store.openPowerHelperApprovalSettings()
                     }
                     .buttonStyle(.link)
+// quality-coverage:begin ui-e2e-instrumentation
+                    .accessibilityIdentifier("onboarding-open-system-settings")
+                    .uiE2ESemanticProbe(
+                        identifier: "onboarding-open-system-settings",
+                        label: L10n.string("Open System Settings"),
+                        role: .button)
+// quality-coverage:end ui-e2e-instrumentation
                 } else {
                     Button(L10n.string("Open System Settings")) {
                         store.openPowerHelperApprovalSettings()
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Brand.indigo)
+// quality-coverage:begin ui-e2e-instrumentation
+                    .accessibilityIdentifier("onboarding-open-system-settings")
+                    .uiE2ESemanticProbe(
+                        identifier: "onboarding-open-system-settings",
+                        label: L10n.string("Open System Settings"),
+                        role: .button)
+// quality-coverage:end ui-e2e-instrumentation
                 }
                 Button(L10n.string("What exactly is enabled and why?")) {
                     showsPermissionsExplainer.toggle()
@@ -443,6 +498,13 @@ struct OnboardingView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Brand.teal)
                 .disabled(!poller.heartbeatHealthy)
+// quality-coverage:begin ui-e2e-instrumentation
+                .accessibilityIdentifier("onboarding-open-dashboard")
+                .uiE2ESemanticProbe(
+                    identifier: "onboarding-open-dashboard",
+                    label: L10n.string("Open Dashboard"),
+                    role: .button)
+// quality-coverage:end ui-e2e-instrumentation
             }
 
         case .mainApp:
@@ -451,6 +513,13 @@ struct OnboardingView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Brand.teal)
+// quality-coverage:begin ui-e2e-instrumentation
+            .accessibilityIdentifier("onboarding-open-dashboard")
+            .uiE2ESemanticProbe(
+                identifier: "onboarding-open-dashboard",
+                label: L10n.string("Open Dashboard"),
+                role: .button)
+// quality-coverage:end ui-e2e-instrumentation
         }
     }
 
@@ -732,3 +801,27 @@ struct OnboardingView: View {
         }
     }
 }
+
+// quality-coverage:begin ui-e2e-instrumentation
+private extension View {
+    @ViewBuilder
+    func uiE2ESemanticProbe(
+        identifier: String,
+        label: String,
+        role: NSAccessibility.Role
+    ) -> some View {
+#if !DEBUG
+        background {
+            if AppSettings.uiE2E != nil {
+                UIE2EGeometryProbe(
+                    identifier: identifier,
+                    semanticLabel: label,
+                    semanticRole: role)
+            }
+        }
+#else
+        self
+#endif
+    }
+}
+// quality-coverage:end ui-e2e-instrumentation

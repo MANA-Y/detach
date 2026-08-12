@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from typing import Any, NoReturn
 
 from quality_policy import POLICY_FILE, Policy
@@ -46,6 +47,8 @@ PROMOTION_FIELDS = (
     "source_manifest_sha256",
 )
 PROMOTION_KEYS = set(PROMOTION_FIELDS)
+PR_ASSOCIATION_ATTEMPTS = 4
+PR_ASSOCIATION_RETRY_SECONDS = 2.0
 
 
 class PromotionError(Exception):
@@ -143,24 +146,34 @@ def gh(executable: str, path: str) -> Any:
 def merged_pull_request(
     executable: str, repository: str, main_commit: str, parents: list[str]
 ) -> dict[str, Any]:
-    records = gh(executable, f"repos/{repository}/commits/{main_commit}/pulls")
-    if not isinstance(records, list):
-        raise PromotionError("associated pull-request response is malformed")
-    matches = [
-        record
-        for record in records
-        if isinstance(record, dict)
-        and record.get("state") == "closed"
-        and record.get("merge_commit_sha") == main_commit
-        and isinstance(record.get("merged_at"), str)
-        and isinstance(record.get("base"), dict)
-        and isinstance(record.get("head"), dict)
-        and record["base"].get("sha") == parents[0]
-        and record["head"].get("sha") == parents[1]
-    ]
-    if len(matches) != 1 or not isinstance(matches[0].get("number"), int):
-        raise PromotionError("main commit has no unique exact merged pull request")
-    return matches[0]
+    retry_seconds = PR_ASSOCIATION_RETRY_SECONDS
+    if os.environ.get("DETACH_QUALITY_PROMOTE_TEST_MODE") == "1":
+        retry_seconds = float(os.environ.get(
+            "DETACH_QUALITY_PROMOTE_RETRY_SECONDS", "0"
+        ))
+        if retry_seconds < 0:
+            raise PromotionError("promotion retry interval must be non-negative")
+    for attempt in range(1, PR_ASSOCIATION_ATTEMPTS + 1):
+        records = gh(executable, f"repos/{repository}/commits/{main_commit}/pulls")
+        if not isinstance(records, list):
+            raise PromotionError("associated pull-request response is malformed")
+        matches = [
+            record
+            for record in records
+            if isinstance(record, dict)
+            and record.get("state") == "closed"
+            and record.get("merge_commit_sha") == main_commit
+            and isinstance(record.get("merged_at"), str)
+            and isinstance(record.get("base"), dict)
+            and isinstance(record.get("head"), dict)
+            and record["base"].get("sha") == parents[0]
+            and record["head"].get("sha") == parents[1]
+        ]
+        if len(matches) == 1 and isinstance(matches[0].get("number"), int):
+            return matches[0]
+        if attempt < PR_ASSOCIATION_ATTEMPTS:
+            time.sleep(retry_seconds)
+    raise PromotionError("main commit has no unique exact merged pull request")
 
 
 def successful_run(

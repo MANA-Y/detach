@@ -426,6 +426,20 @@ struct SettingsView: View {
                         .frame(minWidth: 44, alignment: .trailing)
                 }
                 Toggle(L10n.string("Show tips"), isOn: $tipsEnabled)
+// quality-coverage:begin ui-e2e-instrumentation
+                    .accessibilityIdentifier("settings-show-tips")
+#if !DEBUG
+                    .overlay(alignment: .trailing) {
+                        if AppSettings.uiE2E != nil {
+                            UIE2EGeometryProbe(
+                                identifier: "settings-show-tips",
+                                semanticLabel: L10n.string("Show tips"),
+                                semanticRole: .checkBox)
+                                .frame(width: 38, height: 18)
+                        }
+                    }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
             }
             Section(L10n.string("Menu Bar")) {
                 Toggle(
