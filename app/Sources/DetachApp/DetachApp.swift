@@ -8,6 +8,7 @@ struct UIE2EConfiguration: Sendable {
     let result: URL
     let fixtureState: URL
     let scenario: String
+    let driverBudgetSeconds: Int
 
     static func fromEnvironment(
         _ environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -112,12 +113,18 @@ struct UIE2EConfiguration: Sendable {
         ].contains(scenario) else {
             try fail("DETACH_UI_E2E_SCENARIO is unsupported")
         }
+        guard let rawDriverBudget = environment["DETACH_UI_E2E_DRIVER_BUDGET"],
+              let driverBudgetSeconds = Int(rawDriverBudget),
+              (1...30).contains(driverBudgetSeconds) else {
+            try fail("DETACH_UI_E2E_DRIVER_BUDGET must be from 1 through 30 seconds")
+        }
         return UIE2EConfiguration(
             root: root,
             cli: cli,
             result: try requiredURL("DETACH_UI_E2E_RESULT"),
             fixtureState: try requiredURL("DETACH_UI_E2E_FIXTURE_STATE"),
-            scenario: scenario)
+            scenario: scenario,
+            driverBudgetSeconds: driverBudgetSeconds)
     }
 }
 

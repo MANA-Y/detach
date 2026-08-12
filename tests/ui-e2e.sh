@@ -150,9 +150,14 @@ done
 
 run_app_scenario() {
   local scenario="$1" fixture="$2" scenario_budget="$3"
-  local app_status check_index=0 actual check scenario_deadline
+  local app_status check_index=0 actual check scenario_deadline driver_budget
   shift 3
   scenario_deadline=$((SECONDS + scenario_budget))
+  driver_budget=$((scenario_budget - 3))
+  [ "$driver_budget" -ge 1 ] || {
+    printf 'UI e2e: %s process budget leaves no driver deadline\n' "$scenario" >&2
+    exit 2
+  }
   RESULT="$TEST_ROOT/result-$scenario.json"
   APP_LOG="$TEST_ROOT/app-$scenario.log"
   printf '%s\n' "$fixture" >"$FIXTURE_STATE"
@@ -172,6 +177,7 @@ run_app_scenario() {
   DETACH_UI_E2E_RESULT="$RESULT" \
   DETACH_UI_E2E_FIXTURE_STATE="$FIXTURE_STATE" \
   DETACH_UI_E2E_SCENARIO="$scenario" \
+  DETACH_UI_E2E_DRIVER_BUDGET="$driver_budget" \
   LANG=en_US.UTF-8 \
   LC_ALL=en_US.UTF-8 \
     "$TEST_APP/Contents/MacOS/Detach" >"$APP_LOG" 2>&1 &
@@ -272,11 +278,11 @@ run_app_scenario main sessions 20 \
   new-session-sheet-semantics \
   empty-dashboard-state \
   installed-app-focus-restored
-run_app_scenario failure error 5 actionable-failure-presentation
-run_app_scenario settings empty 5 settings-change-persists
-run_app_scenario onboarding-first-run empty 5 onboarding-first-run-completes
-run_app_scenario onboarding-provider empty 5 onboarding-detects-provider
-run_app_scenario onboarding-approval empty 5 onboarding-explains-approval
+run_app_scenario failure error 8 actionable-failure-presentation
+run_app_scenario settings empty 8 settings-change-persists
+run_app_scenario onboarding-first-run empty 8 onboarding-first-run-completes
+run_app_scenario onboarding-provider empty 8 onboarding-detects-provider
+run_app_scenario onboarding-approval empty 8 onboarding-explains-approval
 
 [ -s "$FAKE_DIR/invocations.log" ]
 if grep -Ev '^(list --json|(codex|claude) logs --ansi detach-(codex-ui-running|claude-ui-completed)|codex stop detach-codex-ui-running|claude delete --force detach-claude-ui-completed)$' \

@@ -38,14 +38,21 @@ enum UIE2ETestDriver {
     }
 
     private static var started = false
+    private static var scenarioDeadline = TimeInterval.greatestFiniteMagnitude
 
     static func runIfRequested(installation: InstallationStore) async {
         guard let configuration = AppSettings.uiE2E, !started else { return }
         started = true
         Task { @MainActor in
+            scenarioDeadline = ProcessInfo.processInfo.systemUptime
+                + Double(configuration.driverBudgetSeconds)
+            trace(
+                "\(configuration.scenario) driver started "
+                    + "(budget \(configuration.driverBudgetSeconds)s)")
             let report = await runScenario(
                 configuration: configuration,
                 installation: installation)
+            trace("\(configuration.scenario) driver finished: \(report.passed)")
             try? write(report, to: configuration.result)
             NSApp.terminate(nil)
             // A SwiftUI sheet can defer normal termination even after it is
@@ -242,7 +249,12 @@ enum UIE2ETestDriver {
             let mainWindow = try testWindow()
             try await activate(mainWindow)
             let errorStatus = try await element(identifier: "session-status-error")
-            try requireGeometry(errorStatus, name: "actionable session failure")
+            guard label(errorStatus)?.isEmpty == false else {
+                throw Failure(message: "actionable session failure has no semantics")
+            }
+            _ = try await measuredFrame(
+                identifier: "session-status-error",
+                name: "actionable session failure")
             checks.append("actionable-failure-presentation")
             return Report(
                 schema: 1, passed: true, checks: checks, error: nil,
@@ -425,6 +437,10 @@ enum UIE2ETestDriver {
     ) async throws {
         for _ in 0..<attempts {
             if condition() { return }
+            guard ProcessInfo.processInfo.systemUptime < scenarioDeadline else {
+                throw Failure(
+                    message: "scenario budget expired while waiting for \(description)")
+            }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
         throw Failure(message: "timed out waiting for \(description)")

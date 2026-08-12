@@ -206,6 +206,13 @@ struct StatusBar: View {
                     .foregroundStyle(.orange)
 // quality-coverage:begin ui-e2e-instrumentation
                     .accessibilityIdentifier("session-status-error")
+#if !DEBUG
+                    .background {
+                        if AppSettings.uiE2E != nil {
+                            UIE2EGeometryProbe(identifier: "session-status-error")
+                        }
+                    }
+#endif
 // quality-coverage:end ui-e2e-instrumentation
             }
             Spacer()
