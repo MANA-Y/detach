@@ -9,7 +9,12 @@ from pathlib import Path
 import sys
 from typing import Any, NoReturn
 
-from quality_dashboard import DashboardError, read_manifest, read_summary
+from quality_dashboard import (
+    DashboardError,
+    MANIFEST_SCHEMA,
+    read_manifest,
+    read_summary,
+)
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,6 +39,25 @@ def percentile(values: list[int], percent: int) -> int:
     return ordered[max(0, index - 1)]
 
 
+def uses_unsupported_schema(run_dir: Path) -> bool:
+    manifest = run_dir / "manifest.tsv"
+    if not manifest.is_file() or manifest.is_symlink():
+        return False
+    try:
+        lines = manifest.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return False
+    if not lines:
+        return False
+    fields = lines[0].split("\t")
+    return (
+        len(fields) == 2
+        and fields[0] == "schema"
+        and fields[1].isdigit()
+        and fields[1] != MANIFEST_SCHEMA
+    )
+
+
 def collect(result_root: Path) -> dict[str, Any]:
     if not result_root.is_dir() or result_root.is_symlink():
         raise HistoryError("result root is missing or unsafe")
@@ -45,10 +69,12 @@ def collect(result_root: Path) -> dict[str, Any]:
     for run_dir in sorted(result_root.iterdir()):
         if not run_dir.is_dir() or run_dir.is_symlink():
             continue
+        if uses_unsupported_schema(run_dir):
+            continue
         try:
-            manifest = read_manifest(run_dir)
+            manifest = read_manifest(run_dir, require_dashboard_fields=False)
             stages = read_summary(run_dir, manifest)
-        except DashboardError:
+        except (DashboardError, OSError, UnicodeError):
             invalid += 1
             continue
         if manifest["result"] not in ("passed", "failed", "interrupted"):

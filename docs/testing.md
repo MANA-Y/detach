@@ -38,8 +38,10 @@
   granularity until it gets scenario markers.
 - `scripts/quality-history [RESULT_ROOT]` reports p50/p95 wall and stage timing,
   ordinary failures, and execution-environment failures across retained local
-  or downloaded current-schema gate evidence. Add `--format json` for care
-  automation. It is run telemetry, not policy history or readiness evidence.
+  or downloaded current-schema gate evidence. A declared unsupported schema is
+  outside the sample. Current-schema timing can span earlier policy identifiers
+  without dashboard-only fields. Add `--format json` for care automation. It is
+  run telemetry, not policy history or readiness evidence.
 - `scripts/quality-care validate` checks the four required eval categories.
   `scripts/quality-care evaluate --output <json>` grades exact diff impact and
   private-scope outcomes. `scripts/quality-care assess` fails before the

@@ -33,7 +33,11 @@ the only ordinary merge authority. Unknown paths select the full plan.
   evidence finalization and process-group cleanup.
 - `scripts/quality-history [--format tsv|json] [RESULT_ROOT]` validates retained
   current-schema summaries and reports run and failure counts plus p50 and p95
-  wall and stage durations. It cannot produce readiness evidence.
+  wall and stage durations. A declared unsupported schema is outside the
+  sample. Current-schema timing can span earlier policy identifiers and does
+  not require dashboard-only manifest fields. Malformed telemetry evidence
+  stays invalid. The tool cannot produce readiness evidence or decode an old
+  layout.
 - `scripts/quality-care validate` checks the versioned workflow eval corpus.
   `scripts/quality-care evaluate` grades diff impact and private-scope cases.
   `scripts/quality-care assess` compares the results with retained run latency.
@@ -210,8 +214,9 @@ The same artifact opens locally and deploys to GitHub Pages. Main and mutation
 workflows deploy only after a green `ci-main` gate or a green mutation score for
 that policy. The bounded care workflow can publish a validated attention
 result, then marks its run failed and opens one issue. A later deploy restores
-the newest valid care artifact for the current policy. No workflow publishes
-pull request or local gate evidence.
+the newest valid care artifact for the current policy. The next healthy care
+run closes the issue. No workflow publishes pull request or local gate
+evidence.
 
 ## Definition of done
 

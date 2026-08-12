@@ -188,3 +188,31 @@ jobs:
         run: |
           printf 'quality-care: attention evidence was published and requires repair\n' >&2
           exit 1
+
+  resolved:
+    if: needs.care.result == 'success' && needs.care.outputs.attention == 'false'
+    needs:
+      - care
+      - quality-dashboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Close the resolved quality-care issue when it exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title='[quality-care] Scheduled control loop needs attention'
+          existing="$(timeout 20s gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "$title in:title" \
+            --json number \
+            --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            timeout 20s gh issue close "$existing" \
+              --repo "$GITHUB_REPOSITORY" \
+              --comment 'The bounded quality-care control loop is healthy again.'
+          fi
