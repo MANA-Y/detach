@@ -15,6 +15,8 @@ It lists current specification ownership and verification links.
 - `*.sh`
 - `.gitattributes`
 - `.github/*`
+- `.github/workflows/documentation-care.yml`
+- `.github/workflows/quality-care.yml`
 - `.github/workflows/quality-gates.yml`
 - `.github/workflows/quality-mutations.yml`
 - `.gitignore`
@@ -28,6 +30,7 @@ It lists current specification ownership and verification links.
 - `quality/*`
 - `scripts/*`
 - `scripts/quality-baseline`
+- `scripts/quality-care`
 - `scripts/quality-dashboard`
 - `scripts/quality-gate`
 - `scripts/quality-history`
@@ -45,8 +48,10 @@ It lists current specification ownership and verification links.
 - `tests/shell-safety*`
 - `tests/test-suite-contract.sh`
 - `tools/quality_baseline.py`
+- `tools/quality_care.py`
 - `tools/quality_dashboard.py`
 - `tools/quality_gate.py`
+- `tools/quality_history.py`
 - `tools/quality_metrics.py`
 - `tools/quality_mutation.py`
 - `tools/quality_policy.py`

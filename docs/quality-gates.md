@@ -31,8 +31,12 @@ the only ordinary merge authority. Unknown paths select the full plan.
   an instrumented scenario, or its direct policy command otherwise. The owning
   stage process deadline bounds both forms. The helper has 30 seconds for
   evidence finalization and process-group cleanup.
-- `scripts/quality-history [RESULT_ROOT]` reports run and failure counts plus
-  p50 and p95 wall and stage durations. It cannot produce readiness evidence.
+- `scripts/quality-history [--format tsv|json] [RESULT_ROOT]` validates retained
+  current-schema summaries and reports run and failure counts plus p50 and p95
+  wall and stage durations. It cannot produce readiness evidence.
+- `scripts/quality-care validate` checks the versioned workflow eval corpus.
+  `scripts/quality-care evaluate` grades diff impact and private-scope cases.
+  `scripts/quality-care assess` compares the results with retained run latency.
 - `scripts/quality-policy specs` lists current durable specs.
   `scripts/quality-policy render-specs` prints their requirement, journey, and
   scenario links.
@@ -168,6 +172,23 @@ A weekly and manual workflow runs each deterministic safety mutant in a
 separate bounded macOS job. The required mutation score is 100 percent. A
 survivor, timeout, or infrastructure-like failure is not a kill and fails the
 workflow.
+
+## Continuous care
+
+`quality/evals.json` contains stable expected outcomes for representative
+historical tasks, escaped defects, policy mutations, and repository-scope
+violations. Impact cases assert the complete stage, specification, capability,
+user-journey, and release-gate plan after dependency closure. Scope cases assert
+that internal presentations, work plans, and credential paths stay ignored.
+
+The quality-care workflow has a five-minute deadline. It reads up to 10 gate
+artifacts from the last 13 days. Each download has a 20-second deadline. A
+missing artifact fails the care run. The workflow creates one open issue for an eval
+regression, failed or invalid evidence, an environment failure, or wall p95 at
+or above 480 seconds. The documentation-care workflow has the same overall
+deadline. It can create one repair pull request only when deterministic
+generated policy views drift. Both workflows cancel superseded runs and never
+run release tools.
 
 ## Dashboard
 

@@ -107,8 +107,10 @@ enum UIE2ETestDriver {
             let confirmDelete = try await sheetButton(
                 label: "Delete")
             try requireSemanticControl(confirmDelete, name: "delete confirmation")
-            try await click(confirmDelete, name: "delete confirmation")
-            try await waitUntil("fake CLI records delete action") {
+            try await clickUntil(
+                confirmDelete,
+                name: "delete confirmation",
+                outcome: "fake CLI records delete action") {
                 let actions = try? String(
                     contentsOf: configuration.root
                         .appendingPathComponent("fake/actions.log"),

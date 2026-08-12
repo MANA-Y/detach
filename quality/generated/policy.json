@@ -619,7 +619,7 @@
     "pr_feedback_seconds": 600,
     "review_seconds": 180
   },
-  "policy": 23,
+  "policy": 24,
   "release_domains": [
     {
       "gates": "-",
@@ -908,6 +908,20 @@
       "test_domain": "policy"
     },
     {
+      "pattern": ".github/workflows/quality-care.yml",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": ".github/workflows/documentation-care.yml",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
       "pattern": "scripts/quality-dashboard",
       "priority": 1000,
       "release_domain": "safe",
@@ -923,6 +937,27 @@
     },
     {
       "pattern": "scripts/quality-history",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tools/quality_history.py",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "scripts/quality-care",
+      "priority": 1000,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "policy"
+    },
+    {
+      "pattern": "tools/quality_care.py",
       "priority": 1000,
       "release_domain": "safe",
       "spec": "docs/specs/documentation.md",
@@ -1937,6 +1972,8 @@
         "*.sh",
         ".gitattributes",
         ".github/*",
+        ".github/workflows/documentation-care.yml",
+        ".github/workflows/quality-care.yml",
         ".github/workflows/quality-gates.yml",
         ".github/workflows/quality-mutations.yml",
         ".gitignore",
@@ -1950,6 +1987,7 @@
         "quality/*",
         "scripts/*",
         "scripts/quality-baseline",
+        "scripts/quality-care",
         "scripts/quality-dashboard",
         "scripts/quality-gate",
         "scripts/quality-history",
@@ -1967,8 +2005,10 @@
         "tests/shell-safety*",
         "tests/test-suite-contract.sh",
         "tools/quality_baseline.py",
+        "tools/quality_care.py",
         "tools/quality_dashboard.py",
         "tools/quality_gate.py",
+        "tools/quality_history.py",
         "tools/quality_metrics.py",
         "tools/quality_mutation.py",
         "tools/quality_policy.py",

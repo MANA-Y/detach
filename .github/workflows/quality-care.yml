@@ -1,0 +1,109 @@
+name: Quality care
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 4 * * 2,5"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: quality-care-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  care:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Evaluate workflow corpus
+        run: >-
+          scripts/quality-care evaluate
+          --output app/build/quality-care/evals.json
+      - name: Collect recent bounded gate history
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          raw="$RUNNER_TEMP/quality-care-raw"
+          history="app/build/quality-care/history"
+          since="$(date -u -d '13 days ago' +%Y-%m-%d)"
+          mkdir -p "$raw" "$history"
+          timeout 30s gh run list \
+            --workflow quality-gates.yml \
+            --branch main \
+            --created ">=$since" \
+            --limit 10 \
+            --json databaseId \
+            --jq '.[].databaseId' >"$raw/run-ids"
+          download_failures=0
+          while IFS= read -r run_id; do
+            [ -n "$run_id" ] || continue
+            if ! timeout 20s gh run download "$run_id" \
+              --pattern 'quality-gate-evidence-*' \
+              --dir "$raw/$run_id"; then
+              download_failures=$((download_failures + 1))
+            fi
+          done <"$raw/run-ids"
+          [ "$download_failures" -eq 0 ] || {
+            printf 'quality-care: %s gate artifact downloads failed\n' "$download_failures" >&2
+            exit 1
+          }
+          count=0
+          while IFS= read -r manifest; do
+            count=$((count + 1))
+            cp -R "$(dirname "$manifest")" "$history/run-$count"
+          done < <(find "$raw" -type f -name manifest.tsv | LC_ALL=C sort)
+          [ "$count" -gt 0 ] || {
+            printf 'quality-care: no gate evidence was downloaded\n' >&2
+            exit 1
+          }
+          scripts/quality-history --format json "$history" \
+            >app/build/quality-care/history.json
+      - name: Assess eval and latency regressions
+        if: always()
+        run: >-
+          scripts/quality-care assess
+          --eval-summary app/build/quality-care/evals.json
+          --history-summary app/build/quality-care/history.json
+          --output app/build/quality-care/summary.json
+      - name: Upload quality-care evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quality-care-${{ github.run_id }}-${{ github.run_attempt }}
+          path: app/build/quality-care
+          if-no-files-found: error
+          retention-days: 30
+
+  attention:
+    if: failure()
+    needs: care
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open one bounded quality-care issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title='[quality-care] Scheduled control loop needs attention'
+          existing="$(timeout 20s gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "$title in:title" \
+            --json number \
+            --jq '.[0].number // empty')"
+          if [ -z "$existing" ]; then
+            timeout 20s gh issue create \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --body "The bounded quality-care workflow found an eval, evidence, or latency regression. Inspect $RUN_URL."
+          fi
