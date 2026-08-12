@@ -23,6 +23,12 @@ enum UIE2EEventWindowResolver {
         candidates: [NSWindow]
     ) -> NSWindow? {
         if let owningWindow {
+            if let sheet = candidates.first(where: {
+                $0.sheetParent === owningWindow
+                    && $0.frame.contains(screenPoint)
+            }) {
+                return sheet
+            }
             return owningWindow.frame.contains(screenPoint) ? owningWindow : nil
         }
         return candidates.first { $0.frame.contains(screenPoint) }

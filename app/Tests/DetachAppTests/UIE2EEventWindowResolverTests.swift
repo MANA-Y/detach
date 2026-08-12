@@ -46,4 +46,29 @@ final class UIE2EEventWindowResolverTests: XCTestCase {
                 candidates: [candidate]),
             candidate)
     }
+
+    func testAttachedSheetWinsOverItsAccessibilityOwner() {
+        let owner = NSWindow(
+            contentRect: NSRect(x: 100, y: 100, width: 400, height: 400),
+            styleMask: .titled,
+            backing: .buffered,
+            defer: false)
+        let sheet = NSWindow(
+            contentRect: NSRect(x: 150, y: 150, width: 200, height: 200),
+            styleMask: .titled,
+            backing: .buffered,
+            defer: false)
+        owner.beginSheet(sheet)
+        defer { owner.endSheet(sheet) }
+        let point = NSPoint(x: sheet.frame.midX, y: sheet.frame.midY)
+
+        XCTAssertTrue(owner.frame.contains(point))
+        XCTAssertIdentical(sheet.sheetParent, owner)
+        XCTAssertIdentical(
+            UIE2EEventWindowResolver.resolve(
+                owningWindow: owner,
+                at: point,
+                candidates: [sheet, owner]),
+            sheet)
+    }
 }
