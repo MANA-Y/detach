@@ -209,7 +209,11 @@ struct StatusBar: View {
 #if !DEBUG
                     .background {
                         if AppSettings.uiE2E != nil {
-                            UIE2EGeometryProbe(identifier: "session-status-error")
+                            UIE2EGeometryProbe(
+                                identifier: "session-status-error",
+                                semanticLabel: message,
+                                semanticRole: .staticText,
+                                semanticEnabled: false)
                         }
                     }
 #endif

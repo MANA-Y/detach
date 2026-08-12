@@ -105,17 +105,6 @@ final class UIE2EBridgeView: NSView {
                               height: frame.height)))
         }
 
-        if case .error(let message) = state {
-            next.append(UIE2EAXElement(
-                parent: self,
-                role: .staticText,
-                identifier: "session-status-error",
-                label: message,
-                frame: UIE2EGeometryRegistry.frame(
-                    for: "session-status-error") ?? .zero,
-                enabled: false))
-        }
-
         elements = next
     }
 }

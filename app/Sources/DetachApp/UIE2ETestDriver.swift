@@ -491,6 +491,7 @@ enum UIE2ETestDriver {
 
     private static func usesMeasuredGeometry(_ identifier: String) -> Bool {
         identifier == "new-session-button"
+            || identifier == "settings-show-tips"
             || identifier.hasPrefix("session-row-")
             || identifier.hasPrefix("session-action-")
     }
