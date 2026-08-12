@@ -23,6 +23,8 @@ DEFAULT_OUTPUT = ROOT / "app/build/quality-merge.json"
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 GH_CALL_SECONDS = 20
+GH_API_ATTEMPTS = 3
+GH_API_RETRY_SECONDS = 1
 POLL_SECONDS = 5
 QUALITY_CHECK = "quality-gates"
 GITHUB_ACTIONS_INTEGRATION_ID = 15368
@@ -71,7 +73,16 @@ class GitHub:
         return result.stdout.strip()
 
     def api(self, path: str) -> Any:
-        return parse_json(self.command(["api", path]), "GitHub API")
+        last_error: MergeError | None = None
+        for attempt in range(1, GH_API_ATTEMPTS + 1):
+            try:
+                return parse_json(self.command(["api", path]), "GitHub API")
+            except MergeError as error:
+                last_error = error
+                if attempt < GH_API_ATTEMPTS:
+                    time.sleep(GH_API_RETRY_SECONDS * attempt)
+        assert last_error is not None
+        raise last_error
 
     def enable_auto_merge(
         self,

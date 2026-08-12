@@ -42,6 +42,12 @@ def main() -> None:
     require("directory: /app" in dependabot, "Swift package directory is wrong")
     require(dependabot.count("interval: weekly") == 2,
             "dependency updates must use one bounded weekly cadence")
+    require(dependabot.count("open-pull-requests-limit: 1") == 2,
+            "each dependency ecosystem must allow only one open update pull request")
+    require("actions:" in dependabot and "swift-packages:" in dependabot,
+            "dependency updates must be grouped by ecosystem")
+    require(dependabot.count('          - "*"') == 2,
+            "each dependency group must cover its complete ecosystem")
     print("Security automation contracts passed")
 
 
