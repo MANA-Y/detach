@@ -1,5 +1,5 @@
 schema	1
-policy	19
+policy	20
 limit	pr_feedback_seconds	600
 limit	local_feedback_seconds	120
 limit	review_seconds	180
@@ -56,6 +56,10 @@ release-domain	install	install	false
 release-domain	lid	lid	false
 release-domain	both	install,lid	false
 release-domain	unknown	install,lid	true
+coverage-exclusion	ui	app/Sources/DetachApp/UIE2E*.swift	SC-UI-DASHBOARD,SC-UI-SESSION-STOP	The packaged real-control journey owns this test harness.
+coverage-exclusion	business	app/Sources/DetachKit/BoundedProcessRunner.swift	SC-POWER-UNIT	Process-group behavior uses bounded process integration evidence.
+coverage-exclusion	business	app/Sources/DetachKit/ClamshellLockRunner.swift	SC-POWER-UNIT	Platform lock behavior uses its dedicated process scenario.
+coverage-exclusion	business	app/Sources/DetachKit/DetachCLI.swift	SC-SESSION-CREATE-CODEX,SC-SESSION-CREATE-CLAUDE	Provider integration scenarios exercise the real CLI process boundary.
 route	1000	quality/*	policy	safe	docs/specs/documentation.md
 route	1000	.github/workflows/quality-gates.yml	policy	safe	docs/specs/documentation.md
 route	1000	docs/quality-gates.md	policy	safe	docs/specs/documentation.md

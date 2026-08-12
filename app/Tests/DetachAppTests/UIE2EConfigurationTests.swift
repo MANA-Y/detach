@@ -69,21 +69,6 @@ final class UIE2EConfigurationTests: XCTestCase {
         }
     }
 
-    func testAllowsOnlyKnownControlMutant() throws {
-        try withFixture { fixture in
-            var environment = fixture.environment
-            environment["DETACH_UI_E2E_MUTANT"] = "stop-action-disconnected"
-            XCTAssertEqual(
-                try fixture.validate(environment).controlMutant,
-                .stopActionDisconnected)
-
-            environment["DETACH_UI_E2E_MUTANT"] = "skip-all-actions"
-            XCTAssertThrowsError(try fixture.validate(environment)) { error in
-                XCTAssertTrue(error.localizedDescription.contains("not allowlisted"))
-            }
-        }
-    }
-
     private func withFixture(_ body: (Fixture) throws -> Void) throws {
         let fixture = try Fixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }

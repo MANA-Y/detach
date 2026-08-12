@@ -93,8 +93,8 @@
   Accessibility approval. Do not grant it broader filesystem or production
   payload access. Its fake CLI allowlist covers only the exact status and stop
   flow and the completed-session forced delete asserted by the smoke. The
-  contract also disconnects the test-only Stop handler and requires the real
-  control journey to fail.
+  same run disconnects Stop, proves that no action occurs, reconnects it, and
+  requires the exact action.
 - `tests/release-preflight.sh` and `tests/publish-preflight.sh` — hermetic release
   tooling, arm64 appcast, production-DMG verification, exact artifact allowlist,
   and explicit publication-confirmation guards.
@@ -106,7 +106,9 @@
   identities, aggregate coverage, and coverage for the 13 critical sources.
   CI rejects a reduction from the last green `main` artifact. It also rejects
   changed executable Swift-line coverage below 90 percent. New critical
-  sources start at 100 percent. `tests/quality-metrics.sh` covers missing,
+  sources start at 100 percent. The quality policy owns each coverage
+  exclusion and links it to automated scenario evidence. Excluded sources do
+  not enter aggregate or changed-line denominators. `tests/quality-metrics.sh` covers missing,
   malformed, removed-test, aggregate, critical-file, and changed-line
   regressions. `tests/release-budget-ratchet-contract.sh` protects timing.
 - `tests/quality-mutation.sh` checks source restoration, timeout handling,

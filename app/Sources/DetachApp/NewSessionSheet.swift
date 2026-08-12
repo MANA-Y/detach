@@ -97,9 +97,11 @@ struct NewSessionSheet: View {
                 Button(L10n.string("Cancel")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("new-session-cancel")
+#if !DEBUG
                     .background {
                         uiE2EGeometryProbe(identifier: "new-session-cancel")
                     }
+#endif
                 Button(L10n.string("Launch in Terminal")) {
                     Task { await launch() }
                 }
@@ -107,29 +109,35 @@ struct NewSessionSheet: View {
                     .tint(Brand.indigo)
                     .disabled(projectDir == nil || !isNameValid || isLaunching)
                     .accessibilityIdentifier("new-session-launch")
+#if !DEBUG
                     .background {
                         uiE2EGeometryProbe(identifier: "new-session-launch")
                     }
+#endif
             }
         }
         .padding(20)
         .frame(width: max(460, fontPointSize * 32))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("new-session-sheet")
+#if !DEBUG
         .background {
             uiE2EGeometryProbe(identifier: "new-session-sheet")
         }
+#endif
         .fileImporter(isPresented: $showPicker, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result { projectDir = url }
         }
     }
 
+#if !DEBUG
     @ViewBuilder
     private func uiE2EGeometryProbe(identifier: String) -> some View {
         if AppSettings.uiE2E != nil {
             UIE2EGeometryProbe(identifier: identifier)
         }
     }
+#endif
 
     @MainActor
     private func launch() async {

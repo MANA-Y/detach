@@ -2,16 +2,11 @@ import AppKit
 import SwiftUI
 import DetachKit
 
-enum UIE2EControlMutant: String, Sendable {
-    case stopActionDisconnected = "stop-action-disconnected"
-}
-
 struct UIE2EConfiguration: Sendable {
     let root: URL
     let cli: URL
     let result: URL
     let fixtureState: URL
-    let controlMutant: UIE2EControlMutant?
 
     static func fromEnvironment(
         _ environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -109,21 +104,11 @@ struct UIE2EConfiguration: Sendable {
         guard fileManager.isExecutableFile(atPath: cli.path) else {
             try fail("fake CLI is not executable")
         }
-        let controlMutant: UIE2EControlMutant?
-        if let raw = environment["DETACH_UI_E2E_MUTANT"] {
-            guard let value = UIE2EControlMutant(rawValue: raw) else {
-                try fail("DETACH_UI_E2E_MUTANT is not allowlisted")
-            }
-            controlMutant = value
-        } else {
-            controlMutant = nil
-        }
         return UIE2EConfiguration(
             root: root,
             cli: cli,
             result: try requiredURL("DETACH_UI_E2E_RESULT"),
-            fixtureState: try requiredURL("DETACH_UI_E2E_FIXTURE_STATE"),
-            controlMutant: controlMutant)
+            fixtureState: try requiredURL("DETACH_UI_E2E_FIXTURE_STATE"))
     }
 }
 

@@ -24,12 +24,6 @@ SWIFT_LOG_TEST = re.compile(
 HUNK = re.compile(r"^@@ -[0-9]+(?:,[0-9]+)? \+([0-9]+)(?:,([0-9]+))? @@")
 UI_PREFIX = "app/Sources/DetachApp/"
 BUSINESS_PREFIX = "app/Sources/DetachKit/"
-UI_EXCLUSIONS = {"UIE2EAccessibilityBridge.swift", "UIE2ETestDriver.swift"}
-BUSINESS_EXCLUSIONS = {
-    "BoundedProcessRunner.swift",
-    "ClamshellLockRunner.swift",
-    "DetachCLI.swift",
-}
 
 
 class MetricsError(Exception):
@@ -210,11 +204,12 @@ def tracked_sources() -> set[str]:
     return {line for line in output.splitlines() if line}
 
 
-def group_for_source(path: str) -> Optional[str]:
-    name = path.rsplit("/", 1)[-1]
-    if path.startswith(UI_PREFIX) and name not in UI_EXCLUSIONS:
+def group_for_source(path: str, policy: Policy) -> Optional[str]:
+    if policy.coverage_exclusion(path) is not None:
+        return None
+    if path.startswith(UI_PREFIX):
         return "ui"
-    if path.startswith(BUSINESS_PREFIX) and name not in BUSINESS_EXCLUSIONS:
+    if path.startswith(BUSINESS_PREFIX):
         return "business"
     return None
 
@@ -516,7 +511,7 @@ def build_metrics(
         missing_sources = sorted(
             source
             for source in tracked_sources()
-            if group_for_source(source) is not None and source not in coverage
+            if group_for_source(source, policy) is not None and source not in coverage
         )
         if missing_sources:
             raise MetricsError(f"LLVM coverage is missing tracked source: {missing_sources[0]}")
@@ -524,7 +519,11 @@ def build_metrics(
     suites: dict[str, Any] = {}
     for name, prefix in (("ui", "DetachAppTests."), ("business", "DetachKitTests.")):
         selected_tests = sorted(test for test in tests if test.startswith(prefix))
-        selected_files = [value for path, value in coverage.items() if group_for_source(path) == name]
+        selected_files = [
+            value
+            for path, value in coverage.items()
+            if group_for_source(path, policy) == name
+        ]
         covered = sum(value["covered"] for value in selected_files)
         total = sum(value["total"] for value in selected_files)
         if not selected_tests or total == 0:
@@ -565,6 +564,8 @@ def build_metrics(
     changed_total = 0
     for path in sorted(changed_by_path):
         if not path.endswith(".swift"):
+            continue
+        if policy.coverage_exclusion(path) is not None:
             continue
         value = coverage.get(path)
         executable = 0

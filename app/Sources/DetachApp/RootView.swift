@@ -102,7 +102,7 @@ struct RootView: View {
             guard AppSettings.uiE2E == nil else { return }
             await notifications.configure(enabled: notificationsEnabled)
         }
-        .task { UIE2ETestDriver.startIfRequested() }
+        .task { await UIE2ETestDriver.runIfRequested() }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             Task {
@@ -121,6 +121,7 @@ struct RootView: View {
         }
         .onAppear { store.updateCadence(foreground: true) }
         .onDisappear { store.updateCadence(foreground: false) }
+#if !DEBUG
         .background {
             if AppSettings.uiE2E != nil {
                 UIE2EAccessibilityBridge(
@@ -129,6 +130,7 @@ struct RootView: View {
                     .frame(width: 0, height: 0)
             }
         }
+#endif
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("detach-dashboard")
     }

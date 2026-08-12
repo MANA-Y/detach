@@ -31,7 +31,9 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def segments(covered: int, total: int) -> list[list[Any]]:
-    result: list[list[Any]] = [[1, 1, 1, True, True, False]]
+    result: list[list[Any]] = []
+    if covered:
+        result.append([1, 1, 1, True, True, False])
     if covered < total:
         result.append([covered + 1, 1, 0, True, True, False])
     result.append([total + 1, 1, 0, False, False, False])
@@ -42,7 +44,10 @@ def coverage_document(
     *, ui_covered: int = 9, critical_override: Optional[Tuple[str, int]] = None
 ) -> dict[str, Any]:
     files = []
-    sources = [("app/Sources/DetachApp/Synthetic.swift", ui_covered)]
+    sources = [
+        ("app/Sources/DetachApp/Synthetic.swift", ui_covered),
+        ("app/Sources/DetachApp/UIE2ETestDriver.swift", 0),
+    ]
     sources.extend((path, 9) for path, _ in POLICY.critical)
     for path, covered in sources:
         if critical_override and path == critical_override[0]:
@@ -197,8 +202,30 @@ def main() -> None:
         )
         document = json.loads(current.read_text(encoding="utf-8"))
         assert document["comparison"]["status"] == "passed"
+        assert document["suites"]["ui"]["line_coverage"]["percent"] == 90.0
         assert document["changed_lines"]["status"] == "passed"
         assert document["changed_lines"]["line_coverage"]["percent"] == 90.0
+
+        write_json(
+            changed,
+            {"app/Sources/DetachApp/UIE2ETestDriver.swift": list(range(1, 11))},
+        )
+        excluded = root / "excluded.json"
+        invoke(
+            evaluate_arguments(
+                coverage,
+                tests,
+                excluded,
+                changed,
+                baseline=baseline_root,
+                authority="ci-merge",
+            )
+        )
+        excluded_document = json.loads(excluded.read_text(encoding="utf-8"))
+        assert excluded_document["changed_lines"]["status"] == "not-applicable"
+        assert excluded_document["changed_lines"]["files"] == []
+
+        write_json(changed, {"app/Sources/DetachApp/Synthetic.swift": list(range(1, 11))})
 
         missing = invoke(
             evaluate_arguments(

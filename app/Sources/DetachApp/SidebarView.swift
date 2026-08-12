@@ -55,11 +55,13 @@ struct SidebarView: View {
                         .foregroundStyle(Brand.indigo)
                 }
                 .accessibilityIdentifier("new-session-button")
+#if !DEBUG
                 .background {
                     if AppSettings.uiE2E != nil {
                         UIE2EGeometryProbe(identifier: "new-session-button")
                     }
                 }
+#endif
             }
         }
         .sheet(isPresented: $showNewSession) {
@@ -81,7 +83,9 @@ struct SidebarView: View {
     private func sessionRow(_ session: Session) -> some View {
         if session.isWaitingForUser {
             SessionRow(session: session)
+#if !DEBUG
                 .background { uiE2EGeometryProbe(for: session) }
+#endif
                 .tag(session.id)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(session.displayTitle)
@@ -90,7 +94,9 @@ struct SidebarView: View {
                 .listRowBackground(Color.orange.opacity(0.10))
         } else {
             SessionRow(session: session)
+#if !DEBUG
                 .background { uiE2EGeometryProbe(for: session) }
+#endif
                 .tag(session.id)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(session.displayTitle)
@@ -99,12 +105,14 @@ struct SidebarView: View {
         }
     }
 
+#if !DEBUG
     @ViewBuilder
     private func uiE2EGeometryProbe(for session: Session) -> some View {
         if AppSettings.uiE2E != nil {
             UIE2EGeometryProbe(identifier: "session-row-\(session.id)")
         }
     }
+#endif
 }
 
 struct SessionRow: View {

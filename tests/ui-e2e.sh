@@ -7,7 +7,6 @@ SOURCE_APP="${DETACH_TEST_APP:-$ROOT/app/build/Detach.app}"
 VALIDATE_ONLY="${DETACH_UI_E2E_VALIDATE_ONLY:-0}"
 KEEP="${DETACH_UI_E2E_KEEP:-0}"
 ARTIFACT_DIR="${DETACH_UI_E2E_ARTIFACT_DIR:-}"
-SCENARIO_EVIDENCE="${DETACH_UI_E2E_SCENARIO_EVIDENCE:-1}"
 TEST_ROOT=""
 APP_PID=""
 
@@ -83,8 +82,7 @@ validate_fresh_app() {
   }
 }
 
-case "$VALIDATE_ONLY:$KEEP:$SCENARIO_EVIDENCE" in
-  0:0:0|0:0:1|0:1:0|0:1:1|1:0:0|1:0:1|1:1:0|1:1:1) ;;
+case "$VALIDATE_ONLY:$KEEP" in 0:0|0:1|1:0|1:1) ;;
   *) printf 'invalid UI e2e boolean option\n' >&2; exit 2 ;;
 esac
 validate_fresh_app "$SOURCE_APP"
@@ -133,18 +131,16 @@ printf '#!/bin/bash\nprintf breach >%q\nexit 91\n' "$BREACH" \
   >"$TEST_HOME/.local/bin/detach"
 chmod 0755 "$TEST_HOME/.local/bin/detach"
 
-if [ "$SCENARIO_EVIDENCE" = 1 ]; then
-  for scenario in \
-    SC-UI-DASHBOARD \
-    SC-UI-SESSION-DETAIL \
-    SC-UI-SESSION-DELETE \
-    SC-UI-SESSION-STOP \
-    SC-UI-NEW-SESSION \
-    SC-UI-EMPTY \
-    SC-UI-FOCUS; do
-    "$ROOT/scripts/quality-scenarios" event begin "$scenario"
-  done
-fi
+for scenario in \
+  SC-UI-DASHBOARD \
+  SC-UI-SESSION-DETAIL \
+  SC-UI-SESSION-DELETE \
+  SC-UI-SESSION-STOP \
+  SC-UI-NEW-SESSION \
+  SC-UI-EMPTY \
+  SC-UI-FOCUS; do
+  "$ROOT/scripts/quality-scenarios" event begin "$scenario"
+done
 
 HOME="$TEST_HOME" \
 CFFIXED_USER_HOME="$TEST_HOME" \
@@ -226,6 +222,7 @@ for check in \
   dashboard-accessible \
   sidebar-selects-completed-session \
   safe-delete-reaches-fake-cli \
+  disconnected-stop-blocks-action \
   safe-action-reaches-fake-cli \
   new-session-sheet-semantics \
   empty-dashboard-state \
@@ -236,33 +233,31 @@ for check in \
       "$check_index" "$actual" "$check" >&2
     exit 1
   }
-  if [ "$SCENARIO_EVIDENCE" = 1 ]; then
-    case "$check" in
-      background-app-starts-without-focus)
-        ;;
-      dashboard-accessible)
-        "$ROOT/scripts/quality-scenarios" event pass SC-UI-DASHBOARD
-        ;;
-      sidebar-selects-completed-session)
-        "$ROOT/scripts/quality-scenarios" event pass SC-UI-SESSION-DETAIL
-        ;;
-      safe-delete-reaches-fake-cli)
-        "$ROOT/scripts/quality-scenarios" event pass SC-UI-SESSION-DELETE
-        ;;
-      safe-action-reaches-fake-cli)
-        "$ROOT/scripts/quality-scenarios" event pass SC-UI-SESSION-STOP
-        ;;
-      new-session-sheet-semantics)
-        "$ROOT/scripts/quality-scenarios" event pass SC-UI-NEW-SESSION
-        ;;
-      empty-dashboard-state)
-        "$ROOT/scripts/quality-scenarios" event pass SC-UI-EMPTY
-        ;;
-      installed-app-focus-restored)
-        "$ROOT/scripts/quality-scenarios" event pass SC-UI-FOCUS
-        ;;
-    esac
-  fi
+  case "$check" in
+    background-app-starts-without-focus|disconnected-stop-blocks-action)
+      ;;
+    dashboard-accessible)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-DASHBOARD
+      ;;
+    sidebar-selects-completed-session)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-SESSION-DETAIL
+      ;;
+    safe-delete-reaches-fake-cli)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-SESSION-DELETE
+      ;;
+    safe-action-reaches-fake-cli)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-SESSION-STOP
+      ;;
+    new-session-sheet-semantics)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-NEW-SESSION
+      ;;
+    empty-dashboard-state)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-EMPTY
+      ;;
+    installed-app-focus-restored)
+      "$ROOT/scripts/quality-scenarios" event pass SC-UI-FOCUS
+      ;;
+  esac
   check_index=$((check_index + 1))
 done
 

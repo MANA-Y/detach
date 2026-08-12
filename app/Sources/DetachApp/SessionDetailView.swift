@@ -59,7 +59,6 @@ struct SessionDetailView: View {
         .confirmationDialog(L10n.format("Delete session “%@”?", session.displayTitle),
                             isPresented: $confirmDelete, titleVisibility: .visible) {
             Button(L10n.string("Delete"), role: .destructive) { run(.delete) }
-                .accessibilityIdentifier("session-delete-confirm")
         } message: {
             Text(L10n.string("The harness state directory and checkpoints will be permanently deleted. The provider transcript in ~/.claude (~/.codex) will not be affected."))
         }
@@ -331,24 +330,30 @@ struct SessionDetailView: View {
         case .stop:
             Button(L10n.string("Stop"), role: .destructive) { run(.stop) }
                 .accessibilityIdentifier("session-action-stop")
+#if !DEBUG
                 .background {
                     uiE2EGeometryProbe(identifier: "session-action-stop")
                 }
+#endif
         case .delete:
             Button(L10n.string("Delete"), role: .destructive) { confirmDelete = true }
                 .accessibilityIdentifier("session-action-delete")
+#if !DEBUG
                 .background {
                     uiE2EGeometryProbe(identifier: "session-action-delete")
                 }
+#endif
         }
     }
 
+#if !DEBUG
     @ViewBuilder
     private func uiE2EGeometryProbe(identifier: String) -> some View {
         if AppSettings.uiE2E != nil {
             UIE2EGeometryProbe(identifier: identifier)
         }
     }
+#endif
 
     @MainActor
     private func openInTerminal(_ command: String) {
@@ -365,10 +370,12 @@ struct SessionDetailView: View {
     }
 
     private func run(_ action: SessionAction) {
-        if action == .stop,
-           AppSettings.uiE2E?.controlMutant == .stopActionDisconnected {
+#if !DEBUG
+        if action == .stop, AppSettings.uiE2E != nil,
+           UIE2EControlFault.stopActionDisconnected {
             return
         }
+#endif
         Task {
             if let message = await store.perform(action, on: session) {
                 actionError = message

@@ -39,14 +39,4 @@ if run_validation "$TMP_ROOT/missing.app" >"$TMP_ROOT/missing.log" 2>&1; then
 fi
 grep -F 'build marker is missing or unsafe' "$TMP_ROOT/missing.log" >/dev/null
 
-if DETACH_UI_E2E_MUTANT=stop-action-disconnected \
-    DETACH_UI_E2E_SCENARIO_EVIDENCE=0 \
-    "$ROOT/tests/ui-e2e.sh" >"$TMP_ROOT/disconnected.log" 2>&1; then
-  printf 'UI e2e accepted a disconnected Stop control\n' >&2
-  exit 1
-fi
-grep -F \
-  'UI e2e failed: stop action did not produce fake CLI records stop action' \
-  "$TMP_ROOT/disconnected.log" >/dev/null
-
 printf 'UI e2e harness contract tests passed\n'

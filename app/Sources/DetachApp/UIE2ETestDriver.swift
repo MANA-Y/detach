@@ -2,6 +2,11 @@ import AppKit
 import Darwin
 import Foundation
 
+@MainActor
+enum UIE2EControlFault {
+    static var stopActionDisconnected = false
+}
+
 /// A narrowly gated, same-process accessibility driver for the packaged-app
 /// smoke test. Keeping traversal and actions inside the tested process avoids
 /// a second automation executable and its independent identity. This path is
@@ -34,7 +39,7 @@ enum UIE2ETestDriver {
 
     private static var started = false
 
-    static func startIfRequested() {
+    static func runIfRequested() async {
         guard let configuration = AppSettings.uiE2E, !started else { return }
         started = true
         Task { @MainActor in
@@ -56,6 +61,7 @@ enum UIE2ETestDriver {
         var checks: [String] = []
         let previousFrontmost = NSWorkspace.shared.frontmostApplication
         let previousActivationPolicy = NSApp.activationPolicy()
+        defer { UIE2EControlFault.stopActionDisconnected = false }
         do {
             trace("driver started")
             guard !NSApp.isActive else {
@@ -127,6 +133,18 @@ enum UIE2ETestDriver {
                 resultIdentifier: "session-detail-\(runningID)")
             let stopButton = try await element(identifier: "session-action-stop")
             try requireSemanticControl(stopButton, name: "stop action")
+            UIE2EControlFault.stopActionDisconnected = true
+            try await click(stopButton, name: "disconnected stop action")
+            try await Task.sleep(nanoseconds: 500_000_000)
+            let disconnectedActions = try? String(
+                contentsOf: configuration.root
+                    .appendingPathComponent("fake/actions.log"),
+                encoding: .utf8)
+            guard disconnectedActions?.contains("codex stop \(runningID)") != true else {
+                throw Failure(message: "disconnected stop action reached fake CLI")
+            }
+            checks.append("disconnected-stop-blocks-action")
+            UIE2EControlFault.stopActionDisconnected = false
             try await clickUntil(
                 stopButton,
                 name: "stop action",

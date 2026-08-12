@@ -135,6 +135,42 @@
       "spec": "docs/specs/release.md"
     }
   ],
+  "coverage_exclusions": [
+    {
+      "group": "ui",
+      "pattern": "app/Sources/DetachApp/UIE2E*.swift",
+      "scenarios": [
+        "SC-UI-DASHBOARD",
+        "SC-UI-SESSION-STOP"
+      ],
+      "summary": "The packaged real-control journey owns this test harness."
+    },
+    {
+      "group": "business",
+      "pattern": "app/Sources/DetachKit/BoundedProcessRunner.swift",
+      "scenarios": [
+        "SC-POWER-UNIT"
+      ],
+      "summary": "Process-group behavior uses bounded process integration evidence."
+    },
+    {
+      "group": "business",
+      "pattern": "app/Sources/DetachKit/ClamshellLockRunner.swift",
+      "scenarios": [
+        "SC-POWER-UNIT"
+      ],
+      "summary": "Platform lock behavior uses its dedicated process scenario."
+    },
+    {
+      "group": "business",
+      "pattern": "app/Sources/DetachKit/DetachCLI.swift",
+      "scenarios": [
+        "SC-SESSION-CREATE-CODEX",
+        "SC-SESSION-CREATE-CLAUDE"
+      ],
+      "summary": "Provider integration scenarios exercise the real CLI process boundary."
+    }
+  ],
   "critical_sources": [
     {
       "path": "app/Sources/DetachKit/SessionHealth.swift",
@@ -530,7 +566,7 @@
     "pr_feedback_seconds": 600,
     "review_seconds": 180
   },
-  "policy": 19,
+  "policy": 20,
   "release_domains": [
     {
       "gates": "-",

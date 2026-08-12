@@ -47,6 +47,8 @@ policy_version="$("$ROOT/scripts/quality-policy" version)"
   fail 'journey inventory is incomplete'
 [ "$("$ROOT/scripts/quality-policy" scenarios | wc -l | tr -d ' ')" = 37 ] || \
   fail 'scenario inventory is incomplete'
+[ "$("$ROOT/scripts/quality-policy" coverage-exclusions | wc -l | tr -d ' ')" = 4 ] || \
+  fail 'coverage exclusion inventory is incomplete'
 first_json="$("$ROOT/scripts/quality-policy" render-json | shasum -a 256 | awk '{print $1}')"
 second_json="$("$ROOT/scripts/quality-policy" render-json | shasum -a 256 | awk '{print $1}')"
 [ "$first_json" = "$second_json" ] || fail 'generated policy JSON is not deterministic'
@@ -123,7 +125,34 @@ fi
 grep -F 'references unknown scenario: SC-UI-SETTINGS' \
   "$TMP_ROOT/missing-scenario.out" >/dev/null || fail 'missing scenario failure is unclear'
 
+awk -F '\t' -v OFS='\t' \
+  '$1 == "coverage-exclusion" && $2 == "ui" {$4="SC-UI-UNKNOWN"} {print}' \
+  "$ROOT/quality/policy.tsv" >"$TMP_ROOT/missing-coverage-scenario.tsv"
+if DETACH_QUALITY_POLICY="$TMP_ROOT/missing-coverage-scenario.tsv" \
+    "$ROOT/scripts/quality-policy" validate \
+    >"$TMP_ROOT/missing-coverage-scenario.out" 2>&1; then
+  fail 'an unresolved coverage-exclusion scenario was accepted'
+fi
+grep -F 'references unknown scenario: SC-UI-UNKNOWN' \
+  "$TMP_ROOT/missing-coverage-scenario.out" >/dev/null || \
+  fail 'missing coverage-exclusion scenario failure is unclear'
+
+cp "$ROOT/quality/policy.tsv" "$TMP_ROOT/excluded-critical.tsv"
+printf '%s\n' \
+  $'coverage-exclusion\tbusiness\tapp/Sources/DetachKit/SessionHealth.swift\tSC-POWER-UNIT\tInvalid critical exclusion.' \
+  >>"$TMP_ROOT/excluded-critical.tsv"
+if DETACH_QUALITY_POLICY="$TMP_ROOT/excluded-critical.tsv" \
+    "$ROOT/scripts/quality-policy" validate \
+    >"$TMP_ROOT/excluded-critical.out" 2>&1; then
+  fail 'a critical source was excluded from coverage'
+fi
+grep -F 'critical source cannot be excluded from coverage' \
+  "$TMP_ROOT/excluded-critical.out" >/dev/null || \
+  fail 'critical coverage-exclusion failure is unclear'
+
 ! grep -F 'case "$path" in' "$ROOT/scripts/quality-gate" "$ROOT/scripts/release-impact" >/dev/null || \
   fail 'a second path classifier remains in a production script'
+! grep -F 'UI_EXCLUSIONS' "$ROOT/tools/quality_metrics.py" >/dev/null || \
+  fail 'coverage exclusions remain duplicated in Python'
 
 printf 'Quality policy contracts passed\n'
