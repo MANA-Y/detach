@@ -54,25 +54,25 @@ keep the lock around the whole child process and preserve that lock order.
 
 ### Typed state boundary
 
-`detach-state` is the JSON boundary; do not restore jq or shell JSON
-editing. Its typed commands cover guarded metadata mutation and batch reads,
-JSONL validation/summary, health/reconcile, emission, and storage plans.
-Out-of-range integer conversion must never trap. Storage reports allocated and
-logical bytes, exclude provider storage, never follow symlinks, and authorize
-cleanup only after a complete scan with explicit `cleanup_eligible: true`.
+`detach-state` is the JSON boundary. Do not edit JSON in shell. It owns typed
+metadata, JSONL, health, reconcile, storage, and emit operations.
+`meta snapshots` enumerates one owned sessions root through anchored directory
+descriptors. It accepts no path stream. It rejects unsafe session or checkpoint
+directories and opens only owned regular files of at most 1 MiB with
+`O_NOFOLLOW`.
+Integer conversion must not trap. Storage reports allocated and logical bytes,
+excludes provider storage, does not follow symlinks, and authorizes cleanup
+only after a complete scan with explicit `cleanup_eligible: true`.
 
-Per-session `meta.json` uses schema 1, an internal `session_name`, an optional
-human-facing `display_name`, and a `run_token`. Older schema-1 documents without
-`display_name` remain valid. A stale worker or checkpoint loop must not
-overwrite metadata belonging to a replacement run.
-New runs also publish `health_schema=1`, the exact worker/provider PIDs, worker
-heartbeat time, and checkpoint epoch. Health is a typed state machine over
-managed tmux/pane state, the matching run token, PID ownership and ancestry,
-metadata validity, and heartbeat/checkpoint freshness. Stale freshness alone
-must never classify a proven live provider as hung. A live recorded runtime
-without managed tmux authorizes no signal, replacement start, recovery, or
-deletion; wait for the exact processes to disappear rather than touching a
-possibly foreign process.
+Per-session `meta.json` uses schema 1, internal `session_name`, optional
+`display_name`, and a `run_token`. Older documents without `display_name`
+remain valid. A stale worker or checkpoint loop must not overwrite replacement
+run metadata. New runs publish `health_schema=1`, exact worker/provider PIDs,
+worker heartbeat time, and checkpoint epoch. Health combines managed tmux/pane
+state, run token, PID ownership and ancestry, valid metadata, heartbeat, and
+checkpoint freshness. Stale data alone cannot classify a proven live provider
+as hung. A recorded live runtime without managed tmux permits no signal,
+replacement, recovery, or deletion. Wait for the exact processes to exit.
 Anything restored into provider storage must pass canonical path, symlink,
 session-ID, and JSONL validation, be written to a temporary file, validated
 again, and only then be moved into place.

@@ -351,10 +351,17 @@ final class DetachStateCommandTests: XCTestCase {
         }
     }
 
-    func testMetaSnapshotsBatchesFallbacksAndRejectsIncompleteInput() throws {
-        let invalid = temporaryDirectory.appendingPathComponent("invalid-primary.json")
-        let checkpoint = temporaryDirectory.appendingPathComponent("checkpoint.json")
-        let missing = temporaryDirectory.appendingPathComponent("missing.json")
+    func testMetaSnapshotsEnumeratesSafeRootAndRejectsSymlinks() throws {
+        let root = temporaryDirectory.appendingPathComponent("sessions", isDirectory: true)
+        let first = root.appendingPathComponent("detach-codex-one", isDirectory: true)
+        let second = root.appendingPathComponent("detach-codex-two", isDirectory: true)
+        let checkpointDirectory = first.appendingPathComponent("checkpoint", isDirectory: true)
+        let invalid = first.appendingPathComponent("meta.json")
+        let checkpoint = checkpointDirectory.appendingPathComponent("meta.json")
+        try FileManager.default.createDirectory(
+            at: checkpointDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: second, withIntermediateDirectories: true)
         try Data("not-json".utf8).write(to: invalid)
         let project = "/tmp/project\twith\ncontrols"
         try JSONSerialization.data(withJSONObject: [
@@ -364,18 +371,9 @@ final class DetachStateCommandTests: XCTestCase {
             "status": "stopped",
         ]).write(to: checkpoint)
 
-        var input = Data()
-        for value in [
-            "detach-codex-one", invalid.path, checkpoint.path,
-            "detach-codex-two", missing.path, missing.path,
-            "", "true",
-        ] {
-            input.append(Data(value.utf8))
-            input.append(0)
-        }
-        let output = try DetachStateCommand.run(
-            arguments: ["meta", "snapshots", "-"],
-            standardInput: input)
+        let output = try DetachStateCommand.run(arguments: [
+            "meta", "snapshots", root.path,
+        ])
         let values = output.split(separator: 0, omittingEmptySubsequences: false)
             .dropLast()
             .map { String(decoding: $0, as: UTF8.self) }
@@ -390,21 +388,39 @@ final class DetachStateCommandTests: XCTestCase {
         XCTAssertTrue(values[(recordSize + 2)..<(recordSize * 2)].allSatisfy(\.isEmpty))
         XCTAssertEqual(Array(values.suffix(2)), ["", "true"])
 
-        let malformed = [
-            Data("record-without-nul".utf8),
-            Data([0xFF, 0x00]),
-            Data("\0false\0".utf8),
-            Data("session\0only-primary\0".utf8),
-            Data([0x73, 0x00, 0xFF, 0x00, 0x63, 0x00]),
-            Data("session\0primary\0checkpoint\0".utf8),
-        ]
-        for payload in malformed {
-            XCTAssertThrowsError(try DetachStateCommand.run(
-                arguments: ["meta", "snapshots", "-"],
-                standardInput: payload
-            )) { error in
-                XCTAssertEqual(error as? DetachStateCommandError, .invalidArguments)
-            }
+        let unsafeRoot = temporaryDirectory.appendingPathComponent("unsafe-sessions")
+        try FileManager.default.createSymbolicLink(at: unsafeRoot, withDestinationURL: root)
+        XCTAssertThrowsError(try DetachStateCommand.run(arguments: [
+            "meta", "snapshots", unsafeRoot.path,
+        ])) { error in
+            XCTAssertEqual(error as? DetachStateCommandError, .invalidArguments)
+        }
+
+        let external = temporaryDirectory.appendingPathComponent("external", isDirectory: true)
+        try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+        let checkpointRoot = temporaryDirectory.appendingPathComponent(
+            "checkpoint-sessions", isDirectory: true)
+        let checkpointSession = checkpointRoot.appendingPathComponent(
+            "detach-codex-checkpoint", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: checkpointSession, withIntermediateDirectories: true)
+        try Data("not-json".utf8).write(
+            to: checkpointSession.appendingPathComponent("meta.json"))
+        try FileManager.default.createSymbolicLink(
+            at: checkpointSession.appendingPathComponent("checkpoint"),
+            withDestinationURL: external)
+        XCTAssertThrowsError(try DetachStateCommand.run(arguments: [
+            "meta", "snapshots", checkpointRoot.path,
+        ])) { error in
+            XCTAssertEqual(error as? DetachStateCommandError, .invalidArguments)
+        }
+
+        let linked = root.appendingPathComponent("detach-codex-linked")
+        try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: external)
+        XCTAssertThrowsError(try DetachStateCommand.run(arguments: [
+            "meta", "snapshots", root.path,
+        ])) { error in
+            XCTAssertEqual(error as? DetachStateCommandError, .invalidArguments)
         }
     }
 
