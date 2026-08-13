@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public enum DetachStateCommandError: Error, Equatable, Sendable {
@@ -587,59 +588,23 @@ public enum DetachStateCommand {
         return output
     }
 
-    /// Reads primary/checkpoint metadata pairs in one process. Input and output
-    /// use NUL delimiters so metadata values can contain tabs and newlines. An
-    /// empty-session completion record detects an interrupted shell producer.
+    /// Enumerates one validated sessions root in one process. Output uses NUL
+    /// delimiters so metadata values can contain tabs and newlines.
     private static func metaSnapshots(
         _ arguments: [String],
-        standardInput: Data?
+        standardInput _: Data?
     ) throws -> Data {
         guard arguments.count == 1 else {
             throw DetachStateCommandError.invalidArguments
         }
-        let input = try inputData(
-            atPath: arguments[0],
-            standardInput: standardInput)
-        let components = input.split(separator: 0, omittingEmptySubsequences: false)
-        guard components.last?.isEmpty == true else {
-            throw DetachStateCommandError.invalidArguments
-        }
-        let request = components.dropLast()
-        var index = request.startIndex
-        var complete = false
+        let sessions = try metadataSnapshots(at: arguments[0])
         var output = Data()
-        while index < request.endIndex {
-            guard let session = String(data: Data(request[index]), encoding: .utf8) else {
-                throw DetachStateCommandError.invalidArguments
-            }
-            index = request.index(after: index)
-            if session.isEmpty {
-                guard index < request.endIndex,
-                      String(data: Data(request[index]), encoding: .utf8) == "true",
-                      request.index(after: index) == request.endIndex else {
-                    throw DetachStateCommandError.invalidArguments
-                }
-                complete = true
-                break
-            }
-            guard request.distance(from: index, to: request.endIndex) >= 2,
-                  let primary = String(data: Data(request[index]), encoding: .utf8),
-                  let checkpoint = String(
-                    data: Data(request[request.index(after: index)]),
-                    encoding: .utf8) else {
-                throw DetachStateCommandError.invalidArguments
-            }
-            index = request.index(index, offsetBy: 2)
-            let values = metadataSnapshotValues(at: primary, session: session)
-                ?? metadataSnapshotValues(at: checkpoint, session: session)
+        for (session, values) in sessions {
             appendNULTerminated(session, to: &output)
             appendNULTerminated(values == nil ? "false" : "true", to: &output)
             for value in values ?? Array(repeating: nil, count: metadataSnapshotFields.count) {
                 appendNULTerminated(value.map(render) ?? "", to: &output)
             }
-        }
-        guard complete else {
-            throw DetachStateCommandError.invalidArguments
         }
         appendNULTerminated("", to: &output)
         appendNULTerminated("true", to: &output)
@@ -647,14 +612,196 @@ public enum DetachStateCommand {
     }
 
     private static func metadataSnapshotValues(
-        at path: String,
+        in directory: Int32,
         session: String
-    ) -> [DetachStateScalar?]? {
-        guard let data = try? Data(contentsOf: fileURL(path)) else { return nil }
-        return try? SessionMetadataDocument.usableScalars(
+    ) throws -> [DetachStateScalar?]? {
+        if let data = readOwnedMetadataFile(in: directory, name: "meta.json"),
+           let values = try? SessionMetadataDocument.usableScalars(
             in: data,
             expectedSessionName: session,
-            pathGroups: metadataSnapshotFields.map(\.1))
+            pathGroups: metadataSnapshotFields.map(\.1)) {
+            return values
+        }
+        var checkpointMetadata = stat()
+        let checkpointStatus = fstatat(
+            directory, "checkpoint", &checkpointMetadata, AT_SYMLINK_NOFOLLOW)
+        if checkpointStatus != 0 {
+            guard errno == ENOENT else {
+                throw DetachStateCommandError.invalidArguments
+            }
+            return nil
+        }
+        guard isDirectory(checkpointMetadata),
+              !isSymbolicLink(checkpointMetadata),
+              checkpointMetadata.st_uid == geteuid() else {
+            throw DetachStateCommandError.invalidArguments
+        }
+        let checkpoint = openat(
+            directory, "checkpoint", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard checkpoint >= 0 else {
+            throw DetachStateCommandError.invalidArguments
+        }
+        defer { close(checkpoint) }
+        var openedCheckpoint = stat()
+        let checkpointMatches = fstat(checkpoint, &openedCheckpoint) == 0
+            && isDirectory(openedCheckpoint)
+            && openedCheckpoint.st_uid == geteuid()
+            && openedCheckpoint.st_dev == checkpointMetadata.st_dev
+            && openedCheckpoint.st_ino == checkpointMetadata.st_ino
+        guard checkpointMatches else { throw DetachStateCommandError.invalidArguments }
+        if let data = readOwnedMetadataFile(in: checkpoint, name: "meta.json") {
+            if let values = try? SessionMetadataDocument.usableScalars(
+                in: data,
+                expectedSessionName: session,
+                pathGroups: metadataSnapshotFields.map(\.1)) {
+                return values
+            }
+        }
+        return nil
+    }
+
+    private static func metadataSnapshots(
+        at root: String
+    ) throws -> [(String, [DetachStateScalar?]?)] {
+        let components = root.split(separator: "/", omittingEmptySubsequences: false)
+        guard root.hasPrefix("/"),
+              root != "/",
+              !root.hasSuffix("/"),
+              !root.contains("\n"),
+              !root.contains("\r"),
+              !components.contains("."),
+              !components.contains("..") else {
+            throw DetachStateCommandError.invalidArguments
+        }
+        let rootDescriptor = open(
+            root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard rootDescriptor >= 0 else {
+            throw DetachStateCommandError.invalidArguments
+        }
+        defer { close(rootDescriptor) }
+        var rootMetadata = stat()
+        let rootIsOwnedDirectory = fstat(rootDescriptor, &rootMetadata) == 0
+            && isDirectory(rootMetadata)
+            && rootMetadata.st_uid == geteuid()
+        guard rootIsOwnedDirectory else { throw DetachStateCommandError.invalidArguments }
+        let enumerationDescriptor = dup(rootDescriptor)
+        guard enumerationDescriptor >= 0 else { throw DetachStateCommandError.invalidArguments }
+        guard let directory = fdopendir(enumerationDescriptor) else {
+            close(enumerationDescriptor); throw DetachStateCommandError.invalidArguments
+        }
+        defer { closedir(directory) }
+        var names: [String] = []
+        while let entry = readdir(directory) {
+            let name = withUnsafePointer(to: &entry.pointee.d_name) { pointer in
+                pointer.withMemoryRebound(to: CChar.self, capacity: Int(NAME_MAX) + 1) {
+                    String(cString: $0)
+                }
+            }
+            if name != "." && name != ".." { names.append(name) }
+        }
+        var sessions: [(String, [DetachStateScalar?]?)] = []
+        for name in names.sorted() {
+            var item = stat()
+            if fstatat(rootDescriptor, name, &item, AT_SYMLINK_NOFOLLOW) != 0 {
+                guard errno == ENOENT else { throw DetachStateCommandError.invalidArguments }
+                continue
+            }
+            if isSymbolicLink(item) {
+                throw DetachStateCommandError.invalidArguments
+            }
+            guard isDirectory(item) else { continue }
+            guard item.st_uid == geteuid(), validSessionIdentifier(name) else {
+                throw DetachStateCommandError.invalidArguments
+            }
+            let session = openat(
+                rootDescriptor, name,
+                O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            guard session >= 0 else {
+                throw DetachStateCommandError.invalidArguments
+            }
+            var opened = stat()
+            let sessionMatches = fstat(session, &opened) == 0
+                && isDirectory(opened)
+                && opened.st_uid == geteuid()
+                && opened.st_dev == item.st_dev
+                && opened.st_ino == item.st_ino
+            guard sessionMatches else {
+                close(session); throw DetachStateCommandError.invalidArguments
+            }
+            let values: [DetachStateScalar?]?
+            do {
+                values = try metadataSnapshotValues(in: session, session: name)
+            } catch {
+                close(session)
+                throw error
+            }
+            close(session)
+            sessions.append((name, values))
+        }
+        return sessions
+    }
+
+    private static func readOwnedMetadataFile(
+        in directory: Int32,
+        name: String
+    ) -> Data? {
+        let descriptor = openat(
+            directory, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else { return nil }
+        defer { close(descriptor) }
+        var item = stat()
+        let maximumBytes: off_t = 1_048_576
+        guard fstat(descriptor, &item) == 0,
+              isRegularFile(item),
+              item.st_uid == geteuid(),
+              item.st_size >= 0,
+              item.st_size <= maximumBytes else { return nil }
+        var data = Data(count: Int(item.st_size))
+        let complete = data.withUnsafeMutableBytes { buffer -> Bool in
+            guard let base = buffer.baseAddress else { return item.st_size == 0 }
+            var offset = 0
+            while offset < buffer.count {
+                let count = Darwin.read(
+                    descriptor, base.advanced(by: offset), buffer.count - offset)
+                if count < 0 { if errno == EINTR { continue }; return false }
+                if count == 0 { return false }
+                offset += count
+            }
+            return true
+        }
+        return complete ? data : nil
+    }
+
+    private static func isDirectory(_ item: stat) -> Bool {
+        item.st_mode & S_IFMT == S_IFDIR
+    }
+
+    private static func isRegularFile(_ item: stat) -> Bool {
+        item.st_mode & S_IFMT == S_IFREG
+    }
+
+    private static func isSymbolicLink(_ item: stat) -> Bool {
+        item.st_mode & S_IFMT == S_IFLNK
+    }
+
+    private static func validSessionIdentifier(_ value: String) -> Bool {
+        guard value.hasPrefix("detach-codex-") || value.hasPrefix("detach-claude-") else {
+            return false
+        }
+        let prefix = value.hasPrefix("detach-codex-") ? "detach-codex-" : "detach-claude-"
+        let suffix = value.dropFirst(prefix.count)
+        guard (1...48).contains(suffix.utf8.count),
+              let first = suffix.utf8.first,
+              asciiAlphanumeric(first) else { return false }
+        return suffix.utf8.dropFirst().allSatisfy {
+            asciiAlphanumeric($0) || $0 == 0x5F || $0 == 0x2D
+        }
+    }
+
+    private static func asciiAlphanumeric(_ value: UInt8) -> Bool {
+        (0x30...0x39).contains(value)
+            || (0x41...0x5A).contains(value)
+            || (0x61...0x7A).contains(value)
     }
 
     private static func metaUsable(

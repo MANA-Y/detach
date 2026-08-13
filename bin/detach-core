@@ -4115,21 +4115,8 @@ prepare_list_json_args() {
   LIST_JSON_ARGS=( "${session_args[@]}" )
 }
 
-list_meta_snapshot_requests() {
-  local dir
-  local session
-
-  for dir in "$SESSIONS_ROOT"/*; do
-    [ -d "$dir" ] || continue
-    session="$(basename "$dir")"
-    printf '%s\0%s\0%s\0' \
-      "$session" "$dir/meta.json" "$dir/checkpoint/meta.json"
-  done
-  printf '\0true\0'
-}
-
 list_meta_snapshots() {
-  list_meta_snapshot_requests | "$STATE_BIN" meta snapshots /dev/stdin
+  "$STATE_BIN" meta snapshots "$SESSIONS_ROOT"
 }
 
 list_session_records() {
