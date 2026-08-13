@@ -57,10 +57,11 @@ EXECUTION_PREREQUISITES = {
     "claude": "app",
     "tmux-runtime": "app",
 }
-FIRST_WAVE = (
-    "quality-contracts",
+PROVIDER_WAVE = (
     "codex",
     "claude",
+)
+CONTRACT_WAVE = (
     "tmux-runtime",
     "gate-contract",
 )
@@ -1585,9 +1586,13 @@ class QualityGate:
             self.wait_for(("app",))
             self.launch("ui-e2e")
             self.wait_for(("ui-e2e",))
-            for stage in FIRST_WAVE:
+            self.wait_for(("quality-contracts",))
+            for stage in PROVIDER_WAVE:
                 self.launch(stage)
-            self.wait_for(FIRST_WAVE)
+            self.wait_for(PROVIDER_WAVE)
+            for stage in CONTRACT_WAVE:
+                self.launch(stage)
+            self.wait_for(CONTRACT_WAVE)
             for stage in RELEASE_WAVE:
                 self.launch(stage)
             self.wait_for(RELEASE_WAVE)

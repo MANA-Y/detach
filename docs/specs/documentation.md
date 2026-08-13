@@ -75,6 +75,9 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
 - The gate-contract runner admits at most two process-heavy orchestrator shards
   at one time. Lightweight contracts stay concurrent. The runner does not
   increase a timing budget to hide process oversubscription.
+- The repository gate runs the Codex and Claude lanes together. It starts the
+  runtime and gate-contract lanes only after both provider lanes drain. Thus,
+  no more than two process-heavy top-level lanes compete on one macOS runner.
 - CI gets quality metrics from the last green `main` artifact. Test identities,
   aggregate coverage, and critical-source coverage cannot decrease. Changed
   executable Swift lines need at least 90 percent coverage. A person does not
@@ -127,8 +130,16 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   groups each ecosystem into at most one open update pull request so update
   traffic cannot exhaust the feedback queue. A bounded CodeQL workflow scans
   GitHub Actions source on Linux and explicitly built arm64 Swift source on
-  macOS. It runs after `main` changes and each week. It does not add work to
-  pull-request feedback or enter a release path.
+  macOS. Before tracing, the Swift job restores the quality-gate dependency
+  graph and resolves only the tracked lock. It then removes cached products so
+  CodeQL observes fresh repository source without tracing dependency fetch or
+  version resolution. One supported `swift build` command builds the complete
+  package graph in the traced zone. It builds only arm64. It uses whole-module
+  optimization and three workers. It does not build one target at a time or
+  repeat package preparation in a matrix. The Swift job has a 30-minute
+  deadline. The workflow runs each week and on explicit request. It does not
+  run after each merge, add work to pull-request feedback, or enter a release
+  path. The dashboard keeps the latest current security state between runs.
 - By default, put a ready task-scoped change on a topic branch. Review the
   staged public diff, commit it, and push it. Open a pull request, then give its
   number, exact head, and current repair attempt to `scripts/quality-merge`.

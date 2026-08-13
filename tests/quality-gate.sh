@@ -690,32 +690,68 @@ set -eu
 [ -f "${GATE_ORDER_ROOT:?}/swift" ]
 : >"$GATE_ORDER_ROOT/app"
 SH
+cat >"$REPO/tests/quality-gate-fixtures/quality-contracts" <<'SH'
+#!/bin/bash
+set -eu
+[ -f "${GATE_ORDER_ROOT:?}/swift" ]
+sleep 1
+printf '{}\n' >"${DETACH_QUALITY_METRICS_OUTPUT:?}"
+: >"$GATE_ORDER_ROOT/quality-contracts"
+SH
 cat >"$REPO/tests/quality-gate-fixtures/ui-e2e" <<'SH'
 #!/bin/bash
 set -eu
 [ -f "${GATE_ORDER_ROOT:?}/app" ]
 : >"$GATE_ORDER_ROOT/ui-e2e"
 SH
-for ordered_stage in codex claude tmux-runtime gate-contract; do
-  cat >"$REPO/tests/quality-gate-fixtures/$ordered_stage" <<SH
+for provider_stage in codex claude; do
+  provider_peer=codex
+  [ "$provider_stage" = codex ] && provider_peer=claude
+  cat >"$REPO/tests/quality-gate-fixtures/$provider_stage" <<SH
 #!/bin/bash
 set -eu
 [ -f "\${GATE_ORDER_ROOT:?}/app" ]
 [ -f "\${GATE_ORDER_ROOT:?}/ui-e2e" ]
-: >"\$GATE_ORDER_ROOT/$ordered_stage"
+[ -f "\${GATE_ORDER_ROOT:?}/quality-contracts" ]
+sleep 1
+: >"\$GATE_ORDER_ROOT/$provider_stage"
+attempt=0
+while [ ! -f "\$GATE_ORDER_ROOT/$provider_peer" ] && [ "\$attempt" -lt 50 ]; do
+  attempt=\$((attempt + 1))
+  sleep 0.1
+done
+[ -f "\$GATE_ORDER_ROOT/$provider_peer" ]
+SH
+done
+for contract_stage in tmux-runtime gate-contract; do
+  contract_peer=tmux-runtime
+  [ "$contract_stage" = tmux-runtime ] && contract_peer=gate-contract
+  cat >"$REPO/tests/quality-gate-fixtures/$contract_stage" <<SH
+#!/bin/bash
+set -eu
+[ -f "\${GATE_ORDER_ROOT:?}/codex" ]
+[ -f "\${GATE_ORDER_ROOT:?}/claude" ]
+: >"\$GATE_ORDER_ROOT/$contract_stage"
+attempt=0
+while [ ! -f "\$GATE_ORDER_ROOT/$contract_peer" ] && [ "\$attempt" -lt 50 ]; do
+  attempt=\$((attempt + 1))
+  sleep 0.1
+done
+[ -f "\$GATE_ORDER_ROOT/$contract_peer" ]
 SH
 done
 for ordered_stage in distribution release-preflight publish-preflight release-workflow; do
   cat >"$REPO/tests/quality-gate-fixtures/$ordered_stage" <<'SH'
 #!/bin/bash
 set -eu
-for first_wave_stage in ui-e2e codex claude tmux-runtime gate-contract; do
-  [ -f "${GATE_ORDER_ROOT:?}/$first_wave_stage" ]
+for prerequisite_stage in ui-e2e codex claude tmux-runtime gate-contract; do
+  [ -f "${GATE_ORDER_ROOT:?}/$prerequisite_stage" ]
 done
 SH
 done
 chmod 0755 \
   "$REPO/tests/quality-gate-fixtures/swift" \
+  "$REPO/tests/quality-gate-fixtures/quality-contracts" \
   "$REPO/tests/quality-gate-fixtures/app" \
   "$REPO/tests/quality-gate-fixtures/ui-e2e" \
   "$REPO/tests/quality-gate-fixtures/codex" \
