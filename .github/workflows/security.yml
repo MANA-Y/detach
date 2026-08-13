@@ -81,3 +81,106 @@ jobs:
         uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
         with:
           category: /language:swift
+
+  security-evidence:
+    if: always()
+    needs:
+      - actions
+      - swift
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Create exact security result
+        run: >-
+          scripts/quality-security create
+          --source-commit "${{ github.sha }}"
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          --actions-result "${{ needs.actions.result }}"
+          --swift-result "${{ needs.swift.result }}"
+          --output app/build/quality-security/summary.json
+      - name: Upload security result
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quality-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: app/build/quality-security
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce successful analysis
+        run: >-
+          scripts/quality-security validate
+          app/build/quality-security/summary.json
+          --require-pass
+
+  quality-dashboard:
+    if: always() && github.ref == 'refs/heads/main'
+    needs: security-evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Download current security result
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: quality-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: app/build/quality-security
+      - id: main-evidence
+        name: Restore last green main quality evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          baseline_root="$(scripts/quality-baseline)"
+          printf 'root=%s\n' "$baseline_root" >>"$GITHUB_OUTPUT"
+          printf 'run_id=%s\n' "${baseline_root##*/}" >>"$GITHUB_OUTPUT"
+      - id: mutation-evidence
+        name: Restore latest mutation score when available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          summary="$(scripts/quality-mutation latest --optional)"
+          printf 'summary=%s\n' "$summary" >>"$GITHUB_OUTPUT"
+      - id: care-evidence
+        name: Restore latest quality-care summary when available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          summary="$(scripts/quality-care latest --optional)"
+          printf 'summary=%s\n' "$summary" >>"$GITHUB_OUTPUT"
+      - name: Generate dashboard with security result
+        run: |
+          mutation_args=()
+          care_args=()
+          if [ -n "${{ steps.mutation-evidence.outputs.summary }}" ]; then
+            mutation_args+=(--mutation-summary "${{ steps.mutation-evidence.outputs.summary }}")
+          fi
+          if [ -n "${{ steps.care-evidence.outputs.summary }}" ]; then
+            care_args+=(--care-summary "${{ steps.care-evidence.outputs.summary }}")
+          fi
+          scripts/quality-dashboard generate \
+            --result-root "${{ steps.main-evidence.outputs.root }}" \
+            --output app/build/quality-dashboard \
+            --security-summary app/build/quality-security/summary.json \
+            --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ steps.main-evidence.outputs.run_id }}" \
+            "${mutation_args[@]}" \
+            "${care_args[@]}"
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: app/build/quality-dashboard
+      - name: Deploy quality dashboard
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

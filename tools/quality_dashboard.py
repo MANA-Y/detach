@@ -25,6 +25,7 @@ from quality_care import (
 from quality_metrics import MetricsError, validate_metrics
 from quality_mutation import MutationError, validate_summary
 from quality_promote import PromotionError, validate_promotion
+from quality_security import SecurityError, validate_summary as validate_security_summary
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -214,6 +215,20 @@ def read_care_summary(
         raise DashboardError(f"care summary is invalid: {error}") from error
 
 
+def read_security_summary(
+    path: Optional[Path], expected_policy: int
+) -> Optional[dict[str, Any]]:
+    if path is None:
+        return None
+    try:
+        document = json.loads(
+            safe_file(path, "security summary").read_text(encoding="utf-8")
+        )
+        return validate_security_summary(document, expected_policy)
+    except (SecurityError, json.JSONDecodeError, UnicodeError) as error:
+        raise DashboardError(f"security summary is invalid: {error}") from error
+
+
 def split_csv(value: str) -> list[str]:
     return [item for item in value.split(",") if item]
 
@@ -314,7 +329,7 @@ def merge_evidence(commit: str, policy: int, maximum_repairs: int) -> Any:
     return parse_merge_evidence(result.stdout, policy, maximum_repairs)
 
 
-def security_automation() -> dict[str, Any]:
+def security_automation(summary: Optional[dict[str, Any]]) -> dict[str, Any]:
     workflow = safe_file(SECURITY_WORKFLOW, "security workflow").read_text(
         encoding="utf-8"
     )
@@ -332,12 +347,15 @@ def security_automation() -> dict[str, Any]:
     languages = sorted(set(re.findall(r"(?m)^\s+languages:\s+([a-z]+)$", workflow)))
     if languages != ["actions", "swift"]:
         raise DashboardError("security workflow CodeQL languages are invalid")
-    return {
-        "status": "configured",
+    configuration: dict[str, Any] = {
+        "status": "not-yet-emitted",
         "codeql_languages": languages,
         "cadence": "weekly-and-manual",
         "pull_request_feedback": "not-selected",
     }
+    if summary is not None:
+        configuration.update(summary)
+    return configuration
 
 
 def build_data(
@@ -346,6 +364,7 @@ def build_data(
     run_url: str,
     mutation_summary: Optional[Path] = None,
     care_summary: Optional[Path] = None,
+    security_summary: Optional[Path] = None,
 ) -> dict[str, Any]:
     manifest = read_manifest(run_dir)
     effective_commit, effective_authority, promotion = effective_identity(
@@ -421,6 +440,9 @@ def build_data(
         int(manifest["policy"]),
         int(policy["limits"]["pr_feedback_seconds"]),
     )
+    security = read_security_summary(
+        security_summary, int(manifest["policy"])
+    )
     return {
         "schema": 2,
         "run": {
@@ -463,7 +485,7 @@ def build_data(
                 int(manifest["policy"]),
                 int(policy["limits"]["max_repair_loops"]),
             ),
-            "security": security_automation(),
+            "security": security_automation(security),
         },
         "trends": trends,
     }
@@ -579,10 +601,25 @@ def render_html(data: dict[str, Any]) -> str:
         else str(merge)
     )
     security = quality["security"]
-    security_text = (
-        f'CodeQL {" + ".join(security["codeql_languages"])} · '
-        f'{security["cadence"]} · outside PR feedback'
-    )
+    if isinstance(security.get("jobs"), dict):
+        job_text = " + ".join(
+            f'{language} {security["jobs"][language]}'
+            for language in security["codeql_languages"]
+        )
+        security_text = (
+            f'CodeQL {job_text} · {security["status"]} · '
+            f'{security["cadence"]} · source {security["source_commit"][:10]} · '
+        )
+        security_html = (
+            html.escape(security_text)
+            + f'<a href="{html.escape(security["run_url"], quote=True)}">'
+            + f'run {security["run_id"]}</a>'
+        )
+    else:
+        security_html = html.escape(
+            f'CodeQL {" + ".join(security["codeql_languages"])} · '
+            f'{security["status"]} · {security["cadence"]} · outside PR feedback'
+        )
     return f'''<!doctype html>
 <html lang="en">
 <head>
@@ -654,7 +691,7 @@ def render_html(data: dict[str, Any]) -> str:
       <div class="gap"><span class="eyebrow">Workflow evals</span><p>{html.escape(eval_text)}</p></div>
       <div class="gap"><span class="eyebrow">Feedback latency</span><p>{html.escape(latency_text)}</p></div>
       <div class="gap"><span class="eyebrow">Bounded merge</span><p>{html.escape(merge_text)}</p></div>
-      <div class="gap"><span class="eyebrow">Security</span><p>{html.escape(security_text)}</p></div>
+      <div class="gap"><span class="eyebrow">Security</span><p>{security_html}</p></div>
     </div></section>
     <section><h2>Recent runs</h2><div class="table-wrap"><table><thead><tr><th>Commit</th><th>Authority</th><th>Result</th><th class="number">Wall</th><th>Finished</th></tr></thead><tbody>{trend_rows}</tbody></table></div></section>
   </main>
@@ -684,8 +721,10 @@ def generate(arguments: argparse.Namespace) -> int:
         raise DashboardError("run must be directly under the selected result root")
     mutation_summary = arguments.mutation_summary.resolve() if arguments.mutation_summary else None
     care_summary = arguments.care_summary.resolve() if arguments.care_summary else None
+    security_summary = arguments.security_summary.resolve() if arguments.security_summary else None
     data = build_data(
-        run_dir, result_root, arguments.run_url, mutation_summary, care_summary
+        run_dir, result_root, arguments.run_url, mutation_summary, care_summary,
+        security_summary
     )
     output = arguments.output.resolve()
     if output == Path("/") or output == ROOT:
@@ -732,6 +771,7 @@ def parser() -> argparse.ArgumentParser:
     generate_parser.add_argument("--run-url", default="")
     generate_parser.add_argument("--mutation-summary", type=Path)
     generate_parser.add_argument("--care-summary", type=Path)
+    generate_parser.add_argument("--security-summary", type=Path)
     generate_parser.set_defaults(function=generate)
     serve_parser = commands.add_parser("serve", help="serve a generated dashboard for a bounded time")
     serve_parser.add_argument("--directory", type=Path, default=DEFAULT_OUTPUT)

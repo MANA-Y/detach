@@ -108,9 +108,15 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   marks an attention run as failed. Care evidence binds the source commit and
   SHA-256 digests of its eval and history inputs. The dashboard shows measured
   coverage, mutation score, workflow evals, feedback p95 and SLO, and security
-  state when they exist. A later main or mutation deploy restores
-  the newest valid current-policy care artifact. Only deploy jobs have Pages
-  write permission. A healthy care run closes the prior scoped attention issue.
+  state when they exist. The security state comes from a typed current-policy
+  artifact. It includes both CodeQL job results, the analyzed commit, an
+  identity fingerprint, and the exact workflow link. A later main, care, or
+  mutation deploy restores the newest valid current-policy security and care
+  artifacts. Each restore checks at most five completed runs and has a
+  60-second deadline. Only deploy jobs have Pages write permission. A
+  main-branch Security run can deploy its passed or failed CodeQL result over
+  the last green main evidence. A healthy care run closes the prior scoped
+  attention issue.
 - An ordinary merged pull request does not repeat the full functional matrix
   on `main`. The main workflow promotes the successful pull-request artifact
   only when the tested merge and final merge have the same tree and ordered
@@ -139,8 +145,11 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   repeat package preparation in a matrix. The Swift job has a 30-minute
   deadline. The workflow runs each week and on explicit request. It does not
   run after each merge, add work to pull-request feedback, or enter a release
-  path. The dashboard reads the workflow and shows its configured languages
-  and cadence. It fails if these values do not match the security contract.
+  path. The workflow uploads its result before it enforces success. This keeps
+  failed analysis visible. The dashboard reads the workflow and the validated
+  result artifact. It shows the configured languages, cadence, job results,
+  analyzed commit, and exact run link. It fails if the configuration, result,
+  or result fingerprint does not match the security contract.
 - By default, put a ready task-scoped change on a topic branch. Review the
   staged public diff, commit it, and push it. Open a pull request, then give its
   number, exact head, and current repair attempt to `scripts/quality-merge`.

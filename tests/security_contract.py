@@ -11,6 +11,11 @@ ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / ".github/workflows/security.yml"
 DEPENDABOT = ROOT / ".github/dependabot.yml"
 PACKAGE = ROOT / "app/Package.swift"
+PAGES_WORKFLOWS = (
+    ROOT / ".github/workflows/quality-gates.yml",
+    ROOT / ".github/workflows/quality-care.yml",
+    ROOT / ".github/workflows/quality-mutations.yml",
+)
 PINNED_ACTION = re.compile(r"(?:-\s+)?uses:\s+[^\s@]+@[0-9a-f]{40}(?:\s+#\s+v[0-9]+)?$")
 
 
@@ -84,6 +89,38 @@ def main() -> None:
             "25-minute security care must not run after every merge")
     require("workflow_dispatch:" in workflow and "schedule:" in workflow,
             "security care must support weekly and explicit runs")
+    evidence = workflow.index("  security-evidence:")
+    dashboard = workflow.index("  quality-dashboard:")
+    require(swift_analyze < evidence < dashboard,
+            "security evidence and dashboard jobs are out of order")
+    evidence_zone = workflow[evidence:dashboard]
+    require("if: always()" in evidence_zone
+            and "- actions" in evidence_zone and "- swift" in evidence_zone,
+            "security evidence must record both completed analysis jobs")
+    require("scripts/quality-security create" in evidence_zone,
+            "security evidence must use the typed Python boundary")
+    require("${{ needs.actions.result }}" in evidence_zone
+            and "${{ needs.swift.result }}" in evidence_zone,
+            "security evidence does not bind exact job results")
+    require("quality-security-${{ github.run_id }}-${{ github.run_attempt }}" in evidence_zone,
+            "security evidence artifact identity is not exact")
+    upload = evidence_zone.index("Upload security result")
+    enforce = evidence_zone.index("Enforce successful analysis")
+    require(upload < enforce and "--require-pass" in evidence_zone[enforce:],
+            "failed security results must upload before enforcement")
+    dashboard_zone = workflow[dashboard:]
+    require("github.ref == 'refs/heads/main'" in dashboard_zone,
+            "security evidence from a topic branch can replace the main dashboard")
+    require("--security-summary app/build/quality-security/summary.json" in dashboard_zone,
+            "the security dashboard does not consume the exact current artifact")
+    require("timeout-minutes: 3" in dashboard_zone,
+            "security dashboard deadline is missing")
+    for path in PAGES_WORKFLOWS:
+        pages_workflow = path.read_text(encoding="utf-8")
+        require("scripts/quality-security latest --optional" in pages_workflow,
+                f"{path.name} does not preserve the latest security result")
+        require("--security-summary" in pages_workflow,
+                f"{path.name} does not pass security evidence to the dashboard")
     require("release-version" not in workflow and "notary" not in workflow,
             "security care can enter a release path")
     require("version: 2" in dependabot, "Dependabot schema is missing")
