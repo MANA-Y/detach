@@ -9,7 +9,6 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import time
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -23,7 +22,11 @@ COMMIT = "0123456789abcdef0123456789abcdef01234567"
 RUN_URL = "https://github.com/owner/repository/actions/runs/901"
 
 
-def invoke(*arguments: str, environment: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def invoke(
+    *arguments: str,
+    environment: dict[str, str] | None = None,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(ROOT / "scripts/quality-security"), *arguments],
         cwd=ROOT,
@@ -32,6 +35,7 @@ def invoke(*arguments: str, environment: dict[str, str] | None = None) -> subpro
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
+        timeout=timeout,
     )
 
 
@@ -79,6 +83,9 @@ import os,pathlib,shutil,sys,time
 args=sys.argv[1:]
 if os.environ.get('FAKE_SECURITY_SLEEP'):
     time.sleep(float(os.environ['FAKE_SECURITY_SLEEP']))
+    marker=os.environ.get('FAKE_SECURITY_COMPLETION_MARKER')
+    if marker:
+        pathlib.Path(marker).write_text('completed', encoding='utf-8')
 if args[:1] == ['api'] and '/artifacts' not in args[1]:
     print('901')
 elif args[:1] == ['api']:
@@ -109,20 +116,22 @@ else:
         assert restored_path.is_file()
         assert json.loads(restored_path.read_text(encoding="utf-8")) == passed
 
+        completion_marker = root / "slow-gh-completed"
         slow_environment = {
             **environment,
             "DETACH_QUALITY_SECURITY_LATEST_SECONDS": "1",
             "FAKE_SECURITY_SLEEP": "2",
+            "FAKE_SECURITY_COMPLETION_MARKER": str(completion_marker),
         }
-        started = time.monotonic()
         timed = invoke(
             "latest",
             "--repository", "owner/repository",
             "--output-root", str(root / "timed"),
             environment=slow_environment,
+            timeout=5,
         )
         assert timed.returncode == 2
-        assert time.monotonic() - started < 1.8
+        assert not completion_marker.exists()
         assert "bounded security restore deadline" in timed.stderr
 
     print("Quality security evidence contracts passed")

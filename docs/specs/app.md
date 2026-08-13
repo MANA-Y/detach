@@ -15,17 +15,18 @@ against `ANSIParser.terminalBackground`, which is also the `LogTextView`
 background; do not duplicate that canvas color. Font-size scaling may replace
 only the font attribute and must preserve every ANSI-derived attribute.
 
-Onboarding is a card assistant driven by the pure step reducer in
-`SetupGuidance.step(for:)`; a setup failure outranks provider discovery. A bare
-`SMAppService.status == .enabled` read never completes the permissions step:
-the live poller reads statuses without side effects and runs one coordinated
-reconciliation on the enable transition, and only confirmed readiness (helper
-journal finished, root gate reopened) advances the step. Registration may
-truthfully remain in `requiresApproval`; never treat it as enabled before macOS
-does. The success card waits for the first fresh watchdog heartbeat; its
-dashboard action remains disabled until then, and after a long wait it offers
-an explicit monitor retry instead of a bypass. Completion is guarded again in
-the store and is recorded only by that explicit action, exactly once.
+Onboarding uses the pure reducer in `SetupGuidance.step(for:)`; a setup failure
+outranks provider discovery. A bare
+`SMAppService.status == .enabled` read never completes the permissions step.
+The live poller reads status without side effects and reconciles once when it
+becomes enabled. Only confirmed readiness (a
+finished helper journal and an open root gate) advances the step. Registration
+can stay in `requiresApproval`; do not treat it as enabled before macOS does.
+The success card waits for a fresh watchdog heartbeat. Its dashboard action
+stays disabled until then. After a long wait, it offers a monitor retry, not a
+bypass. The store records completion only after that action, exactly once.
+If a doctor refresh fails or detects another runtime identity, the app
+withdraws the earlier helper-readiness confirmation.
 
 After onboarding completes, `.idle`, `.syncing`, `.updateDeferred`, and
 `.ready` present `.mainApp`. Bootstrap, refresh, and an update held by active

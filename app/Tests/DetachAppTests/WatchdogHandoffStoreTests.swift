@@ -127,6 +127,210 @@ final class WatchdogHandoffStoreTests: XCTestCase {
             "power-watchdog-handoff.json")
     }
 
+    func testRejectsOversizedJournalBeforeDecoding() throws {
+        let fixture = makeFixture()
+        defer { fixture.cleanup() }
+        try writeJournal(
+            Data(repeating: 0, count: FileWatchdogHandoffStore.maximumBytes + 1),
+            fixture: fixture)
+
+        XCTAssertThrowsError(try fixture.store.load()) { error in
+            guard case WatchdogHandoffStoreError.stateTooLarge = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testRejectsInvalidPersistedTransaction() throws {
+        let fixture = makeFixture()
+        defer { fixture.cleanup() }
+        let invalid = WatchdogHandoffTransaction(
+            phase: .registering,
+            targetDigest: nil)
+        try writeJournal(
+            try JSONEncoder().encode(invalid),
+            fixture: fixture)
+
+        XCTAssertThrowsError(try fixture.store.load()) { error in
+            guard case WatchdogHandoffStoreError.invalidState = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testRejectsJournalReadableByOtherUsers() throws {
+        let fixture = makeFixture()
+        defer { fixture.cleanup() }
+        let transaction = WatchdogHandoffTransaction(
+            phase: .removed,
+            targetDigest: "digest")
+        try writeJournal(
+            try JSONEncoder().encode(transaction),
+            fixture: fixture,
+            permissions: 0o644)
+
+        XCTAssertThrowsError(try fixture.store.load()) { error in
+            guard case WatchdogHandoffStoreError.insecurePath = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testRejectsSymlinkJournalWithoutFollowingIt() throws {
+        let fixture = makeFixture()
+        defer { fixture.cleanup() }
+        try FileManager.default.createDirectory(
+            at: fixture.fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let target = fixture.root.appendingPathComponent("target.json")
+        try Data("{}".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(
+            at: fixture.fileURL,
+            withDestinationURL: target)
+
+        XCTAssertThrowsError(try fixture.store.load()) { error in
+            guard case let WatchdogHandoffStoreError.fileSystem(operation, _) =
+                    error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(operation, "open")
+        }
+    }
+
+    func testStoreErrorsHaveActionableDescriptions() {
+        let cases: [(WatchdogHandoffStoreError, String)] = [
+            (.insecurePath,
+             "The watchdog handoff journal has an insecure path."),
+            (.stateTooLarge,
+             "The watchdog handoff journal is unexpectedly large."),
+            (.invalidState,
+             "The watchdog handoff journal is invalid."),
+            (.transactionBusy,
+             "Another Detach process is already updating the watchdog."),
+            (.fileSystem(operation: "read", code: EIO),
+             "Could not read the watchdog handoff journal (errno \(EIO))."),
+        ]
+
+        for (error, description) in cases {
+            XCTAssertEqual(error.errorDescription, description)
+        }
+    }
+
+    func testClearIsIdempotentBeforeJournalDirectoryExists() throws {
+        let fixture = makeFixture()
+        defer { fixture.cleanup() }
+
+        try fixture.store.clear()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.path))
+    }
+
+    func testRejectsNonDirectoryJournalParent() throws {
+        let fixture = makeFixture()
+        defer { fixture.cleanup() }
+        let parent = fixture.fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: parent.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        try Data().write(to: parent)
+        let transaction = WatchdogHandoffTransaction(
+            phase: .removed,
+            targetDigest: "digest")
+
+        XCTAssertThrowsError(try fixture.store.save(transaction)) { error in
+            guard case WatchdogHandoffStoreError.insecurePath = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testRejectsSymlinkTransactionLock() throws {
+        let fixture = makeFixture()
+        defer { fixture.cleanup() }
+        let directory = fixture.fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let target = fixture.root.appendingPathComponent("lock-target")
+        try Data().write(to: target)
+        try FileManager.default.createSymbolicLink(
+            at: directory.appendingPathComponent(
+                "power-watchdog-handoff.lock"),
+            withDestinationURL: target)
+
+        XCTAssertThrowsError(try fixture.store.acquireTransactionLock()) {
+            error in
+            guard case let WatchdogHandoffStoreError.fileSystem(operation, _) =
+                    error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(operation, "open transaction lock")
+        }
+    }
+
+    func testRejectsOversizedSerializedTransactionBeforeWriting() throws {
+        let fixture = makeFixture()
+        defer { fixture.cleanup() }
+        let transaction = WatchdogHandoffTransaction(
+            phase: .removed,
+            targetDigest: String(
+                repeating: "x",
+                count: FileWatchdogHandoffStore.maximumBytes))
+
+        XCTAssertThrowsError(try fixture.store.save(transaction)) { error in
+            guard case WatchdogHandoffStoreError.stateTooLarge = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testLifetimeBarrierReportsMissingAndRejectsInsecureFile() throws {
+        let fixture = makeFixture()
+        defer { fixture.cleanup() }
+        let lifetimeURL = fixture.root.appendingPathComponent("lifetime.lock")
+        let barrier = WatchdogLifetimeBarrier(
+            fileURL: lifetimeURL,
+            expectedOwner: geteuid())
+
+        XCTAssertEqual(try barrier.status(), .missing)
+
+        try FileManager.default.createDirectory(
+            at: fixture.root,
+            withIntermediateDirectories: true)
+        try Data().write(to: lifetimeURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o644],
+            ofItemAtPath: lifetimeURL.path)
+        XCTAssertThrowsError(try barrier.status()) { error in
+            guard case WatchdogHandoffStoreError.insecurePath = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testDefaultLifetimeBarrierUsesWatchdogLockName() {
+        XCTAssertEqual(
+            WatchdogLifetimeBarrier.defaultFileURL.lastPathComponent,
+            "watchdog-lifetime.lock")
+    }
+
+    private func writeJournal(
+        _ data: Data,
+        fixture: WatchdogStoreFixture,
+        permissions: Int = 0o600
+    ) throws {
+        try FileManager.default.createDirectory(
+            at: fixture.fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        try data.write(to: fixture.fileURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: permissions],
+            ofItemAtPath: fixture.fileURL.path)
+    }
+
     private func makeFixture() -> WatchdogStoreFixture {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(
