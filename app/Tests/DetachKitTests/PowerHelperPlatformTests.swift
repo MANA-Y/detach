@@ -17,10 +17,11 @@ final class PowerHelperPlatformTests: XCTestCase {
             timeout: 0.05, terminationGrace: 0.05)
 
         XCTAssertThrowsError(try runner.run(RootCommand(
-            executable: "/bin/sleep", arguments: ["5"]))) { error in
+            executable: "/bin/sh",
+            arguments: ["-c", "trap '' TERM; exec /bin/sleep 5"]))) { error in
             XCTAssertEqual(
                 error as? PowerHelperPlatformError,
-                .commandTimedOut(executable: "/bin/sleep"))
+                .commandTimedOut(executable: "/bin/sh"))
         }
     }
 
