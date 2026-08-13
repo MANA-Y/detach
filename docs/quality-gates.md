@@ -259,16 +259,18 @@ keeps update traffic from exhausting the pull-request feedback queue. The
 bounded security workflow scans both GitHub Actions source and arm64 Swift
 source with CodeQL after a `main` change and on a weekly schedule. The Swift
 scan restores the existing quality-gate dependency graph, resolves the tracked
-lock before tracing, and removes cached products. Three parallel jobs analyze
-`DetachKit`, `DetachApp`, and the process entry points. The app and process jobs
-build `DetachKit` before CodeQL starts, so each repository source is traced in
-one scope. Traced builds use whole-module compilation. Each target gets one
-compiler batch with three bounded workers instead of repeated primary-file
-extraction. Debug and index output are disabled because CodeQL does not use
-them. Each job keeps the 15-minute deadline. Dependency network, version work,
-repeated extraction, and process oversubscription cannot consume the complete
-security workflow budget. These care jobs do not extend pull-request feedback
-and cannot run release commands.
+lock before tracing, and removes cached products. A stdlib Python tool asks
+SwiftPM to generate a compiler plan before CodeQL starts. It rejects a plan
+that omits, adds, or changes a production Swift source. Three parallel jobs then
+trace direct compiler commands for the kit, app, and process scopes. SwiftPM
+does not run inside the traced zone. Each target uses one whole-module compiler
+batch with three bounded workers. Debug and index output are disabled because
+CodeQL does not use them. Preparation has a 180-second deadline. Direct tracing
+has a 600-second deadline and terminates its process group on timeout. Each job
+also keeps the 15-minute deadline. Dependency network, version work, repeated
+extraction, and process oversubscription cannot consume the complete security
+workflow budget. These care jobs do not extend pull-request feedback and cannot
+run release commands.
 
 Release readiness also requires the tracked reference-Mac time budgets and the
 release-only gates below. Ordinary implementation must not run them.

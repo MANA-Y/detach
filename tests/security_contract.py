@@ -5,9 +5,15 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import sys
 
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tools"))
+
+from swift_codeql_build import SCOPES, SWIFT_BUILD_OPTIONS, source_files  # noqa: E402
+
+
 WORKFLOW = ROOT / ".github/workflows/security.yml"
 DEPENDABOT = ROOT / ".github/dependabot.yml"
 PINNED_ACTION = re.compile(r"(?:-\s+)?uses:\s+[^\s@]+@[0-9a-f]{40}(?:\s+#\s+v[0-9]+)?$")
@@ -27,19 +33,15 @@ def main() -> None:
     require("languages: actions" in workflow, "workflow analysis is missing")
     require("languages: swift" in workflow, "Swift analysis is missing")
     require("build-mode: manual" in workflow, "Swift must use an explicit build")
-    require("--arch arm64" in workflow, "Swift analysis must build only arm64")
     cache = workflow.index("Restore the Swift dependency graph")
     resolve = workflow.index("Resolve the locked Swift dependencies")
     clean = workflow.index("Remove cached products before tracing")
-    prepare = workflow.index("Prepare shared Swift source outside scope tracing")
+    prepare = workflow.index("Prepare Swift compiler plan outside tracing")
     swift_init = workflow.index("Initialize Swift analysis")
-    kit_build = workflow.index("Build Swift kit source for analysis")
-    swift_build = workflow.index("Build Swift app source for analysis")
-    process_build = workflow.index("Build Swift process entry points for analysis")
+    trace = workflow.index("Trace generated Swift compiler plan")
     swift_analyze = workflow.index("Analyze Swift scope")
-    require(cache < resolve < clean < prepare < swift_init < kit_build < swift_build
-            < process_build < swift_analyze,
-            "Swift preparation, target builds, and analysis are out of order")
+    require(cache < resolve < clean < prepare < swift_init < trace < swift_analyze,
+            "Swift preparation, direct tracing, and analysis are out of order")
     require("actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830" in workflow,
             "Swift analysis must restore the immutable quality-gate cache")
     require("swift package --package-path app --force-resolved-versions resolve" in workflow,
@@ -50,33 +52,47 @@ def main() -> None:
             "Swift analysis must cover the kit, app, and process scopes")
     require("max-parallel: 3" in workflow and "fail-fast: false" in workflow,
             "Swift analysis scopes must run independently with bounded fan-out")
-    require("if: matrix.scope != 'kit'" in workflow,
-            "app and process scopes must prepare shared source before tracing")
-    for scope in ("kit", "app", "processes"):
-        require(f"if: matrix.scope == '{scope}'" in workflow,
-                f"Swift analysis is missing its {scope} scope condition")
+    require(SCOPES == {
+        "kit": ("DetachKit",),
+        "app": ("DetachApp",),
+        "processes": (
+            "DetachPower", "DetachPowerHelper", "DetachState", "DetachWatchdog"
+        ),
+    }, "direct Swift compiler scopes do not cover every production module")
+    scoped_modules = {module for modules in SCOPES.values() for module in modules}
+    repository_modules = {
+        path.name
+        for path in (ROOT / "app/Sources").iterdir()
+        if path.is_dir() and list(path.rglob("*.swift"))
+    }
+    require(scoped_modules == repository_modules,
+            "direct Swift compiler scopes do not match the production source tree")
+    require(sum(len(source_files(ROOT / "app", module)) for module in scoped_modules) > 0,
+            "direct Swift compiler scopes contain no production source")
     require("category: /language:swift-${{ matrix.scope }}" in workflow,
             "Swift scopes must publish distinct CodeQL categories")
-    require(workflow.count("--force-resolved-versions") == 8,
-            "Swift resolve, preparation, and every scope build must reject lock drift")
-    require(workflow.count("--jobs 3") == 7,
-            "Swift target builds must match the three-thread extractor")
-    require(workflow.count("--disable-index-store") == 7,
-            "Swift security builds must not pay for unused index data")
-    require(workflow.count("-Xswiftc -whole-module-optimization") == 6,
-            "every traced Swift build must use one compiler batch per target")
-    require(workflow.count("-Xswiftc -num-threads -Xswiftc 3") == 6,
-            "every traced Swift compiler batch must keep three bounded workers")
-    require(workflow.count("-Xswiftc -gnone") == 6,
-            "traced Swift builds must not emit unused debug information")
-    require("-disable-batch-mode" not in workflow,
-            "traced Swift builds must not repeat extraction by primary file")
-    require(workflow.count("--target DetachKit") == 2,
-            "shared Swift source needs one preparation and one traced build command")
-    for target in ("DetachApp", "DetachPower", "DetachPowerHelper",
-                   "DetachState", "DetachWatchdog"):
-        require(f"--target {target}" in workflow,
-                f"Swift analysis is missing target {target}")
+    options = list(SWIFT_BUILD_OPTIONS)
+    require(options[options.index("--arch") + 1] == "arm64",
+            "Swift analysis must build only arm64")
+    require(options[options.index("--jobs") + 1] == "3",
+            "Swift preparation must match the three-thread extractor")
+    for option in ("--disable-index-store", "--disable-sandbox",
+                   "--force-resolved-versions", "-whole-module-optimization",
+                   "-num-threads", "-gnone"):
+        require(option in options, f"Swift preparation is missing {option}")
+    require("python3 tools/swift_codeql_build.py prepare" in workflow,
+            "Swift preparation must use the tested Python boundary")
+    require("python3 tools/swift_codeql_build.py trace" in workflow,
+            "Swift tracing must use the tested Python boundary")
+    require("--timeout-seconds 180" in workflow,
+            "Swift preparation deadline is missing")
+    require("--timeout-seconds 600" in workflow,
+            "Swift tracing deadline is missing")
+    require("swift build" not in workflow[swift_init:swift_analyze],
+            "SwiftPM must stay outside the CodeQL traced zone")
+    for module in scoped_modules:
+        require(module not in workflow,
+                f"workflow duplicates the Python module map: {module}")
     require("timeout-minutes: 5" in workflow, "workflow analysis deadline is missing")
     require("timeout-minutes: 15" in workflow, "Swift analysis deadline is missing")
     require("security-events: write" in workflow, "CodeQL cannot publish results")
