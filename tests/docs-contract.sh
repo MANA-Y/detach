@@ -51,6 +51,7 @@ required=(
   docs/testing.md
   docs/quality-gates.md
   docs/exec-plan-template.md
+  .github/pull_request_template.md
 )
 for file in "${required[@]}"; do
   [ -f "$ROOT/$file" ] || fail "missing $file"
@@ -67,10 +68,40 @@ for spec in runtime power app release documentation; do
     fail "context map must reference $spec.md exactly once"
 done
 
-for heading in   '## Purpose and observable outcome'   '## Scope and non-goals'   '## Requirements and acceptance evidence'   '## Decisions'   '## Verification'   '## Outcomes and retrospective'; do
+for heading in   '## Purpose and observable outcome'   '## Scope and non-goals'   '## Contract delta'   '## Pre-implementation review'   '## Requirements and acceptance evidence'   '## Decisions'   '## Verification'   '## Outcomes and retrospective'; do
   grep -Fx "$heading" "$ROOT/docs/exec-plan-template.md" >/dev/null ||
     fail "ExecPlan template missing $heading"
 done
+
+grep -F 'Classify each requirement as ADDED, MODIFIED, or REMOVED.' \
+  "$ROOT/docs/exec-plan-template.md" >/dev/null ||
+  fail 'ExecPlan template must define the contract delta'
+grep -F 'and acceptance evidence. Record the reviewer, approval source, and `Ready` or' \
+  "$ROOT/docs/exec-plan-template.md" >/dev/null ||
+  fail 'ExecPlan template must require a pre-implementation review'
+grep -F 'The request is approval only when it fixes the same' \
+  "$ROOT/docs/exec-plan-template.md" >/dev/null ||
+  fail 'ExecPlan review must identify valid prior approval'
+grep -F 'Before implementation, write and review its current-to-target' \
+  "$ROOT/AGENTS.md" >/dev/null ||
+  fail 'agent instructions must require contract-delta review'
+grep -F 'contract delta, durable decisions, and evidence in the PR.' \
+  "$ROOT/AGENTS.md" >/dev/null ||
+  fail 'agent instructions must require a safe pull request summary'
+grep -F 'approval only if it fixes the same target and boundaries.' \
+  "$ROOT/docs/specs/documentation.md" >/dev/null ||
+  fail 'documentation spec must define the approval boundary'
+
+for heading in '## Contract delta' '## Durable decisions' '## Acceptance evidence'; do
+  grep -Fx "$heading" "$ROOT/.github/pull_request_template.md" >/dev/null ||
+    fail "pull request template missing $heading"
+done
+grep -F 'Do not copy private ExecPlan content' \
+  "$ROOT/.github/pull_request_template.md" >/dev/null ||
+  fail 'pull request template must protect private plan content'
+grep -F 'write "No contract change" and explain why.' \
+  "$ROOT/.github/pull_request_template.md" >/dev/null ||
+  fail 'pull request template must cover changes without a contract delta'
 
 git -C "$ROOT" check-ignore -q docs/work/example.md ||
   fail 'temporary ExecPlans must remain ignored'

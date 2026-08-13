@@ -12,8 +12,8 @@ entry point.
   invariants.
 - Source code implements the contract.
 - Tests and `scripts/quality-gate` provide executable evidence.
-- An ignored ExecPlan under `docs/work/` records one task's temporary
-  intent, decisions, and progress.
+- An ignored ExecPlan under `docs/work/` records one task's reviewed contract
+  delta, temporary intent, decisions, and progress.
 
 When these disagree, do not silently choose one. Establish intended behavior,
 then update every affected durable artifact in the same change.

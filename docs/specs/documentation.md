@@ -23,7 +23,8 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   claim verified STE compliance unless a reviewer checks it against the
   official standard.
 - Durable specs describe current contracts. Ignored `docs/work/` contains
-  temporary executable plans. Imports are not used for detailed specs because
+  temporary executable plans. A required plan states and reviews the contract
+  delta before primary implementation. Detailed specs are not imported because
   Claude expands imports eagerly.
 - Ignored `presentations/` contains internal presentation sources. Git and the
   quality gate do not treat these files as repository inputs.
@@ -42,22 +43,19 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
 - Resume evidence retains stage timing and digest-bound logs, binds its parent,
   requires the same authority, and cannot turn a prior time-budget regression
   into authoritative evidence.
-- Quality policy files contain only the current policy version and state. Git
-  is the policy history. Runtime tools do not keep migration decoders for old
-  policy schemas. The last green metrics artifact can use an earlier policy
-  number only when its evidence schema is current. This preserves metric
-  continuity and does not decode an old policy.
+- Quality policy files contain only current version and state; Git is history.
+  Runtime tools do not decode old policy schemas. A last-green metrics artifact
+  can use an earlier policy number only with the current evidence schema. This
+  preserves continuity without old-policy decoding.
 - The quality policy registers each tracked durable spec exactly once. It has
   no spec-history or lifecycle-status field. Each registered spec owns a route,
   a capability, and a requirement. Each requirement links to a user journey
   and at least one automated scenario. Generated JSON and Markdown views must
   match the policy.
-- Retained gate results contain execution history for timing and quality
-  trends. They are not policy history and cannot restore an old policy state.
-  A declared unsupported evidence schema is outside the current telemetry
+- Retained gates are timing and quality history, not policy history, and cannot
+  restore old policy. An unsupported evidence schema is outside the telemetry
   sample. Current-schema telemetry can span earlier policy identifiers without
-  requiring dashboard-only fields. Malformed telemetry evidence remains an
-  attention signal.
+  dashboard-only fields. Malformed evidence remains an attention signal.
 - `quality/evals.json` keeps current expected outcomes for historical changes,
   escaped defects, policy mutations, and scope violations. Its stable graders
   compare selected stages, specifications, capabilities, user journeys,
@@ -141,39 +139,41 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   at most the merge deadline. It disables auto-merge on timeout. The command
   rejects a changed head, an invalid ruleset, and a repair attempt above the
   policy maximum. It writes current-policy evidence under `app/build/`.
-- Dependabot checks pinned GitHub Actions and Swift packages each week. It
-  groups each ecosystem into at most one open update pull request so update
-  traffic cannot exhaust the feedback queue. A bounded CodeQL workflow scans
-  GitHub Actions source on Linux and explicitly built arm64 Swift source on
-  macOS. Before tracing, the Swift job restores the quality-gate dependency
-  graph and resolves only the tracked lock. It then removes cached products so
-  CodeQL observes fresh repository source without tracing dependency fetch or
-  version resolution. One supported `swift build` command builds the complete
-  package graph in the traced zone. It builds only arm64. It uses whole-module
-  optimization and three workers. It does not build one target at a time or
-  repeat package preparation in a matrix. The Swift job has a 30-minute
-  deadline. The workflow runs each week and on explicit request. It does not
-  run after each merge, add work to pull-request feedback, or enter a release
-  path. The workflow uploads its result before it enforces success. This keeps
-  failed analysis visible. The dashboard reads the workflow and the validated
-  result artifact. It shows the configured languages, cadence, job results,
-  analyzed commit, and exact run link. It fails if the configuration, result,
-  or result fingerprint does not match the security contract.
+- Weekly Dependabot checks pinned Actions and Swift packages. It groups each
+  ecosystem into at most one pull request to protect the feedback queue. The
+  bounded weekly/manual CodeQL workflow scans Actions on Linux and arm64 Swift
+  on macOS. Swift restores the gate dependency graph, resolves the tracked lock,
+  and removes cached products before tracing. One whole-module `swift build`
+  with three workers builds the complete arm64 graph without per-target builds
+  or repeated matrix preparation. The job has 30 minutes. It does not run after
+  merges, affect pull-request feedback, or enter release. It uploads results
+  before enforcement. The dashboard validates the configuration, result, and
+  fingerprint and shows languages, cadence, jobs, commit, and workflow link.
 - By default, put a ready task-scoped change on a topic branch. Review the
-  staged public diff, commit it, and push it. Open a pull request, then give its
-  number, exact head, and current repair attempt to `scripts/quality-merge`.
-  After its bounded PASS, verify that local `main` and upstream `main` are
-  equal. The owner can ask to keep the change local.
+  staged public diff, commit it, and push it. The pull request summarizes the
+  safe contract delta, durable decisions, and acceptance evidence; it never
+  copies private plan content. Give its number, exact head, and repair attempt
+  to `scripts/quality-merge`. After PASS, verify local and upstream `main` parity.
+  The owner can ask to keep the change local.
 - `tests/docs-contract.sh` enforces this structure and runs inside the
   static quality stage.
 
 ## Spec lifecycle
 
-Use a direct edit for a small, obvious task. Use the ExecPlan template when
-work crosses subsystems, contains material unknowns, changes security/release
-contracts, or needs a resumable multi-session handoff. Keep the plan
-self-contained and current while working. Promote only stable outcomes and
-invariants into the durable spec.
+Use a direct edit for a small, obvious task. Use the ExecPlan template when work
+crosses subsystems, has material unknowns, changes security or release contracts,
+or needs a resumable handoff. Before primary implementation, record and review
+the current-to-target contract delta for each affected `README.md` contract or
+durable spec. Classify requirements as ADDED, MODIFIED, or REMOVED, or record
+no contract change with evidence. Link changed requirements to journeys,
+scenarios, and evidence.
+
+Review scope, non-goals, and evidence in the same checkpoint. The request is
+approval only if it fixes the same target and boundaries. Otherwise ask the
+owner about material choices. Record the reviewer, approval source, and result.
+Revise the checkpoint when the delta changes. Promote only stable outcomes and
+invariants into durable specs. Keep the plan ignored and put only safe rationale
+in the pull request.
 
 When agent behavior repeatedly fails, prefer a deterministic check. If behavior
 cannot be enforced mechanically, update the narrow spec. Change `AGENTS.md`

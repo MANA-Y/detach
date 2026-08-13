@@ -10,41 +10,41 @@ the providers separately.
 1. Inspect the working tree; preserve unrelated user changes.
 2. Use the context map below to read the one relevant specification. Read a
    second spec only when the change genuinely crosses that boundary.
-3. For a small, obvious change, edit directly. For a cross-subsystem change,
-   risky migration, or work with unresolved requirements, create an ignored
-   ExecPlan under `docs/work/` from `docs/exec-plan-template.md` and keep it current.
+3. Edit a small, obvious change directly. For cross-subsystem work, a risky
+   migration, or unresolved requirements, create an ignored ExecPlan under
+   `docs/work/`. Before implementation, write and review its current-to-target
+   contract delta. Ask the owner only about material choices the task does not fix.
 4. During implementation, run the narrow checks named by the selected specs.
    Before handoff, inspect `scripts/quality-gate --plan --explain` and run the
    focused local diagnostics once. Use `--resume latest` after a compatible
    interrupted or failed run. Hosted pull-request CI is readiness authority.
 5. Review the final diff and evidence. Update the user contract or durable spec
    in the same change whenever behavior or an invariant changes.
-6. Unless the owner explicitly asks to keep work local, ordinary changes use a
-   topic branch: stage only task-scoped files, inspect the staged public diff,
-   commit after local diagnostics pass, push, and merge only through a PR whose
-   required authoritative `quality-gates` job passed. Verify final `main` upstream parity.
+6. Unless the owner asks to keep work local, use a topic branch. Stage only
+   task-scoped files, inspect the staged public diff, and summarize the safe
+   contract delta, durable decisions, and evidence in the PR. Merge only after
+   its authoritative `quality-gates` job passes. Verify final `main` upstream parity.
    Release metadata uses a PR. `scripts/release-version` is the sole entry.
 
 `README.md` is the user-facing contract. `docs/specs/` contains durable
 current-state engineering contracts. Tests and gates are executable evidence;
 they do not make stale prose correct.
 
-Use [ASD-STE100 Issue 9](https://www.asd-ste100.org/) for new or changed
-English text in `README.md` and `docs/`. Use short, direct sentences and one
-term for each meaning. Treat product names, paths, commands, and identifiers as
-project technical terms. Do not claim verified STE compliance without a review
-against the official standard.
+Use [ASD-STE100 Issue 9](https://www.asd-ste100.org/) for changed English in
+`README.md` and `docs/`. Use short, direct sentences and one term per meaning.
+Product names, paths, commands, and identifiers are technical terms. Do not
+claim verified compliance without review against the official standard.
 
 ## Context and specification policy
 
-- Keep this file under 200 lines and limited to rules needed on most tasks.
-- Do not add architecture tutorials or file-by-file inventories here. Put a
+- Keep this file under 200 lines and limited to common rules.
+- Do not add architecture tutorials or file inventories here. Put a
   durable invariant in the narrowest file under `docs/specs/`; put a
   temporary task plan under ignored `docs/work/`.
 - `CLAUDE.md` must contain only `@AGENTS.md`. Never copy this content
   into it or create a second lowercase agent-instruction file.
-- Do not import the detailed specs from this file: imports are eager context in
-  Claude Code. Follow the small context map below instead.
+- Do not import detailed specs: Claude loads imports eagerly. Use the context
+  map below.
 - Specs state observable outcomes, non-goals, invariants, owning paths, and
   verification. Avoid implementation narration that code already makes clear.
 - Complex plans are living, self-contained handoff artifacts. Record decisions,
