@@ -83,7 +83,8 @@ The repository gate writes private evidence under
 `app/build/quality-gates/`. One run contains a schema-versioned TSV summary,
 gate and scenario JUnit, scenario JSONL, Markdown, stage logs, safe environment
 facts, a provenance manifest, and a digest inventory. Coverage runs also
-contain `quality-metrics.json`. A failed scenario adds a bounded
+contain `quality-metrics.json` and `coverage-opportunities.json`. A failed
+scenario adds a bounded
 `repair-bundle.json` with its requirement and journey links, exact rerun, and
 at most the last 100 log lines.
 
@@ -128,14 +129,19 @@ SLO is less than ten minutes.
 
 Static validation runs before the parallel self-contract workers. This keeps
 its two-second local signal free of scheduler contention. Coverage compilation
-and the app build then get exclusive SwiftPM access. Quality analysis reads the
-completed Swift log and coverage profile without another test run. The short
-packaged UI lane runs after the verified app and before the CPU-intensive
+and the app build then get exclusive SwiftPM access. The app stage verifies the
+normal bundle before it builds a coverage-enabled release executable for the
+private UI copy. The short packaged UI lane runs after the verified app and
+before the CPU-intensive
 provider, runtime, and gate-contract lanes. This prevents WindowServer event
 delivery from competing with those workers. Provider lanes then run in
 parallel. After they drain, the runtime and gate-contract lanes run in
 parallel. This admits at most two process-heavy top-level lanes. Independent
 distribution and release lanes overlap after both groups drain.
+
+Quality analysis runs after the UI lane. It merges the completed Swift profile
+with all passed packaged-app profiles. It reads the existing Swift log and does
+not run a test twice.
 
 The gate-contract stage keeps lightweight contracts concurrent. It admits at
 most two process-heavy orchestrator shards at one time. This limit prevents
@@ -183,6 +189,12 @@ Changed executable lines need at least 90 percent coverage. A new critical
 source needs 100 percent coverage for its first baseline. Missing, stale,
 unbound, unsafe, or malformed baseline evidence fails closed.
 
+The UI aggregate includes Swift tests and the bounded packaged-app journeys.
+The separate opportunity artifact ranks current uncovered UI sources. Its risk
+order comes from the current policy route, release impact, requirements, and
+user journeys. The next milestone is the next five-point boundary above the
+observed ratio. It is advisory and does not replace the last-green ratchet.
+
 A weekly and manual workflow runs each deterministic safety mutant in a
 separate bounded macOS job. The required mutation score is 100 percent. A
 survivor, timeout, or infrastructure-like failure is not a kill and fails the
@@ -208,13 +220,14 @@ run release tools.
 
 ## Dashboard
 
-The dashboard generator validates the current manifest, summary, metric and
-mutation digests. It also validates the care policy, source commit, schema, and
-input digests. It shows authority, result, exact commit, exact CI run,
-freshness, fingerprint, durations, coverage, affected journeys, scenario gaps,
-mutation score, workflow evals, feedback p95 and SLO, security state, and recent
-latency. Code review stays a read-only step in the active agent workflow. It is
-not a repository gate or a second merge authority.
+The dashboard generator validates the current manifest, summary, metric,
+coverage-opportunity, and mutation digests. It also validates the care policy,
+source commit, schema, and input digests. It shows authority, result, exact
+commit, exact CI run, freshness, fingerprint, durations, coverage, ranked UI
+opportunities, affected journeys, scenario gaps, mutation score, workflow
+evals, feedback p95 and SLO, security state, and recent latency. Code review
+stays a read-only step in the active agent workflow. It is not a repository
+gate or a second merge authority.
 
 The same artifact opens locally and deploys to GitHub Pages. Main and mutation
 workflows deploy only after a green `ci-main` gate or a green mutation score for

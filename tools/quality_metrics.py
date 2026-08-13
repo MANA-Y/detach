@@ -6,11 +6,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 from typing import Any, NoReturn, Optional
 
 from quality_policy import POLICY_FILE, Policy, PolicyError, ROOT
@@ -179,6 +181,210 @@ def collect_coverage(document: Any) -> dict[str, dict[str, Any]]:
     if not files:
         raise MetricsError("LLVM coverage contains no Detach sources")
     return files
+
+
+def references(value: str) -> list[str]:
+    return [] if value in ("", "-") else value.split(",")
+
+
+def opportunity_risk(
+    path: str, policy: Policy, release_domain: str
+) -> tuple[int, str]:
+    if any(source == path for source, _ in policy.critical):
+        return 5, "critical"
+    return {
+        "both": (4, "power-and-installation"),
+        "install": (3, "installation-sensitive"),
+        "unknown": (2, "unclassified"),
+        "safe": (1, "user-journey"),
+    }[release_domain]
+
+
+def next_coverage_milestone(current_percent: float) -> int:
+    if current_percent >= 100:
+        return 100
+    milestone = min(100, int(math.ceil(current_percent / 5.0) * 5))
+    return min(100, milestone + 5) if milestone <= current_percent else milestone
+
+
+def build_opportunities(
+    coverage: dict[str, dict[str, Any]],
+    metrics: dict[str, Any],
+    policy: Policy,
+    source_commit: str,
+) -> dict[str, Any]:
+    observed = metrics["suites"]["ui"]["line_coverage"]
+    current_percent = observed["percent"]
+    milestone = next_coverage_milestone(current_percent)
+    lines_to_milestone = max(
+        0,
+        math.ceil(milestone * observed["total"] / 100) - observed["covered"],
+    )
+    entries: list[dict[str, Any]] = []
+    for path, value in coverage.items():
+        if group_for_source(path, policy) != "ui":
+            continue
+        uncovered = value["total"] - value["covered"]
+        if uncovered == 0:
+            continue
+        classification = policy.classify(path)
+        capabilities = sorted(references(classification.capabilities))
+        journeys = sorted(references(classification.journeys))
+        requirements = sorted(
+            {
+                requirement
+                for capability in capabilities
+                for requirement in references(policy.capabilities[capability][1])
+            }
+            | {
+                requirement
+                for journey in journeys
+                for requirement in references(policy.journeys[journey][1])
+            }
+        )
+        scenario_stages = {
+            policy.scenarios[scenario][0]
+            for journey in journeys
+            for scenario in references(policy.journeys[journey][2])
+            if policy.scenarios[scenario][1] not in ("planned", "manual-release")
+        }
+        risk_tier, risk = opportunity_risk(
+            path, policy, classification.release_domain
+        )
+        entries.append(
+            {
+                "path": path,
+                "risk": risk,
+                "risk_tier": risk_tier,
+                "line_coverage": coverage_value(value["covered"], value["total"]),
+                "uncovered": uncovered,
+                "capabilities": capabilities,
+                "requirements": requirements,
+                "journeys": journeys,
+                "recommended_evidence": (
+                    "packaged-user-journey"
+                    if "ui-e2e" in scenario_stages
+                    else "behavioral-unit-test"
+                ),
+            }
+        )
+    entries.sort(
+        key=lambda item: (
+            -item["risk_tier"],
+            -len(item["requirements"]),
+            -len(item["journeys"]),
+            -item["uncovered"],
+            item["path"],
+        )
+    )
+    for rank, entry in enumerate(entries, 1):
+        entry["rank"] = rank
+    return {
+        "schema": 1,
+        "policy": policy.version,
+        "source_commit": source_commit,
+        "suite": "ui",
+        "observed": observed,
+        "next_milestone_percent": milestone,
+        "lines_to_milestone": lines_to_milestone,
+        "opportunities": entries,
+    }
+
+
+def validate_opportunities(
+    document: Any, *, expected_policy: Optional[int] = None
+) -> dict[str, Any]:
+    required = {
+        "schema",
+        "policy",
+        "source_commit",
+        "suite",
+        "observed",
+        "next_milestone_percent",
+        "lines_to_milestone",
+        "opportunities",
+    }
+    if (
+        not isinstance(document, dict)
+        or set(document) != required
+        or document.get("schema") != 1
+        or document.get("suite") != "ui"
+    ):
+        raise MetricsError("coverage opportunities schema is unsupported")
+    policy_version = document.get("policy")
+    if not isinstance(policy_version, int) or policy_version <= 0:
+        raise MetricsError("coverage opportunities policy is invalid")
+    if expected_policy is not None and policy_version != expected_policy:
+        raise MetricsError("coverage opportunities use another policy")
+    if not HEX_COMMIT.fullmatch(document.get("source_commit", "")):
+        raise MetricsError("coverage opportunities source commit is invalid")
+    covered, total = validate_coverage(document.get("observed"), "opportunity observed")
+    milestone = document.get("next_milestone_percent")
+    if not isinstance(milestone, int) or not 1 <= milestone <= 100:
+        raise MetricsError("coverage opportunity milestone is invalid")
+    if milestone != next_coverage_milestone(document["observed"]["percent"]):
+        raise MetricsError("coverage opportunity milestone is inconsistent")
+    expected_lines = max(0, math.ceil(milestone * total / 100) - covered)
+    if integer(document.get("lines_to_milestone"), "lines to milestone") != expected_lines:
+        raise MetricsError("coverage opportunity milestone line count is inconsistent")
+    entries = document.get("opportunities")
+    if not isinstance(entries, list):
+        raise MetricsError("coverage opportunities are malformed")
+    paths: set[str] = set()
+    fields = {
+        "rank",
+        "path",
+        "risk",
+        "risk_tier",
+        "line_coverage",
+        "uncovered",
+        "capabilities",
+        "requirements",
+        "journeys",
+        "recommended_evidence",
+    }
+    risk_names = {
+        1: "user-journey",
+        2: "unclassified",
+        3: "installation-sensitive",
+        4: "power-and-installation",
+        5: "critical",
+    }
+    for expected_rank, entry in enumerate(entries, 1):
+        if not isinstance(entry, dict) or set(entry) != fields:
+            raise MetricsError("coverage opportunity record is malformed")
+        path = entry.get("path")
+        risk_tier = entry.get("risk_tier")
+        if (
+            entry.get("rank") != expected_rank
+            or not isinstance(path, str)
+            or not path.startswith(UI_PREFIX)
+            or path in paths
+            or risk_tier not in risk_names
+            or entry.get("risk") != risk_names[risk_tier]
+            or entry.get("recommended_evidence")
+            not in ("packaged-user-journey", "behavioral-unit-test")
+        ):
+            raise MetricsError("coverage opportunity identity is invalid")
+        paths.add(path)
+        entry_covered, entry_total = validate_coverage(
+            entry.get("line_coverage"), path
+        )
+        if (
+            integer(entry.get("uncovered"), f"{path} uncovered")
+            != entry_total - entry_covered
+            or entry_covered == entry_total
+        ):
+            raise MetricsError("coverage opportunity uncovered count is inconsistent")
+        for key in ("capabilities", "requirements", "journeys"):
+            values = entry.get(key)
+            if (
+                not isinstance(values, list)
+                or values != sorted(set(values))
+                or any(not isinstance(value, str) or not value for value in values)
+            ):
+                raise MetricsError(f"coverage opportunity {key} are malformed")
+    return document
 
 
 def collect_tests(path: Path) -> set[str]:
@@ -674,24 +880,54 @@ def build_metrics(
     }
 
 
-def export_coverage(binary: Path, profile: Path) -> Any:
+def export_coverage(
+    binary: Path,
+    profile: Path,
+    additional_objects: list[Path],
+    additional_profile_directory: Optional[Path],
+) -> Any:
     safe_file(binary, "Swift test binary")
     safe_file(profile, "Swift coverage profile")
-    result = run(
-        [
-            "xcrun",
-            "llvm-cov",
-            "export",
-            str(binary),
-            "-instr-profile",
-            str(profile),
-        ],
-        text=False,
-    )
-    try:
-        return json.loads(result.stdout.decode("utf-8"))
-    except (UnicodeError, json.JSONDecodeError) as error:
-        raise MetricsError(f"LLVM coverage export is malformed: {error}") from error
+    for additional in additional_objects:
+        safe_file(additional, "additional coverage object")
+    with tempfile.TemporaryDirectory(prefix="detach-quality-coverage.") as temporary:
+        export_profile = profile
+        if additional_profile_directory is not None:
+            if (
+                not additional_profile_directory.is_dir()
+                or additional_profile_directory.is_symlink()
+            ):
+                raise MetricsError("additional coverage profile directory is missing or unsafe")
+            additional_profiles = sorted(
+                additional_profile_directory.glob("*.profraw")
+            )
+            if not additional_profiles:
+                raise MetricsError("additional coverage profile directory is empty")
+            for additional_profile in additional_profiles:
+                safe_file(additional_profile, "additional coverage profile")
+            export_profile = Path(temporary) / "combined.profdata"
+            run(
+                [
+                    "xcrun",
+                    "llvm-profdata",
+                    "merge",
+                    "-sparse",
+                    str(profile),
+                    *(str(path) for path in additional_profiles),
+                    "-o",
+                    str(export_profile),
+                ]
+            )
+            safe_file(export_profile, "combined coverage profile")
+        arguments = ["xcrun", "llvm-cov", "export", str(binary)]
+        for additional in additional_objects:
+            arguments.extend(("-object", str(additional)))
+        arguments.extend(("-instr-profile", str(export_profile)))
+        result = run(arguments, text=False)
+        try:
+            return json.loads(result.stdout.decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError) as error:
+            raise MetricsError(f"LLVM coverage export is malformed: {error}") from error
 
 
 def evaluate(arguments: argparse.Namespace) -> int:
@@ -702,11 +938,28 @@ def evaluate(arguments: argparse.Namespace) -> int:
     if arguments.test_changed_lines and test_mode != "1":
         raise MetricsError("test changed-line evidence is test-only")
     if arguments.coverage_json:
+        if arguments.additional_object or arguments.additional_profile_directory:
+            raise MetricsError("additional coverage inputs require a test binary")
         coverage_document = read_json(Path(arguments.coverage_json), "LLVM coverage")
     else:
         if not arguments.test_binary or not arguments.profile:
             raise MetricsError("test binary and profile are required")
-        coverage_document = export_coverage(Path(arguments.test_binary), Path(arguments.profile))
+        additional_objects = [Path(path) for path in arguments.additional_object]
+        profile_directory = (
+            Path(arguments.additional_profile_directory)
+            if arguments.additional_profile_directory
+            else None
+        )
+        if bool(additional_objects) != bool(profile_directory):
+            raise MetricsError(
+                "additional coverage objects and profile directory must occur together"
+            )
+        coverage_document = export_coverage(
+            Path(arguments.test_binary),
+            Path(arguments.profile),
+            additional_objects,
+            profile_directory,
+        )
     coverage = collect_coverage(coverage_document)
     tests = collect_tests(Path(arguments.tests))
     baseline_root = Path(arguments.baseline_root) if arguments.baseline_root else None
@@ -743,6 +996,12 @@ def evaluate(arguments: argparse.Namespace) -> int:
     )
     validate_metrics(document, expected_policy=policy.version)
     write_json(Path(arguments.output), document)
+    if arguments.opportunities_output:
+        opportunities = build_opportunities(
+            coverage, document, policy, arguments.source_commit
+        )
+        validate_opportunities(opportunities, expected_policy=policy.version)
+        write_json(Path(arguments.opportunities_output), opportunities)
     suites = document["suites"]
     changed = document["changed_lines"]
     print(
@@ -769,8 +1028,11 @@ def parser() -> argparse.ArgumentParser:
     source.add_argument("--coverage-json")
     source.add_argument("--test-binary")
     evaluate_parser.add_argument("--profile")
+    evaluate_parser.add_argument("--additional-object", action="append", default=[])
+    evaluate_parser.add_argument("--additional-profile-directory", default="")
     evaluate_parser.add_argument("--tests", required=True)
     evaluate_parser.add_argument("--output", required=True)
+    evaluate_parser.add_argument("--opportunities-output", default="")
     evaluate_parser.add_argument("--source-commit", required=True)
     evaluate_parser.add_argument("--base-commit", default="")
     evaluate_parser.add_argument("--baseline-root", default="")
@@ -782,6 +1044,8 @@ def parser() -> argparse.ArgumentParser:
     evaluate_parser.add_argument("--test-changed-lines", default="", help=argparse.SUPPRESS)
     validate_parser = subcommands.add_parser("validate")
     validate_parser.add_argument("path")
+    validate_opportunities_parser = subcommands.add_parser("validate-opportunities")
+    validate_opportunities_parser.add_argument("path")
     return result
 
 
@@ -793,6 +1057,15 @@ def main(arguments: list[str]) -> int:
         document = validate_metrics(read_json(Path(parsed.path), "quality metrics"))
         print(
             f"Quality metrics are valid: policy={document['policy']} "
+            f"source={document['source_commit']}"
+        )
+        return 0
+    if parsed.command == "validate-opportunities":
+        document = validate_opportunities(
+            read_json(Path(parsed.path), "coverage opportunities")
+        )
+        print(
+            f"Coverage opportunities are valid: policy={document['policy']} "
             f"source={document['source_commit']}"
         )
         return 0

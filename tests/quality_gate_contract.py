@@ -50,7 +50,13 @@ class QualityGateContract(unittest.TestCase):
     def test_execution_prerequisites_reference_policy_stages(self) -> None:
         stages = set(Policy(POLICY_FILE).stages_by_name)
         self.assertLessEqual(set(EXECUTION_PREREQUISITES), stages)
-        self.assertLessEqual(set(EXECUTION_PREREQUISITES.values()), stages)
+        self.assertTrue(all(EXECUTION_PREREQUISITES.values()))
+        prerequisites = {
+            prerequisite
+            for values in EXECUTION_PREREQUISITES.values()
+            for prerequisite in values
+        }
+        self.assertLessEqual(prerequisites, stages)
 
     def test_local_change_contracts_skip_repository_orchestrator_shards(self) -> None:
         all_contracts = gate_contract_definitions(ROOT, include_orchestrators=True)

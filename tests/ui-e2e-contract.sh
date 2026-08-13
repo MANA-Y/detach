@@ -23,6 +23,24 @@ run_validation() {
 
 run_validation "$APP"
 
+if DETACH_TEST_APP="$APP" DETACH_UI_E2E_VALIDATE_ONLY=1 \
+    DETACH_UI_E2E_COVERAGE_BINARY="$TMP_ROOT/missing-coverage-binary" \
+    "$ROOT/tests/ui-e2e.sh" >"$TMP_ROOT/missing-coverage.log" 2>&1; then
+  printf 'UI e2e accepted a missing coverage executable\n' >&2
+  exit 1
+fi
+grep -F 'coverage executable is missing or unsafe' \
+  "$TMP_ROOT/missing-coverage.log" >/dev/null
+
+if DETACH_TEST_APP="$APP" DETACH_UI_E2E_VALIDATE_ONLY=1 \
+    DETACH_UI_E2E_COVERAGE_BINARY="$APP/Contents/MacOS/Detach" \
+    "$ROOT/tests/ui-e2e.sh" >"$TMP_ROOT/uninstrumented-coverage.log" 2>&1; then
+  printf 'UI e2e accepted an uninstrumented coverage executable\n' >&2
+  exit 1
+fi
+grep -F 'coverage executable has no coverage map' \
+  "$TMP_ROOT/uninstrumented-coverage.log" >/dev/null
+
 for invocation in \
   'list --json' \
   'codex logs --ansi detach-codex-ui-running' \

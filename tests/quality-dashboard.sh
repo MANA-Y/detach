@@ -73,8 +73,35 @@ cat >"$RUN_DIR/quality-metrics.json" <<JSON
   }
 }
 JSON
+cat >"$RUN_DIR/coverage-opportunities.json" <<JSON
+{
+  "lines_to_milestone": 5,
+  "next_milestone_percent": 35,
+  "observed": {"covered": 30, "percent": 30.0, "total": 100},
+  "opportunities": [
+    {
+      "capabilities": ["onboarding"],
+      "journeys": ["J-ONBOARD-APPROVAL", "J-ONBOARD-FIRST-RUN", "J-ONBOARD-PROVIDER"],
+      "line_coverage": {"covered": 30, "percent": 30.0, "total": 100},
+      "path": "app/Sources/DetachApp/RootView.swift",
+      "rank": 1,
+      "recommended_evidence": "packaged-user-journey",
+      "requirements": ["QC-APP-ONBOARDING"],
+      "risk": "installation-sensitive",
+      "risk_tier": 3,
+      "uncovered": 70
+    }
+  ],
+  "policy": $POLICY_VERSION,
+  "schema": 1,
+  "source_commit": "0123456789abcdef0123456789abcdef01234567",
+  "suite": "ui"
+}
+JSON
 metrics_digest="$(shasum -a 256 "$RUN_DIR/quality-metrics.json" | awk '{print $1}')"
-printf 'schema\t1\nfile\tquality-metrics.json\t%s\n' "$metrics_digest" \
+opportunities_digest="$(shasum -a 256 "$RUN_DIR/coverage-opportunities.json" | awk '{print $1}')"
+printf 'schema\t1\nfile\tcoverage-opportunities.json\t%s\nfile\tquality-metrics.json\t%s\n' \
+  "$opportunities_digest" "$metrics_digest" \
   >"$RUN_DIR/artifacts.tsv"
 artifacts_digest="$(shasum -a 256 "$RUN_DIR/artifacts.tsv" | awk '{print $1}')"
 cat >"$RUN_DIR/manifest.tsv" <<EOF
@@ -216,6 +243,12 @@ grep -F 'Planned gaps</span><strong>0' "$OUTPUT/index.html" >/dev/null || \
   fail 'closed scenario set still reports a planned gap'
 grep -F 'changed lines 90.00%' "$OUTPUT/index.html" >/dev/null || \
   fail 'measured changed-line coverage is missing'
+grep -F 'UI coverage opportunities' "$OUTPUT/index.html" >/dev/null || \
+  fail 'coverage opportunity table is missing'
+grep -F 'Next automatic milestone: 35% (5 executable lines).' \
+  "$OUTPUT/index.html" >/dev/null || fail 'automatic coverage milestone is missing'
+grep -F 'app/Sources/DetachApp/RootView.swift' "$OUTPUT/index.html" >/dev/null || \
+  fail 'ranked coverage source is missing'
 grep -F '100% · 1/1 killed · passed' "$OUTPUT/index.html" >/dev/null || \
   fail 'mutation score is missing'
 grep -F '8/8 passed · passed · 1 repaired failure retained · source' "$OUTPUT/index.html" >/dev/null || \
@@ -233,12 +266,16 @@ import json
 import sys
 with open(sys.argv[1], encoding="utf-8") as source:
     data = json.load(source)
-assert data["schema"] == 2
+assert data["schema"] == 3
 assert data["run"]["authority"] == "ci-merge"
 assert data["run"]["result"] == "passed"
 assert [spec["id"] for spec in data["specifications"]] == ["app"]
 assert data["quality"]["planned_scenarios"] == 0
 assert data["quality"]["coverage"]["comparison"]["mode"] == "green-main-artifact"
+assert data["quality"]["coverage_opportunities"]["next_milestone_percent"] == 35
+assert data["quality"]["coverage_opportunities"]["opportunities"][0]["path"].endswith(
+    "RootView.swift"
+)
 assert data["quality"]["mutation"]["score_percent"] == 100
 assert data["quality"]["merge"] == "not-yet-emitted"
 with open(sys.argv[2], encoding="utf-8") as source:

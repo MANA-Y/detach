@@ -7,6 +7,7 @@ SOURCE_APP="${DETACH_TEST_APP:-$ROOT/app/build/Detach.app}"
 VALIDATE_ONLY="${DETACH_UI_E2E_VALIDATE_ONLY:-0}"
 KEEP="${DETACH_UI_E2E_KEEP:-0}"
 ARTIFACT_DIR="${DETACH_UI_E2E_ARTIFACT_DIR:-}"
+COVERAGE_BINARY="${DETACH_UI_E2E_COVERAGE_BINARY:-}"
 TEST_ROOT=""
 APP_PID=""
 
@@ -105,6 +106,22 @@ case "$VALIDATE_ONLY:$KEEP" in 0:0|0:1|1:0|1:1) ;;
   *) printf 'invalid UI e2e boolean option\n' >&2; exit 2 ;;
 esac
 validate_fresh_app "$SOURCE_APP"
+if [ -n "$COVERAGE_BINARY" ]; then
+  [ -f "$COVERAGE_BINARY" ] && [ ! -L "$COVERAGE_BINARY" ] && \
+    [ -x "$COVERAGE_BINARY" ] || {
+    printf 'UI e2e: coverage executable is missing or unsafe\n' >&2
+    exit 2
+  }
+  [ "$(lipo -archs "$COVERAGE_BINARY")" = arm64 ] || {
+    printf 'UI e2e: coverage executable must be arm64-only\n' >&2
+    exit 2
+  }
+  otool -l "$COVERAGE_BINARY" | grep -F '__llvm_covmap' >/dev/null || {
+    printf 'UI e2e: coverage executable has no coverage map\n' >&2
+    exit 2
+  }
+fi
+
 [ "$VALIDATE_ONLY" = 0 ] || exit 0
 
 TEST_ROOT="$(mktemp -d /private/tmp/detach-ui-e2e.XXXXXX)"
@@ -122,6 +139,19 @@ UI_E2E_DEADLINE=$((SECONDS + 38))
 mkdir -p "$TEST_HOME/.local/bin" "$TEST_HOME/Library/Preferences" \
   "$TEST_ROOT/state" "$TEST_ROOT/power" "$FAKE_DIR"
 ditto "$SOURCE_APP" "$TEST_APP"
+
+if [ -n "$COVERAGE_BINARY" ]; then
+  install -m 0755 "$COVERAGE_BINARY" "$TEST_APP/Contents/MacOS/Detach"
+  if ! otool -l "$TEST_APP/Contents/MacOS/Detach" | awk '
+      $1 == "cmd" && $2 == "LC_RPATH" { in_rpath = 1; next }
+      in_rpath && $1 == "path" && $2 == "@executable_path/../Frameworks" { found = 1 }
+      in_rpath && $1 == "path" { in_rpath = 0 }
+      END { exit found ? 0 : 1 }
+    '; then
+    install_name_tool -add_rpath '@executable_path/../Frameworks' \
+      "$TEST_APP/Contents/MacOS/Detach"
+  fi
+fi
 
 # The test copy cannot install, repair, unregister, power-protect, or invoke a
 # bundled runtime even if the app regresses. Only the main UI executable and
