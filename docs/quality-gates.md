@@ -257,7 +257,7 @@ Dependabot checks immutable GitHub Actions pins and Swift package pins each
 week. It groups each ecosystem into at most one open update pull request. This
 keeps update traffic from exhausting the pull-request feedback queue. The
 bounded security workflow scans both GitHub Actions source and arm64 Swift
-source with CodeQL after a `main` change and on a weekly schedule. The Swift
+source with CodeQL on a weekly schedule or explicit request. The Swift
 scan restores the existing quality-gate dependency graph, resolves the tracked
 lock before tracing, and removes cached products. One supported `swift build`
 command then builds the complete package graph in the traced zone. The command
@@ -266,7 +266,9 @@ whole-module batch per module with three workers. Debug and index output are
 disabled because CodeQL does not use them. The workflow does not repeat SwiftPM
 preparation in a matrix. The Swift job has a 30-minute deadline. Dependency
 network, repeated package planning, and process oversubscription cannot consume
-the complete security workflow budget. These care jobs do not extend
+the complete security workflow budget. A 25-minute successful hosted run makes
+this workflow too expensive for each merge. The dashboard keeps the latest
+current security state between weekly runs. These care jobs do not extend
 pull-request feedback and cannot run release commands.
 
 Release readiness also requires the tracked reference-Mac time budgets and the

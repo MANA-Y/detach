@@ -80,6 +80,10 @@ def main() -> None:
     require("timeout-minutes: 30" in workflow, "Swift analysis deadline is missing")
     require("security-events: write" in workflow, "CodeQL cannot publish results")
     require("pull_request:" not in workflow, "security care must not extend PR feedback")
+    require("\n  push:" not in workflow,
+            "25-minute security care must not run after every merge")
+    require("workflow_dispatch:" in workflow and "schedule:" in workflow,
+            "security care must support weekly and explicit runs")
     require("release-version" not in workflow and "notary" not in workflow,
             "security care can enter a release path")
     require("version: 2" in dependabot, "Dependabot schema is missing")
