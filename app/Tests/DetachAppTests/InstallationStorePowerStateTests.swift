@@ -512,6 +512,394 @@ final class InstallationStorePowerStateTests: XCTestCase {
         XCTAssertFalse(store.isBusy)
     }
 
+    func testPackagedBootstrapReconcilesServicesAndPublishesReadyState()
+        async throws
+    {
+        let distribution = InstallationDistributionProbe(
+            synchronizeResults: [.success("installed payload")],
+            doctorResults: [
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport()),
+            ])
+        let watchdog = InstallationWatchdogProbe(status: .enabled)
+        let powerHelper = InstallationPowerHelperProbe(status: .enabled)
+        let fixture = try makePackagedInstallationFixture(
+            distribution: distribution,
+            watchdog: watchdog,
+            powerHelper: powerHelper)
+        defer { fixture.cleanup() }
+
+        await fixture.store.bootstrap()
+
+        XCTAssertEqual(fixture.store.phase, .ready)
+        XCTAssertTrue(fixture.store.distributionMatchesBundle)
+        XCTAssertTrue(fixture.store.powerHelperReadinessConfirmed)
+        XCTAssertEqual(fixture.store.lastInstallMessage, "installed payload")
+        XCTAssertEqual(distribution.repairs, [false])
+        XCTAssertEqual(distribution.doctorCallCount, 2)
+        XCTAssertEqual(powerHelper.reconcileCallCount, 1)
+        XCTAssertEqual(watchdog.forceReplacementRequests, [true])
+        let checks = Dictionary(uniqueKeysWithValues:
+            fixture.store.appContextChecks.map { ($0.id, $0) })
+        XCTAssertEqual(checks["app_cli_match"]?.status, .ok)
+        XCTAssertEqual(checks["app_power_helper"]?.status, .ok)
+        XCTAssertEqual(checks["app_watchdog"]?.status, .ok)
+        XCTAssertEqual(checks["watchdog_heartbeat"]?.status, .warning)
+    }
+
+    func testDeferredExistingInstallRetriesAutomaticallyAndRecovers()
+        async throws
+    {
+        let distribution = InstallationDistributionProbe(
+            synchronizeResults: [
+                .success("first install"), .success("recovered install"),
+            ],
+            doctorResults: [
+                .success(installedRuntimeReport(build: "other")),
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport()),
+            ])
+        let watchdog = InstallationWatchdogProbe(status: .enabled)
+        let powerHelper = InstallationPowerHelperProbe(status: .enabled)
+        let fixture = try makePackagedInstallationFixture(
+            completedOnboarding: true,
+            distribution: distribution,
+            watchdog: watchdog,
+            powerHelper: powerHelper)
+        defer { fixture.cleanup() }
+
+        await fixture.store.bootstrap()
+
+        XCTAssertEqual(fixture.store.phase, .updateDeferred)
+        XCTAssertFalse(fixture.store.distributionMatchesBundle)
+        XCTAssertEqual(powerHelper.reconcileCallCount, 0)
+        XCTAssertTrue(watchdog.forceReplacementRequests.isEmpty)
+
+        let refreshed = await fixture.store.refreshContext()
+        XCTAssertTrue(refreshed)
+
+        XCTAssertEqual(fixture.store.phase, .ready)
+        XCTAssertTrue(fixture.store.distributionMatchesBundle)
+        XCTAssertEqual(fixture.store.lastInstallMessage, "recovered install")
+        XCTAssertEqual(distribution.repairs, [false, false])
+        XCTAssertEqual(powerHelper.reconcileCallCount, 1)
+        XCTAssertEqual(watchdog.forceReplacementRequests, [false])
+    }
+
+    func testRepairDefersHelperReplacementWhileActiveLeasesRemain()
+        async throws
+    {
+        let distribution = InstallationDistributionProbe(
+            synchronizeResults: [.success("repaired")],
+            doctorResults: [
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport()),
+            ])
+        let watchdog = InstallationWatchdogProbe(status: .enabled)
+        let powerHelper = InstallationPowerHelperProbe(
+            status: .enabled,
+            reconcileResult: .success(.deferredForActiveLeases))
+        let fixture = try makePackagedInstallationFixture(
+            completedOnboarding: true,
+            distribution: distribution,
+            watchdog: watchdog,
+            powerHelper: powerHelper)
+        defer { fixture.cleanup() }
+
+        await fixture.store.repair()
+
+        XCTAssertEqual(fixture.store.phase, .updateDeferred)
+        XCTAssertEqual(fixture.store.onboardingStep, .mainApp)
+        XCTAssertTrue(fixture.store.powerHelperReadinessConfirmed)
+        XCTAssertEqual(distribution.repairs, [true])
+        XCTAssertEqual(watchdog.forceReplacementRequests, [true])
+    }
+
+    func testRefreshWithdrawsReadinessWhenServiceReconciliationFails()
+        async throws
+    {
+        let distribution = InstallationDistributionProbe(
+            synchronizeResults: [.success("installed")],
+            doctorResults: [
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport()),
+            ])
+        let watchdog = InstallationWatchdogProbe(status: .enabled)
+        let powerHelper = InstallationPowerHelperProbe(status: .enabled)
+        let fixture = try makePackagedInstallationFixture(
+            distribution: distribution,
+            watchdog: watchdog,
+            powerHelper: powerHelper)
+        defer { fixture.cleanup() }
+        await fixture.store.bootstrap()
+        XCTAssertEqual(fixture.store.phase, .ready)
+
+        watchdog.status = .notRegistered
+        watchdog.reconcileResult = .failure(InstallationProbeError.watchdog)
+        powerHelper.reconcileResult = .failure(
+            InstallationProbeError.powerHelper)
+
+        let refreshed = await fixture.store.refreshContext()
+        XCTAssertTrue(refreshed)
+
+        XCTAssertEqual(fixture.store.phase, .actionRequired)
+        XCTAssertFalse(fixture.store.powerHelperReadinessConfirmed)
+        XCTAssertEqual(
+            fixture.store.powerHelperError, "power helper probe failed")
+        XCTAssertEqual(fixture.store.watchdogError, "watchdog probe failed")
+        XCTAssertEqual(watchdog.forceReplacementRequests, [true, false])
+        let checks = Dictionary(uniqueKeysWithValues:
+            fixture.store.appContextChecks.map { ($0.id, $0) })
+        XCTAssertEqual(checks["app_power_helper"]?.status, .error)
+        XCTAssertEqual(checks["app_watchdog"]?.status, .error)
+    }
+
+    func testRefreshRejectsRuntimeIdentityDrift() async throws {
+        let distribution = InstallationDistributionProbe(
+            synchronizeResults: [.success("installed")],
+            doctorResults: [
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport(build: "replaced")),
+            ])
+        let fixture = try makePackagedInstallationFixture(
+            distribution: distribution,
+            watchdog: InstallationWatchdogProbe(status: .enabled),
+            powerHelper: InstallationPowerHelperProbe(status: .enabled))
+        defer { fixture.cleanup() }
+        await fixture.store.bootstrap()
+
+        let refreshed = await fixture.store.refreshContext()
+        XCTAssertTrue(refreshed)
+
+        XCTAssertEqual(
+            fixture.store.phase,
+            .failed("The CLI is missing or belongs to another build; run Repair from the intended app version"))
+        XCTAssertFalse(fixture.store.distributionMatchesBundle)
+        XCTAssertFalse(fixture.store.powerHelperReadinessConfirmed)
+    }
+
+    func testPostRegistrationDoctorFailureCannotPublishStaleReadiness()
+        async throws
+    {
+        let distribution = InstallationDistributionProbe(
+            synchronizeResults: [.success("installed")],
+            doctorResults: [
+                .success(installedRuntimeReport()),
+                .failure(InstallationProbeError.doctor),
+            ])
+        let fixture = try makePackagedInstallationFixture(
+            distribution: distribution,
+            watchdog: InstallationWatchdogProbe(status: .enabled),
+            powerHelper: InstallationPowerHelperProbe(status: .enabled))
+        defer { fixture.cleanup() }
+
+        await fixture.store.bootstrap()
+
+        XCTAssertEqual(fixture.store.phase, .failed("doctor probe failed"))
+        XCTAssertFalse(fixture.store.powerHelperReadinessConfirmed)
+    }
+
+    func testRegistrationPollingPublishesEveryActionableStatus() throws {
+        let watchdog = InstallationWatchdogProbe(status: .requiresApproval)
+        let powerHelper = InstallationPowerHelperProbe(
+            status: .requiresApproval)
+        let store = InstallationStore(
+            detachPath: "/tmp/detach-test",
+            watchdog: watchdog,
+            powerHelper: powerHelper)
+
+        store.refreshRegistrationStatusesOnly()
+        var checks = Dictionary(uniqueKeysWithValues:
+            store.appContextChecks.map { ($0.id, $0) })
+        XCTAssertEqual(checks["app_power_helper"]?.status, .warning)
+        XCTAssertEqual(checks["app_watchdog"]?.status, .error)
+
+        watchdog.status = .notRegistered
+        powerHelper.status = .notRegistered
+        store.refreshRegistrationStatusesOnly()
+        checks = Dictionary(uniqueKeysWithValues:
+            store.appContextChecks.map { ($0.id, $0) })
+        XCTAssertEqual(checks["app_power_helper"]?.status, .warning)
+        XCTAssertEqual(checks["app_watchdog"]?.status, .error)
+
+        watchdog.status = .enabled
+        powerHelper.status = .enabled
+        store.refreshRegistrationStatusesOnly()
+        checks = Dictionary(uniqueKeysWithValues:
+            store.appContextChecks.map { ($0.id, $0) })
+        XCTAssertEqual(checks["app_power_helper"]?.status, .warning)
+        XCTAssertEqual(checks["app_watchdog"]?.status, .ok)
+
+        store.openLoginItemsSettings()
+        store.openPowerHelperApprovalSettings()
+        XCTAssertEqual(watchdog.openSettingsCallCount, 1)
+        XCTAssertEqual(powerHelper.openSettingsCallCount, 1)
+    }
+
+    func testUninstallRemovesServicesBeforeDistribution() async throws {
+        let cli = InstallationCLIProbe(result: .success(CLIResult(
+            exitCode: 0,
+            stdout: "removed\n",
+            stderr: "",
+            timedOut: false)))
+        let watchdog = InstallationWatchdogProbe(status: .enabled)
+        let powerHelper = InstallationPowerHelperProbe(status: .enabled)
+        let fixture = try makePackagedInstallationFixture(
+            distribution: InstallationDistributionProbe(),
+            watchdog: watchdog,
+            powerHelper: powerHelper,
+            cli: cli)
+        defer { fixture.cleanup() }
+
+        await fixture.store.uninstall(purgeState: true)
+
+        XCTAssertEqual(fixture.store.phase, .actionRequired)
+        XCTAssertEqual(fixture.store.lastInstallMessage, "removed")
+        XCTAssertFalse(fixture.store.distributionMatchesBundle)
+        XCTAssertEqual(watchdog.disableCallCount, 1)
+        XCTAssertEqual(powerHelper.disableCallCount, 1)
+        let calls = await cli.recordedCalls()
+        XCTAssertEqual(calls.map(\.arguments), [["uninstall", "--purge-state"]])
+        XCTAssertEqual(calls.map(\.timeout), [30])
+    }
+
+    func testFailedUninstallRestoresPreviouslyEnabledServices()
+        async throws
+    {
+        let cli = InstallationCLIProbe(result: .success(CLIResult(
+            exitCode: 17,
+            stdout: "",
+            stderr: "cannot remove runtime\n",
+            timedOut: false)))
+        let watchdog = InstallationWatchdogProbe(status: .enabled)
+        let powerHelper = InstallationPowerHelperProbe(status: .enabled)
+        let fixture = try makePackagedInstallationFixture(
+            distribution: InstallationDistributionProbe(),
+            watchdog: watchdog,
+            powerHelper: powerHelper,
+            cli: cli)
+        defer { fixture.cleanup() }
+
+        await fixture.store.uninstall(purgeState: false)
+
+        XCTAssertEqual(
+            fixture.store.phase,
+            .failed("Could not remove components: cannot remove runtime"))
+        XCTAssertEqual(watchdog.enableCallCount, 1)
+        XCTAssertEqual(powerHelper.enableCallCount, 1)
+        XCTAssertEqual(watchdog.status, .enabled)
+        XCTAssertEqual(powerHelper.status, .enabled)
+        let calls = await cli.recordedCalls()
+        XCTAssertEqual(calls.map(\.arguments), [["uninstall", "--keep-state"]])
+    }
+
+    func testIdleRefreshBootstrapsPackagedPayload() async throws {
+        let distribution = InstallationDistributionProbe(
+            synchronizeResults: [.success("installed from refresh")],
+            doctorResults: [
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport()),
+            ])
+        let fixture = try makePackagedInstallationFixture(
+            distribution: distribution,
+            watchdog: InstallationWatchdogProbe(status: .enabled),
+            powerHelper: InstallationPowerHelperProbe(status: .enabled))
+        defer { fixture.cleanup() }
+
+        let refreshed = await fixture.store.refreshContext()
+
+        XCTAssertTrue(refreshed)
+        XCTAssertEqual(fixture.store.phase, .ready)
+        XCTAssertEqual(distribution.repairs, [false])
+    }
+
+    func testRefreshDefersHelperReplacementWhileActiveLeasesRemain()
+        async throws
+    {
+        let distribution = InstallationDistributionProbe(
+            synchronizeResults: [.success("installed")],
+            doctorResults: [
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport()),
+            ])
+        let powerHelper = InstallationPowerHelperProbe(status: .enabled)
+        let fixture = try makePackagedInstallationFixture(
+            completedOnboarding: true,
+            distribution: distribution,
+            watchdog: InstallationWatchdogProbe(status: .enabled),
+            powerHelper: powerHelper)
+        defer { fixture.cleanup() }
+        await fixture.store.bootstrap()
+        powerHelper.reconcileResult = .success(.deferredForActiveLeases)
+
+        let refreshed = await fixture.store.refreshContext()
+
+        XCTAssertTrue(refreshed)
+        XCTAssertEqual(fixture.store.phase, .updateDeferred)
+        XCTAssertEqual(fixture.store.onboardingStep, .mainApp)
+    }
+
+    func testDeferredRefreshDoctorFailureWithdrawsStaleReadiness()
+        async throws
+    {
+        let distribution = InstallationDistributionProbe(
+            synchronizeResults: [.success("installed")],
+            doctorResults: [
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport()),
+                .failure(InstallationProbeError.doctor),
+            ])
+        let powerHelper = InstallationPowerHelperProbe(status: .enabled)
+        let fixture = try makePackagedInstallationFixture(
+            completedOnboarding: true,
+            distribution: distribution,
+            watchdog: InstallationWatchdogProbe(status: .enabled),
+            powerHelper: powerHelper)
+        defer { fixture.cleanup() }
+        await fixture.store.bootstrap()
+        XCTAssertTrue(fixture.store.powerHelperReadinessConfirmed)
+        powerHelper.reconcileResult = .success(.deferredForActiveLeases)
+
+        let refreshed = await fixture.store.refreshContext()
+
+        XCTAssertTrue(refreshed)
+        XCTAssertEqual(fixture.store.phase, .updateDeferred)
+        XCTAssertFalse(fixture.store.powerHelperReadinessConfirmed)
+    }
+
+    func testBootstrapPublishesBothServiceReconciliationFailures()
+        async throws
+    {
+        let distribution = InstallationDistributionProbe(
+            synchronizeResults: [.success("installed")],
+            doctorResults: [
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport()),
+            ])
+        let watchdog = InstallationWatchdogProbe(
+            status: .notRegistered,
+            reconcileResult: .failure(InstallationProbeError.watchdog))
+        let powerHelper = InstallationPowerHelperProbe(
+            status: .enabled,
+            reconcileResult: .failure(InstallationProbeError.powerHelper))
+        let fixture = try makePackagedInstallationFixture(
+            distribution: distribution,
+            watchdog: watchdog,
+            powerHelper: powerHelper)
+        defer { fixture.cleanup() }
+
+        await fixture.store.bootstrap()
+
+        XCTAssertEqual(fixture.store.phase, .actionRequired)
+        XCTAssertEqual(
+            fixture.store.powerHelperError, "power helper probe failed")
+        XCTAssertEqual(fixture.store.watchdogError, "watchdog probe failed")
+        XCTAssertFalse(fixture.store.powerHelperReadinessConfirmed)
+    }
+
     private func makeStateRoot() throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -569,15 +957,15 @@ final class InstallationStorePowerStateTests: XCTestCase {
                 summary: "power helper")])
     }
 
-    private func installedRuntimeReport() -> DoctorReport {
+    private func installedRuntimeReport(build: String = "17") -> DoctorReport {
         let ids = [
             "integrity", "cli", "manifest", "tmux", "state_helper",
-            "power_runtime",
+            "power_runtime", "power_helper", "provider",
         ]
         return DoctorReport(
             schema: 1,
             version: "0.2.7",
-            build: "17",
+            build: build,
             payloadID: "payload",
             ok: true,
             checks: ids.map { id in
@@ -590,6 +978,38 @@ final class InstallationStorePowerStateTests: XCTestCase {
                     path: "/tmp/\(id)",
                     summary: "ok")
             })
+    }
+
+    private func makePackagedInstallationFixture(
+        completedOnboarding: Bool = false,
+        distribution: InstallationDistributionProbe,
+        watchdog: InstallationWatchdogProbe,
+        powerHelper: InstallationPowerHelperProbe,
+        cli: InstallationCLIProbe = InstallationCLIProbe(result: .success(
+            CLIResult(exitCode: 0, stdout: "", stderr: "", timedOut: false)))
+    ) throws -> PackagedInstallationFixture {
+        let bundleRoot = try makeTestAppBundle()
+        let stateRoot = try makeStateRoot()
+        let bundle = try XCTUnwrap(Bundle(path: bundleRoot.path))
+        let suite = "InstallationStorePowerStateTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.set(completedOnboarding, forKey: "onboardingCompleted")
+        let store = InstallationStore(
+            detachPath: "/tmp/detach-test",
+            bundle: bundle,
+            powerStateRoot: stateRoot,
+            defaults: defaults,
+            watchdog: watchdog,
+            powerHelper: powerHelper,
+            applicationLocationValidator: { _ in true },
+            distributionClientFactory: { _, _, _, _ in distribution },
+            cliFactory: { _ in cli })
+        return PackagedInstallationFixture(
+            store: store,
+            bundleRoot: bundleRoot,
+            stateRoot: stateRoot,
+            defaults: defaults,
+            suite: suite)
     }
 
     private func makeCompletedOnboardingStore(
@@ -659,5 +1079,166 @@ private final class InstallationContextOperationProbe {
 
     func releaseNext() {
         continuations.removeFirst().resume()
+    }
+}
+
+private enum InstallationProbeError: LocalizedError {
+    case watchdog
+    case powerHelper
+    case doctor
+
+    var errorDescription: String? {
+        switch self {
+        case .watchdog: "watchdog probe failed"
+        case .powerHelper: "power helper probe failed"
+        case .doctor: "doctor probe failed"
+        }
+    }
+}
+
+@MainActor
+private final class InstallationWatchdogProbe:
+    InstallationWatchdogServicing
+{
+    var status: WatchdogStatus
+    var reconcileResult: Result<Void, Error>
+    private(set) var forceReplacementRequests: [Bool] = []
+    private(set) var enableCallCount = 0
+    private(set) var disableCallCount = 0
+    private(set) var openSettingsCallCount = 0
+
+    init(
+        status: WatchdogStatus,
+        reconcileResult: Result<Void, Error> = .success(())
+    ) {
+        self.status = status
+        self.reconcileResult = reconcileResult
+    }
+
+    func reconcileAfterAppUpdate(forceReplacement: Bool) async throws {
+        forceReplacementRequests.append(forceReplacement)
+        try reconcileResult.get()
+    }
+
+    func enable() async throws {
+        enableCallCount += 1
+        status = .enabled
+    }
+
+    func disable() async throws {
+        disableCallCount += 1
+        status = .notRegistered
+    }
+
+    func openLoginItemsSettings() {
+        openSettingsCallCount += 1
+    }
+}
+
+@MainActor
+private final class InstallationPowerHelperProbe:
+    InstallationPowerHelperServicing
+{
+    var status: PowerHelperRegistrationStatus
+    var reconcileResult: Result<PowerHelperReconciliationOutcome, Error>
+    private(set) var reconcileCallCount = 0
+    private(set) var enableCallCount = 0
+    private(set) var disableCallCount = 0
+    private(set) var openSettingsCallCount = 0
+
+    init(
+        status: PowerHelperRegistrationStatus,
+        reconcileResult: Result<PowerHelperReconciliationOutcome, Error> =
+            .success(.complete)
+    ) {
+        self.status = status
+        self.reconcileResult = reconcileResult
+    }
+
+    func reconcileAfterAppUpdate() async throws
+        -> PowerHelperReconciliationOutcome
+    {
+        reconcileCallCount += 1
+        return try reconcileResult.get()
+    }
+
+    func enable() async throws {
+        enableCallCount += 1
+        status = .enabled
+    }
+
+    func disable() async throws {
+        disableCallCount += 1
+        status = .notRegistered
+    }
+
+    func openApprovalSettings() {
+        openSettingsCallCount += 1
+    }
+}
+
+@MainActor
+private final class InstallationDistributionProbe:
+    InstallationDistributionServicing
+{
+    var synchronizeResults: [Result<String, Error>]
+    var doctorResults: [Result<DoctorReport, Error>]
+    private(set) var repairs: [Bool] = []
+    private(set) var doctorCallCount = 0
+
+    init(
+        synchronizeResults: [Result<String, Error>] = [],
+        doctorResults: [Result<DoctorReport, Error>] = []
+    ) {
+        self.synchronizeResults = synchronizeResults
+        self.doctorResults = doctorResults
+    }
+
+    func synchronize(repair: Bool) async throws -> String {
+        repairs.append(repair)
+        return try synchronizeResults.removeFirst().get()
+    }
+
+    func doctor() async throws -> DoctorReport {
+        doctorCallCount += 1
+        return try doctorResults.removeFirst().get()
+    }
+}
+
+private actor InstallationCLIProbe: DetachCLIRunning {
+    struct Call: Sendable {
+        let arguments: [String]
+        let timeout: TimeInterval
+    }
+
+    let result: Result<CLIResult, Error>
+    private var calls: [Call] = []
+
+    init(result: Result<CLIResult, Error>) {
+        self.result = result
+    }
+
+    func run(arguments: [String], timeout: TimeInterval) async throws
+        -> CLIResult
+    {
+        calls.append(Call(arguments: arguments, timeout: timeout))
+        return try result.get()
+    }
+
+    func recordedCalls() -> [Call] { calls }
+}
+
+@MainActor
+private struct PackagedInstallationFixture {
+    let store: InstallationStore
+    let bundleRoot: URL
+    let stateRoot: URL
+    let defaults: UserDefaults
+    let suite: String
+
+    func cleanup() {
+        defaults.removePersistentDomain(forName: suite)
+        try? FileManager.default.removeItem(at: bundleRoot)
+        try? FileManager.default.removeItem(at: stateRoot)
     }
 }

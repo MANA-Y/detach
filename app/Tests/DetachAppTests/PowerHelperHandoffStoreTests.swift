@@ -80,6 +80,189 @@ final class PowerHelperHandoffStoreTests: XCTestCase {
         withExtendedLifetime(laterLock) {}
     }
 
+    func testRejectsOversizedJournalBeforeDecoding() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        try writeJournal(
+            Data(
+                repeating: 0,
+                count: FilePowerHelperHandoffStore.maximumBytes + 1),
+            fixture: fixture)
+
+        XCTAssertThrowsError(try fixture.store.load()) { error in
+            guard case PowerHelperHandoffStoreError.stateTooLarge = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testRejectsInvalidPersistedTransaction() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let invalid = PowerHelperHandoffTransaction(
+            phase: .registering,
+            goal: .install,
+            targetDigest: nil,
+            bootSessionIdentifier:
+                "00000000-0000-0000-0000-000000000001")
+        try writeJournal(
+            try JSONEncoder().encode(invalid),
+            fixture: fixture)
+
+        XCTAssertThrowsError(try fixture.store.load()) { error in
+            guard case PowerHelperHandoffStoreError.invalidState = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testRejectsJournalReadableByOtherUsers() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let transaction = PowerHelperHandoffTransaction(
+            phase: .removed,
+            goal: .install,
+            targetDigest: "digest",
+            bootSessionIdentifier:
+                "00000000-0000-0000-0000-000000000001")
+        try writeJournal(
+            try JSONEncoder().encode(transaction),
+            fixture: fixture,
+            permissions: 0o644)
+
+        XCTAssertThrowsError(try fixture.store.load()) { error in
+            guard case PowerHelperHandoffStoreError.insecurePath = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testTransactionValidationRejectsInvalidIdentityAndRemovalTarget() {
+        let invalidIdentity = PowerHelperHandoffTransaction(
+            phase: .registering,
+            goal: .install,
+            targetDigest: "digest",
+            bootSessionIdentifier: "NOT-A-BOOT-UUID")
+        let removalWithTarget = PowerHelperHandoffTransaction(
+            phase: .removed,
+            goal: .remove,
+            targetDigest: "digest",
+            bootSessionIdentifier:
+                "00000000-0000-0000-0000-000000000001")
+
+        XCTAssertFalse(invalidIdentity.isValid)
+        XCTAssertFalse(removalWithTarget.isValid)
+    }
+
+    func testStoreErrorsHaveActionableDescriptions() {
+        let cases: [(PowerHelperHandoffStoreError, String)] = [
+            (.insecurePath,
+             "The power helper handoff journal has an insecure path."),
+            (.stateTooLarge,
+             "The power helper handoff journal is unexpectedly large."),
+            (.invalidState,
+             "The power helper handoff journal is invalid."),
+            (.transactionBusy,
+             "Another Detach process is already updating the power helper."),
+            (.fileSystem(operation: "read", code: EIO),
+             "Could not read the power helper handoff journal (errno \(EIO))."),
+        ]
+
+        for (error, description) in cases {
+            XCTAssertEqual(error.errorDescription, description)
+        }
+    }
+
+    func testClearIsIdempotentBeforeJournalDirectoryExists() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+
+        try fixture.store.clear()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.path))
+    }
+
+    func testRejectsNonDirectoryJournalParent() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let parent = fixture.fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: parent.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        try Data().write(to: parent)
+        let transaction = PowerHelperHandoffTransaction(
+            phase: .removed,
+            goal: .install,
+            targetDigest: "digest",
+            bootSessionIdentifier:
+                "00000000-0000-0000-0000-000000000001")
+
+        XCTAssertThrowsError(try fixture.store.save(transaction)) { error in
+            guard case PowerHelperHandoffStoreError.insecurePath = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testRejectsSymlinkTransactionLock() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let directory = fixture.fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let target = fixture.root.appendingPathComponent("lock-target")
+        try Data().write(to: target)
+        try FileManager.default.createSymbolicLink(
+            at: directory.appendingPathComponent(
+                "power-helper-handoff.lock"),
+            withDestinationURL: target)
+
+        XCTAssertThrowsError(try fixture.store.acquireTransactionLock()) {
+            error in
+            guard case let PowerHelperHandoffStoreError.fileSystem(
+                operation, _) = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(operation, "open transaction lock")
+        }
+    }
+
+    func testRejectsOversizedSerializedTransactionBeforeWriting() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let transaction = PowerHelperHandoffTransaction(
+            phase: .removed,
+            goal: .install,
+            targetDigest: String(
+                repeating: "x",
+                count: FilePowerHelperHandoffStore.maximumBytes),
+            bootSessionIdentifier:
+                "00000000-0000-0000-0000-000000000001")
+
+        XCTAssertThrowsError(try fixture.store.save(transaction)) { error in
+            guard case PowerHelperHandoffStoreError.stateTooLarge = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    private func writeJournal(
+        _ data: Data,
+        fixture: StoreFixture,
+        permissions: Int = 0o600
+    ) throws {
+        try FileManager.default.createDirectory(
+            at: fixture.fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        try data.write(to: fixture.fileURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: permissions],
+            ofItemAtPath: fixture.fileURL.path)
+    }
+
     private func makeFixture() throws -> StoreFixture {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(

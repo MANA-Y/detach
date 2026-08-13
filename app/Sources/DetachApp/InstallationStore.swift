@@ -7,6 +7,37 @@ enum InstallationContextOperation: Equatable, Sendable {
     case repair
 }
 
+@MainActor
+protocol InstallationWatchdogServicing: AnyObject {
+    var status: WatchdogStatus { get }
+    func reconcileAfterAppUpdate(forceReplacement: Bool) async throws
+    func enable() async throws
+    func disable() async throws
+    func openLoginItemsSettings()
+}
+
+extension WatchdogService: InstallationWatchdogServicing {}
+
+@MainActor
+protocol InstallationPowerHelperServicing: AnyObject {
+    var status: PowerHelperRegistrationStatus { get }
+    func reconcileAfterAppUpdate() async throws
+        -> PowerHelperReconciliationOutcome
+    func enable() async throws
+    func disable() async throws
+    func openApprovalSettings()
+}
+
+extension PowerHelperService: InstallationPowerHelperServicing {}
+
+@MainActor
+protocol InstallationDistributionServicing {
+    func synchronize(repair: Bool) async throws -> String
+    func doctor() async throws -> DoctorReport
+}
+
+extension DistributionClient: InstallationDistributionServicing {}
+
 @Observable @MainActor
 final class InstallationStore {
     private struct BundledMetadata {
@@ -45,8 +76,8 @@ final class InstallationStore {
 
     private static let onboardingCompletedKey = "onboardingCompleted"
     private let detachPath: String
-    private let watchdog = WatchdogService()
-    private let powerHelper = PowerHelperService()
+    private let watchdog: any InstallationWatchdogServicing
+    private let powerHelper: any InstallationPowerHelperServicing
     private let payloadDirectory: URL?
     private let bundleURL: URL
     private let bundledMetadata: BundledMetadata?
@@ -55,6 +86,10 @@ final class InstallationStore {
     private let defaults: UserDefaults
     private let contextOperationOverride:
         (@MainActor (InstallationContextOperation) async -> Void)?
+    private let applicationLocationValidator: @MainActor (URL) -> Bool
+    private let distributionClientFactory:
+        @MainActor (URL, URL, URL, URL) -> any InstallationDistributionServicing
+    private let cliFactory: @MainActor (URL) -> any DetachCLIRunning
     private var contextOperationRunning = false
     @ObservationIgnored private var currentContextOperation:
         InstallationContextOperation?
@@ -70,9 +105,28 @@ final class InstallationStore {
         defaults: UserDefaults = .standard,
         uiE2EScenario: String? = AppSettings.uiE2E?.scenario,
         contextOperationOverride:
-            (@MainActor (InstallationContextOperation) async -> Void)? = nil
+            (@MainActor (InstallationContextOperation) async -> Void)? = nil,
+        watchdog: (any InstallationWatchdogServicing)? = nil,
+        powerHelper: (any InstallationPowerHelperServicing)? = nil,
+        applicationLocationValidator: @escaping @MainActor (URL) -> Bool = {
+            UpdateConfiguration.isStableApplicationLocation($0)
+        },
+        distributionClientFactory: @escaping @MainActor
+            (URL, URL, URL, URL) -> any InstallationDistributionServicing = {
+                installerURL, cliURL, payloadDirectory, versionURL in
+                DistributionClient(
+                    installer: ProcessDetachCLI(executable: installerURL),
+                    cli: ProcessDetachCLI(executable: cliURL),
+                    payloadDirectory: payloadDirectory,
+                    versionFile: versionURL)
+            },
+        cliFactory: @escaping @MainActor (URL) -> any DetachCLIRunning = {
+            ProcessDetachCLI(executable: $0)
+        }
     ) {
         self.detachPath = detachPath
+        self.watchdog = watchdog ?? WatchdogService()
+        self.powerHelper = powerHelper ?? PowerHelperService()
         self.powerStateRoot = powerStateRoot ?? Self.defaultPowerStateRoot
         let heartbeatReader = PowerHeartbeatReader(
             statusURL: self.powerStateRoot
@@ -83,6 +137,9 @@ final class InstallationStore {
         onboardingEverCompleted = defaults.bool(
             forKey: Self.onboardingCompletedKey)
         self.contextOperationOverride = contextOperationOverride
+        self.applicationLocationValidator = applicationLocationValidator
+        self.distributionClientFactory = distributionClientFactory
+        self.cliFactory = cliFactory
         switch uiE2EScenario {
         case "onboarding-first-run": uiE2EOnboardingStep = .done
         case "onboarding-provider": uiE2EOnboardingStep = .provider
@@ -111,7 +168,7 @@ final class InstallationStore {
     var presentsUIE2EOnboarding: Bool { uiE2EOnboardingStep != nil }
     var isStableApplicationLocation: Bool {
         guard hasDistributionPayload else { return true }
-        return UpdateConfiguration.isStableApplicationLocation(bundleURL)
+        return applicationLocationValidator(bundleURL)
     }
     var isBusy: Bool { phase == .syncing || contextOperationRunning }
 
@@ -499,8 +556,8 @@ final class InstallationStore {
         do {
             try await watchdog.disable()
             try await powerHelper.disable()
-            let installer = ProcessDetachCLI(
-                executable: payloadDirectory.appendingPathComponent("detach-install"))
+            let installer = cliFactory(
+                payloadDirectory.appendingPathComponent("detach-install"))
             let result = try await installer.run(
                 arguments: ["uninstall", purgeState ? "--purge-state" : "--keep-state"],
                 timeout: 30)
@@ -537,11 +594,8 @@ final class InstallationStore {
         let installerURL = payloadDirectory.appendingPathComponent("detach-install")
         let versionURL = payloadDirectory.appendingPathComponent("VERSION")
         let cliURL = URL(fileURLWithPath: detachPath)
-        let client = DistributionClient(
-            installer: ProcessDetachCLI(executable: installerURL),
-            cli: ProcessDetachCLI(executable: cliURL),
-            payloadDirectory: payloadDirectory,
-            versionFile: versionURL)
+        let client = distributionClientFactory(
+            installerURL, cliURL, payloadDirectory, versionURL)
         do {
             lastInstallMessage = try await client.synchronize(repair: repair)
             report = try await client.doctor()
@@ -626,11 +680,11 @@ final class InstallationStore {
         powerHelperUpdateDeferred: Bool = false
     ) async {
         guard let payloadDirectory else { phase = .ready; return }
-        let client = DistributionClient(
-            installer: ProcessDetachCLI(executable: payloadDirectory.appendingPathComponent("detach-install")),
-            cli: ProcessDetachCLI(executable: URL(fileURLWithPath: detachPath)),
-            payloadDirectory: payloadDirectory,
-            versionFile: payloadDirectory.appendingPathComponent("VERSION"))
+        let client = distributionClientFactory(
+            payloadDirectory.appendingPathComponent("detach-install"),
+            URL(fileURLWithPath: detachPath),
+            payloadDirectory,
+            payloadDirectory.appendingPathComponent("VERSION"))
         do {
             report = try await client.doctor()
             if let bundledMetadata, let report {
@@ -641,6 +695,7 @@ final class InstallationStore {
                     payloadID: bundledMetadata.payloadID)
             }
             guard distributionMatchesBundle else {
+                powerHelperReadinessConfirmed = false
                 phase = .failed(L10n.string(
                     "The CLI is missing or belongs to another build; run Repair from the intended app version"))
                 return
@@ -656,6 +711,7 @@ final class InstallationStore {
                 updatePhase()
             }
         } catch {
+            powerHelperReadinessConfirmed = false
             phase = powerHelperUpdateDeferred && onboardingEverCompleted
                 ? .updateDeferred : .failed(error.localizedDescription)
         }
