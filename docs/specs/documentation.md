@@ -133,17 +133,12 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   macOS. Before tracing, the Swift job restores the quality-gate dependency
   graph and resolves only the tracked lock. It then removes cached products so
   CodeQL observes fresh repository source without tracing dependency fetch or
-  version resolution. A stdlib Python tool prepares SwiftPM's generated build
-  description, file lists, and output maps before CodeQL starts. It verifies
-  that these generated inputs contain every production Swift source exactly
-  once. Three parallel jobs then trace direct compiler commands for the kit,
-  app, and process scopes. SwiftPM does not run inside the traced zone. Each
-  target uses one whole-module compiler batch with three bounded workers. The
-  prepare phase has a 180-second deadline. Direct tracing has a 600-second
-  deadline and terminates its complete process group on timeout. Each hosted
-  scope also keeps the 15-minute job deadline. The workflow runs after `main`
-  changes and each week. It does not add work to pull-request feedback or enter
-  a release path.
+  version resolution. One supported `swift build` command builds the complete
+  package graph in the traced zone. It builds only arm64. It uses whole-module
+  optimization and three workers. It does not build one target at a time or
+  repeat package preparation in a matrix. The Swift job has a 30-minute
+  deadline. The workflow runs after `main` changes and each week. It does not
+  add work to pull-request feedback or enter a release path.
 - By default, put a ready task-scoped change on a topic branch. Review the
   staged public diff, commit it, and push it. Open a pull request, then give its
   number, exact head, and current repair attempt to `scripts/quality-merge`.

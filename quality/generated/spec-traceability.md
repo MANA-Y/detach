@@ -51,7 +51,6 @@ It lists current specification ownership and verification links.
 - `tests/security-*`
 - `tests/security_*`
 - `tests/shell-safety*`
-- `tests/swift_codeql_build_contract.py`
 - `tests/test-suite-contract.sh`
 - `tools/quality_baseline.py`
 - `tools/quality_care.py`
@@ -64,7 +63,6 @@ It lists current specification ownership and verification links.
 - `tools/quality_policy.py`
 - `tools/quality_promote.py`
 - `tools/quality_scenarios.py`
-- `tools/swift_codeql_build.py`
 
 ### Requirement verification
 

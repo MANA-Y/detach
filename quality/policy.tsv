@@ -1,5 +1,5 @@
 schema	1
-policy	35
+policy	36
 spec	documentation	docs/specs/documentation.md	Agent context, specifications, and quality automation stay synchronized.
 spec	runtime	docs/specs/runtime.md	Runtime state and session operations preserve exact ownership.
 spec	power	docs/specs/power.md	Power protection fails safe across both required layers.
@@ -74,7 +74,6 @@ coverage-region	ui	app/Sources/DetachApp/SidebarView.swift	ui-e2e-instrumentatio
 route	1000	quality/*	policy	safe	docs/specs/documentation.md
 route	1000	.github/workflows/quality-gates.yml	policy	safe	docs/specs/documentation.md
 route	1000	.github/workflows/security.yml	policy	safe	docs/specs/documentation.md
-route	1000	tools/swift_codeql_build.py	policy	safe	docs/specs/documentation.md
 route	1000	.github/dependabot.yml	policy	safe	docs/specs/documentation.md
 route	1000	docs/quality-gates.md	policy	safe	docs/specs/documentation.md
 route	1000	docs/testing.md	policy	safe	docs/specs/documentation.md
@@ -108,7 +107,6 @@ route	1000	tests/quality-*	policy	safe	docs/specs/documentation.md
 route	1000	tests/quality_*	policy	safe	docs/specs/documentation.md
 route	1000	tests/security-*	policy	safe	docs/specs/documentation.md
 route	1000	tests/security_*	policy	safe	docs/specs/documentation.md
-route	1000	tests/swift_codeql_build_contract.py	policy	safe	docs/specs/documentation.md
 route	1000	tests/release-pr*	release-contract	safe	docs/specs/release.md
 route	1000	tests/release_pr*	release-contract	safe	docs/specs/release.md
 route	1000	tests/release-sbom*	release-contract	safe	docs/specs/release.md

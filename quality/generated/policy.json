@@ -658,7 +658,7 @@
     "mutation_timeout_seconds": 240,
     "pr_feedback_seconds": 600
   },
-  "policy": 35,
+  "policy": 36,
   "release_domains": [
     {
       "gates": "-",
@@ -834,13 +834,6 @@
     },
     {
       "pattern": ".github/workflows/security.yml",
-      "priority": 1000,
-      "release_domain": "safe",
-      "spec": "docs/specs/documentation.md",
-      "test_domain": "policy"
-    },
-    {
-      "pattern": "tools/swift_codeql_build.py",
       "priority": 1000,
       "release_domain": "safe",
       "spec": "docs/specs/documentation.md",
@@ -1072,13 +1065,6 @@
     },
     {
       "pattern": "tests/security_*",
-      "priority": 1000,
-      "release_domain": "safe",
-      "spec": "docs/specs/documentation.md",
-      "test_domain": "policy"
-    },
-    {
-      "pattern": "tests/swift_codeql_build_contract.py",
       "priority": 1000,
       "release_domain": "safe",
       "spec": "docs/specs/documentation.md",
@@ -2188,7 +2174,6 @@
         "tests/security-*",
         "tests/security_*",
         "tests/shell-safety*",
-        "tests/swift_codeql_build_contract.py",
         "tests/test-suite-contract.sh",
         "tools/quality_baseline.py",
         "tools/quality_care.py",
@@ -2200,8 +2185,7 @@
         "tools/quality_mutation.py",
         "tools/quality_policy.py",
         "tools/quality_promote.py",
-        "tools/quality_scenarios.py",
-        "tools/swift_codeql_build.py"
+        "tools/quality_scenarios.py"
       ],
       "path": "docs/specs/documentation.md",
       "requirements": [
