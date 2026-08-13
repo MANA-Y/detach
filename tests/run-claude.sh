@@ -480,9 +480,19 @@ json_line="$("$SCRIPT" list --json | grep -F "\"session_name\":\"$session\"")"
 [ -d "$CLAUDE_CONFIG_DIR/tasks/$session_id" ]
 [ -d "$CLAUDE_CONFIG_DIR/tasks/session-${session_id:0:8}" ]
 [ -d "$CLAUDE_CONFIG_DIR/teams/session-${session_id:0:8}" ]
+# Claude can hard-link a tool result from provider-managed scratch storage.
+# Checkpoint staging must turn it into an independent regular file while the
+# archive and restore paths keep their strict no-hard-link contract.
+hardlink_source="$TMP_ROOT/provider-tool-result"
+hardlink_result="$CLAUDE_CONFIG_DIR/projects/fake/$session_id/tool-results/hardlinked.txt"
+printf 'hard-linked tool result\n' >"$hardlink_source"
+ln "$hardlink_source" "$hardlink_result"
+[ "$(stat -f '%l' "$hardlink_result")" = 2 ]
 attempts=0
 while [ ! -s "$checkpoint/transcript.jsonl" ] || \
-    [ ! -s "$checkpoint/claude-session.tar" ]; do
+    [ ! -s "$checkpoint/claude-session.tar" ] || \
+    ! tar -tf "$checkpoint/claude-session.tar" 2>/dev/null | \
+      grep -F './project-session/tool-results/hardlinked.txt' >/dev/null; do
   attempts=$((attempts + 1))
   [ "$attempts" -lt 100 ] || {
     printf 'Claude checkpoint was not published within 10 seconds: %s\n' \
@@ -495,9 +505,16 @@ done
 "$STATE_HELPER" jsonl validate claude "$checkpoint/transcript.jsonl" "$session_id"
 [ -s "$checkpoint/claude-session.tar" ]
 tar -tf "$checkpoint/claude-session.tar" | grep -F './project-session/subagents/agent-fake.jsonl' >/dev/null
+tar -tf "$checkpoint/claude-session.tar" | grep -F './project-session/tool-results/hardlinked.txt' >/dev/null
 tar -tf "$checkpoint/claude-session.tar" | grep -F "./tasks/$session_id/task.json" >/dev/null
 tar -tf "$checkpoint/claude-session.tar" | grep -F "./tasks/session-${session_id:0:8}/task.json" >/dev/null
 tar -tf "$checkpoint/claude-session.tar" | grep -F "./teams/session-${session_id:0:8}/config.json" >/dev/null
+hardlink_extract="$TMP_ROOT/hardlink-checkpoint-extract"
+mkdir -p "$hardlink_extract"
+tar -xf "$checkpoint/claude-session.tar" -C "$hardlink_extract"
+grep -Fx 'hard-linked tool result' \
+  "$hardlink_extract/project-session/tool-results/hardlinked.txt" >/dev/null
+[ "$(stat -f '%l' "$hardlink_extract/project-session/tool-results/hardlinked.txt")" = 1 ]
 [ ! -e "$FAKE_GIT_MARKER" ]
 
 : >"$FAKE_CLAUDE_EXIT_GATE"

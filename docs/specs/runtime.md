@@ -206,13 +206,13 @@ current binding on a creation-time tie. Subagent threads never rebind a
 session. Wrapper-owned provider flags are rejected; policy defaults apply only
 when the user did not supply an allowed override.
 
-Checkpoints run every `DETACH_<PROVIDER>_CHECKPOINT_INTERVAL` seconds (300 by
-default) under a per-session lock and include metadata, validated provider
-JSONL, tmux pane capture, and canonical repository-root context found from a
-real `.git` ancestor without invoking Git. Codex adds an integrity-checked
-SQLite backup. Claude atomically archives the matching project session, file
-history, session environment, tasks, and teams. `/bin/sync` follows unless the
-provider-specific `DETACH_*_SYNC=0` test override is set.
+Every 300 seconds by default, a per-session lock protects checkpoint creation.
+A checkpoint contains metadata, validated provider JSONL, pane capture, and a
+repository root from a real `.git` ancestor. Codex adds an integrity-checked
+SQLite backup. Claude archives its matching project session and companions.
+Provider-created hard links become independent regular files in staging.
+Archives and restore destinations still reject hard links and non-plain
+entries. A provider test override can disable the final `/bin/sync`.
 
 Only allowlisted provider flags are serialized to `resume-args.bin`. A provider
 flag that should survive Resume or Recover must be added deliberately.

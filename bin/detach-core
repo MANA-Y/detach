@@ -1711,14 +1711,21 @@ canonical_claude_transcript_path() {
   printf '%s/%s\n' "$parent_real" "$(basename "$path")"
 }
 
-safe_plain_directory_tree() {
+safe_plain_source_tree() {
   local root="$1"
   local unsafe
 
   [ -d "$root" ] && [ ! -L "$root" ] || return 1
   unsafe="$(find "$root" -mindepth 1 ! -type d ! -type f -print -quit 2>/dev/null)" || \
     return 1
-  [ -z "$unsafe" ] || return 1
+  [ -z "$unsafe" ]
+}
+
+safe_plain_directory_tree() {
+  local root="$1"
+  local unsafe
+
+  safe_plain_source_tree "$root" || return 1
   unsafe="$(find "$root" -type f -links +1 -print -quit 2>/dev/null)" || return 1
   [ -z "$unsafe" ]
 }
@@ -2586,7 +2593,10 @@ copy_checkpoint_directory() {
   local destination="$2"
 
   [ -d "$source" ] || return 0
-  safe_plain_directory_tree "$source" || return 1
+  # Claude can hard-link tool results into a session companion directory.
+  # The private staging copy must contain independent regular files so the
+  # checkpoint archive and every later restore keep rejecting hard links.
+  safe_plain_source_tree "$source" || return 1
   mkdir -p "$(dirname "$destination")" || return 1
   cp -R "$source" "$destination" || return 1
   safe_plain_directory_tree "$destination"
@@ -2631,20 +2641,24 @@ checkpoint_claude_artifacts() {
   short_id="${id:0:8}"
   copy_checkpoint_directory "${transcript%.jsonl}" "$stage/project-session" || {
     rm -rf "$stage"
+    checkpoint_log "$session" "Claude checkpoint skipped because project companion artifacts could not be copied safely"
     return 1
   }
   copy_checkpoint_directory "$home/file-history/$id" "$stage/file-history" || {
     rm -rf "$stage"
+    checkpoint_log "$session" "Claude checkpoint skipped because file history artifacts could not be copied safely"
     return 1
   }
   copy_checkpoint_directory "$home/session-env/$id" "$stage/session-env" || {
     rm -rf "$stage"
+    checkpoint_log "$session" "Claude checkpoint skipped because session environment artifacts could not be copied safely"
     return 1
   }
   for task in "$home/tasks/$id" "$home/tasks/session-$short_id"; do
     [ -d "$task" ] || continue
     copy_checkpoint_directory "$task" "$stage/tasks/$(basename "$task")" || {
       rm -rf "$stage"
+      checkpoint_log "$session" "Claude checkpoint skipped because task artifacts could not be copied safely"
       return 1
     }
   done
@@ -2654,6 +2668,7 @@ checkpoint_claude_artifacts() {
     team="$(dirname "$config")"
     copy_checkpoint_directory "$team" "$stage/teams/$(basename "$team")" || {
       rm -rf "$stage"
+      checkpoint_log "$session" "Claude checkpoint skipped because team artifacts could not be copied safely"
       return 1
     }
   done
