@@ -82,6 +82,7 @@ def expect_error(action, text: str) -> None:
 
 
 def main() -> None:
+    os.environ.pop("DEVELOPER_DIR", None)
     assert SCOPES == {
         "kit": ("DetachKit",),
         "app": ("DetachApp",),
