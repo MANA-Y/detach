@@ -111,18 +111,9 @@ final class InstallationStore {
         applicationLocationValidator: @escaping @MainActor (URL) -> Bool = {
             UpdateConfiguration.isStableApplicationLocation($0)
         },
-        distributionClientFactory: @escaping @MainActor
-            (URL, URL, URL, URL) -> any InstallationDistributionServicing = {
-                installerURL, cliURL, payloadDirectory, versionURL in
-                DistributionClient(
-                    installer: ProcessDetachCLI(executable: installerURL),
-                    cli: ProcessDetachCLI(executable: cliURL),
-                    payloadDirectory: payloadDirectory,
-                    versionFile: versionURL)
-            },
-        cliFactory: @escaping @MainActor (URL) -> any DetachCLIRunning = {
-            ProcessDetachCLI(executable: $0)
-        }
+        distributionClientFactory: (@MainActor
+            (URL, URL, URL, URL) -> any InstallationDistributionServicing)? = nil,
+        cliFactory: (@MainActor (URL) -> any DetachCLIRunning)? = nil
     ) {
         self.detachPath = detachPath
         self.watchdog = watchdog ?? WatchdogService()
@@ -139,7 +130,8 @@ final class InstallationStore {
         self.contextOperationOverride = contextOperationOverride
         self.applicationLocationValidator = applicationLocationValidator
         self.distributionClientFactory = distributionClientFactory
-        self.cliFactory = cliFactory
+            ?? Self.makeDistributionClient
+        self.cliFactory = cliFactory ?? Self.makeCLI
         switch uiE2EScenario {
         case "onboarding-first-run": uiE2EOnboardingStep = .done
         case "onboarding-provider": uiE2EOnboardingStep = .provider
@@ -162,6 +154,23 @@ final class InstallationStore {
             bundledMetadata = nil
         }
         powerProtectionState = watchdogHeartbeat.effectivePowerState
+    }
+
+    static func makeDistributionClient(
+        installerURL: URL,
+        cliURL: URL,
+        payloadDirectory: URL,
+        versionURL: URL
+    ) -> any InstallationDistributionServicing {
+        DistributionClient(
+            installer: ProcessDetachCLI(executable: installerURL),
+            cli: ProcessDetachCLI(executable: cliURL),
+            payloadDirectory: payloadDirectory,
+            versionFile: versionURL)
+    }
+
+    static func makeCLI(executable: URL) -> any DetachCLIRunning {
+        ProcessDetachCLI(executable: executable)
     }
 
     var hasDistributionPayload: Bool { payloadDirectory != nil }

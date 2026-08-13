@@ -37,6 +37,23 @@ final class InstallationStorePowerStateTests: XCTestCase {
         XCTAssertFalse(store.presentsUIE2EOnboarding)
     }
 
+    func testProductionFactoriesConstructRealProcessBoundaries() {
+        let installerURL = URL(fileURLWithPath: "/tmp/detach-install")
+        let cliURL = URL(fileURLWithPath: "/tmp/detach")
+        let payloadURL = URL(fileURLWithPath: "/tmp/payload")
+        let versionURL = payloadURL.appendingPathComponent("VERSION")
+
+        let distribution = InstallationStore.makeDistributionClient(
+            installerURL: installerURL,
+            cliURL: cliURL,
+            payloadDirectory: payloadURL,
+            versionURL: versionURL)
+        let cli = InstallationStore.makeCLI(executable: cliURL)
+
+        XCTAssertTrue(distribution is DistributionClient)
+        XCTAssertEqual((cli as? ProcessDetachCLI)?.executable, cliURL)
+    }
+
     func testUIE2EOnboardingFixturesExposeOnlyTheirRequestedStep() {
         let fixtures: [(String, OnboardingStep)] = [
             ("onboarding-first-run", .done),
