@@ -139,7 +139,8 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   repeat package preparation in a matrix. The Swift job has a 30-minute
   deadline. The workflow runs each week and on explicit request. It does not
   run after each merge, add work to pull-request feedback, or enter a release
-  path. The dashboard keeps the latest current security state between runs.
+  path. The dashboard reads the workflow and shows its configured languages
+  and cadence. It fails if these values do not match the security contract.
 - By default, put a ready task-scoped change on a topic branch. Review the
   staged public diff, commit it, and push it. Open a pull request, then give its
   number, exact head, and current repair attempt to `scripts/quality-merge`.

@@ -267,9 +267,10 @@ disabled because CodeQL does not use them. The workflow does not repeat SwiftPM
 preparation in a matrix. The Swift job has a 30-minute deadline. Dependency
 network, repeated package planning, and process oversubscription cannot consume
 the complete security workflow budget. A 25-minute successful hosted run makes
-this workflow too expensive for each merge. The dashboard keeps the latest
-current security state between weekly runs. These care jobs do not extend
-pull-request feedback and cannot run release commands.
+this workflow too expensive for each merge. The dashboard reads and shows the
+configured CodeQL languages and cadence. Generation fails if the workflow no
+longer uses weekly and explicit runs. These care jobs do not extend pull-request
+feedback and cannot run release commands.
 
 Release readiness also requires the tracked reference-Mac time budgets and the
 release-only gates below. Ordinary implementation must not run them.

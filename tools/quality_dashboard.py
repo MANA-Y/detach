@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RESULT_ROOT = ROOT / "app/build/quality-gates"
 DEFAULT_OUTPUT = ROOT / "app/build/quality-dashboard"
 POLICY_JSON = ROOT / "quality/generated/policy.json"
+SECURITY_WORKFLOW = ROOT / ".github/workflows/security.yml"
 MANIFEST_SCHEMA = "4"
 SUMMARY_HEADER = [
     "policy",
@@ -314,10 +315,27 @@ def merge_evidence(commit: str, policy: int, maximum_repairs: int) -> Any:
 
 
 def security_automation() -> dict[str, Any]:
+    workflow = safe_file(SECURITY_WORKFLOW, "security workflow").read_text(
+        encoding="utf-8"
+    )
+    try:
+        trigger_block = workflow[workflow.index("on:\n"):workflow.index("\npermissions:")]
+    except ValueError as error:
+        raise DashboardError("security workflow triggers are invalid") from error
+    if (
+        "workflow_dispatch:" not in trigger_block
+        or "schedule:" not in trigger_block
+        or "push:" in trigger_block
+        or "pull_request:" in trigger_block
+    ):
+        raise DashboardError("security workflow cadence is not weekly and manual")
+    languages = sorted(set(re.findall(r"(?m)^\s+languages:\s+([a-z]+)$", workflow)))
+    if languages != ["actions", "swift"]:
+        raise DashboardError("security workflow CodeQL languages are invalid")
     return {
         "status": "configured",
-        "codeql_languages": ["actions", "swift"],
-        "cadence": "main-and-weekly",
+        "codeql_languages": languages,
+        "cadence": "weekly-and-manual",
         "pull_request_feedback": "not-selected",
     }
 
