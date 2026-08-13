@@ -351,10 +351,11 @@ final class DetachStateCommandTests: XCTestCase {
         }
     }
 
-    func testMetaSnapshotsEnumeratesSafeRootAndRejectsSymlinks() throws {
+    func testMetaSnapshotsBatchesFallbacksAndRejectsIncompleteInput() throws {
         let root = temporaryDirectory.appendingPathComponent("sessions", isDirectory: true)
         let first = root.appendingPathComponent("detach-codex-one", isDirectory: true)
         let second = root.appendingPathComponent("detach-codex-two", isDirectory: true)
+        let third = root.appendingPathComponent("detach-claude-three", isDirectory: true)
         let checkpointDirectory = first.appendingPathComponent("checkpoint", isDirectory: true)
         let invalid = first.appendingPathComponent("meta.json")
         let checkpoint = checkpointDirectory.appendingPathComponent("meta.json")
@@ -362,7 +363,10 @@ final class DetachStateCommandTests: XCTestCase {
             at: checkpointDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(
             at: second, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: third, withIntermediateDirectories: true)
         try Data("not-json".utf8).write(to: invalid)
+        try Data(count: 1_048_577).write(to: second.appendingPathComponent("meta.json"))
         let project = "/tmp/project\twith\ncontrols"
         try JSONSerialization.data(withJSONObject: [
             "schema": 1,
@@ -370,6 +374,13 @@ final class DetachStateCommandTests: XCTestCase {
             "project_dir": project,
             "status": "stopped",
         ]).write(to: checkpoint)
+        try JSONSerialization.data(withJSONObject: [
+            "schema": 1,
+            "session_name": "detach-claude-three",
+            "project_dir": "/tmp/primary",
+            "status": "running",
+        ]).write(to: third.appendingPathComponent("meta.json"))
+        try Data("ignored".utf8).write(to: root.appendingPathComponent("regular-file"))
 
         let output = try DetachStateCommand.run(arguments: [
             "meta", "snapshots", root.path,
@@ -378,15 +389,44 @@ final class DetachStateCommandTests: XCTestCase {
             .dropLast()
             .map { String(decoding: $0, as: UTF8.self) }
         let recordSize = 19
-        XCTAssertEqual(values.count, recordSize * 2 + 2)
-        XCTAssertEqual(values[0], "detach-codex-one")
+        XCTAssertEqual(values.count, recordSize * 3 + 2)
+        XCTAssertEqual(values[0], "detach-claude-three")
         XCTAssertEqual(values[1], "true")
-        XCTAssertEqual(values[2], "stopped")
-        XCTAssertEqual(values[4], project)
-        XCTAssertEqual(values[recordSize], "detach-codex-two")
-        XCTAssertEqual(values[recordSize + 1], "false")
-        XCTAssertTrue(values[(recordSize + 2)..<(recordSize * 2)].allSatisfy(\.isEmpty))
+        XCTAssertEqual(values[2], "running")
+        XCTAssertEqual(values[4], "/tmp/primary")
+        XCTAssertEqual(values[recordSize], "detach-codex-one")
+        XCTAssertEqual(values[recordSize + 1], "true")
+        XCTAssertEqual(values[recordSize + 2], "stopped")
+        XCTAssertEqual(values[recordSize + 4], project)
+        XCTAssertEqual(values[recordSize * 2], "detach-codex-two")
+        XCTAssertEqual(values[recordSize * 2 + 1], "false")
+        XCTAssertTrue(values[(recordSize * 2 + 2)..<(recordSize * 3)].allSatisfy(\.isEmpty))
         XCTAssertEqual(Array(values.suffix(2)), ["", "true"])
+        let repeatedSeparatorRoot = root.path.replacingOccurrences(
+            of: "/sessions", with: "//sessions")
+        XCTAssertEqual(try DetachStateCommand.run(arguments: [
+            "meta", "snapshots", repeatedSeparatorRoot,
+        ]), output)
+
+        for invalidRoot in [
+            "relative/sessions", root.path + "/", root.path + "/../sessions",
+            root.path + "\n",
+        ] {
+            XCTAssertThrowsError(try DetachStateCommand.run(arguments: [
+                "meta", "snapshots", invalidRoot,
+            ])) { error in
+                XCTAssertEqual(error as? DetachStateCommandError, .invalidArguments)
+            }
+        }
+
+        let invalidSession = root.appendingPathComponent("unsafe name", isDirectory: true)
+        try FileManager.default.createDirectory(at: invalidSession, withIntermediateDirectories: true)
+        XCTAssertThrowsError(try DetachStateCommand.run(arguments: [
+            "meta", "snapshots", root.path,
+        ])) { error in
+            XCTAssertEqual(error as? DetachStateCommandError, .invalidArguments)
+        }
+        try FileManager.default.removeItem(at: invalidSession)
 
         let unsafeRoot = temporaryDirectory.appendingPathComponent("unsafe-sessions")
         try FileManager.default.createSymbolicLink(at: unsafeRoot, withDestinationURL: root)
@@ -411,6 +451,71 @@ final class DetachStateCommandTests: XCTestCase {
             withDestinationURL: external)
         XCTAssertThrowsError(try DetachStateCommand.run(arguments: [
             "meta", "snapshots", checkpointRoot.path,
+        ])) { error in
+            XCTAssertEqual(error as? DetachStateCommandError, .invalidArguments)
+        }
+
+        let invalidCheckpointRoot = temporaryDirectory.appendingPathComponent(
+            "invalid-checkpoint-sessions", isDirectory: true)
+        let invalidCheckpointSession = invalidCheckpointRoot.appendingPathComponent(
+            "detach-codex-invalid-checkpoint", isDirectory: true)
+        let invalidCheckpointDirectory = invalidCheckpointSession.appendingPathComponent(
+            "checkpoint", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: invalidCheckpointDirectory, withIntermediateDirectories: true)
+        try Data("not-json".utf8).write(
+            to: invalidCheckpointDirectory.appendingPathComponent("meta.json"))
+        let invalidCheckpointOutput = try DetachStateCommand.run(arguments: [
+            "meta", "snapshots", invalidCheckpointRoot.path,
+        ])
+        let invalidCheckpointValues = invalidCheckpointOutput.split(
+            separator: 0, omittingEmptySubsequences: false)
+        XCTAssertEqual(String(decoding: invalidCheckpointValues[0], as: UTF8.self),
+                       "detach-codex-invalid-checkpoint")
+        XCTAssertEqual(String(decoding: invalidCheckpointValues[1], as: UTF8.self), "false")
+
+        let unreadableRoot = temporaryDirectory.appendingPathComponent(
+            "unreadable-sessions", isDirectory: true)
+        let unreadableSession = unreadableRoot.appendingPathComponent(
+            "detach-codex-unreadable", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: unreadableSession, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o100], ofItemAtPath: unreadableSession.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: unreadableSession.path)
+        }
+        XCTAssertThrowsError(try DetachStateCommand.run(arguments: [
+            "meta", "snapshots", unreadableRoot.path,
+        ])) { error in
+            XCTAssertEqual(error as? DetachStateCommandError, .invalidArguments)
+        }
+
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o400], ofItemAtPath: unreadableSession.path)
+        XCTAssertThrowsError(try DetachStateCommand.run(arguments: [
+            "meta", "snapshots", unreadableRoot.path,
+        ])) { error in
+            XCTAssertEqual(error as? DetachStateCommandError, .invalidArguments)
+        }
+
+        let unreadableCheckpointRoot = temporaryDirectory.appendingPathComponent(
+            "unreadable-checkpoint-sessions", isDirectory: true)
+        let unreadableCheckpointSession = unreadableCheckpointRoot.appendingPathComponent(
+            "detach-codex-unreadable-checkpoint", isDirectory: true)
+        let unreadableCheckpoint = unreadableCheckpointSession.appendingPathComponent(
+            "checkpoint", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: unreadableCheckpoint, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o100], ofItemAtPath: unreadableCheckpoint.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: unreadableCheckpoint.path)
+        }
+        XCTAssertThrowsError(try DetachStateCommand.run(arguments: [
+            "meta", "snapshots", unreadableCheckpointRoot.path,
         ])) { error in
             XCTAssertEqual(error as? DetachStateCommandError, .invalidArguments)
         }

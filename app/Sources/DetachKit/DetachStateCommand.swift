@@ -643,13 +643,12 @@ public enum DetachStateCommand {
         }
         defer { close(checkpoint) }
         var openedCheckpoint = stat()
-        guard fstat(checkpoint, &openedCheckpoint) == 0,
-              isDirectory(openedCheckpoint),
-              openedCheckpoint.st_uid == geteuid(),
-              openedCheckpoint.st_dev == checkpointMetadata.st_dev,
-              openedCheckpoint.st_ino == checkpointMetadata.st_ino else {
-            throw DetachStateCommandError.invalidArguments
-        }
+        let checkpointMatches = fstat(checkpoint, &openedCheckpoint) == 0
+            && isDirectory(openedCheckpoint)
+            && openedCheckpoint.st_uid == geteuid()
+            && openedCheckpoint.st_dev == checkpointMetadata.st_dev
+            && openedCheckpoint.st_ino == checkpointMetadata.st_ino
+        guard checkpointMatches else { throw DetachStateCommandError.invalidArguments }
         if let data = readOwnedMetadataFile(in: checkpoint, name: "meta.json") {
             if let values = try? SessionMetadataDocument.usableScalars(
                 in: data,
@@ -681,18 +680,14 @@ public enum DetachStateCommand {
         }
         defer { close(rootDescriptor) }
         var rootMetadata = stat()
-        guard fstat(rootDescriptor, &rootMetadata) == 0,
-              isDirectory(rootMetadata),
-              rootMetadata.st_uid == geteuid() else {
-            throw DetachStateCommandError.invalidArguments
-        }
+        let rootIsOwnedDirectory = fstat(rootDescriptor, &rootMetadata) == 0
+            && isDirectory(rootMetadata)
+            && rootMetadata.st_uid == geteuid()
+        guard rootIsOwnedDirectory else { throw DetachStateCommandError.invalidArguments }
         let enumerationDescriptor = dup(rootDescriptor)
-        guard enumerationDescriptor >= 0 else {
-            throw DetachStateCommandError.invalidArguments
-        }
+        guard enumerationDescriptor >= 0 else { throw DetachStateCommandError.invalidArguments }
         guard let directory = fdopendir(enumerationDescriptor) else {
-            close(enumerationDescriptor)
-            throw DetachStateCommandError.invalidArguments
+            close(enumerationDescriptor); throw DetachStateCommandError.invalidArguments
         }
         defer { closedir(directory) }
         var names: [String] = []
@@ -708,9 +703,7 @@ public enum DetachStateCommand {
         for name in names.sorted() {
             var item = stat()
             if fstatat(rootDescriptor, name, &item, AT_SYMLINK_NOFOLLOW) != 0 {
-                guard errno == ENOENT else {
-                    throw DetachStateCommandError.invalidArguments
-                }
+                guard errno == ENOENT else { throw DetachStateCommandError.invalidArguments }
                 continue
             }
             if isSymbolicLink(item) {
@@ -727,13 +720,13 @@ public enum DetachStateCommand {
                 throw DetachStateCommandError.invalidArguments
             }
             var opened = stat()
-            guard fstat(session, &opened) == 0,
-                  isDirectory(opened),
-                  opened.st_uid == geteuid(),
-                  opened.st_dev == item.st_dev,
-                  opened.st_ino == item.st_ino else {
-                close(session)
-                throw DetachStateCommandError.invalidArguments
+            let sessionMatches = fstat(session, &opened) == 0
+                && isDirectory(opened)
+                && opened.st_uid == geteuid()
+                && opened.st_dev == item.st_dev
+                && opened.st_ino == item.st_ino
+            guard sessionMatches else {
+                close(session); throw DetachStateCommandError.invalidArguments
             }
             let values: [DetachStateScalar?]?
             do {
@@ -770,10 +763,7 @@ public enum DetachStateCommand {
             while offset < buffer.count {
                 let count = Darwin.read(
                     descriptor, base.advanced(by: offset), buffer.count - offset)
-                if count < 0 {
-                    if errno == EINTR { continue }
-                    return false
-                }
+                if count < 0 { if errno == EINTR { continue }; return false }
                 if count == 0 { return false }
                 offset += count
             }
