@@ -40,22 +40,24 @@ transient SMAppService Code=1 race. Do not replace a helper with active leases:
 defer the update. Report a normal reconciliation outcome and retry on a later
 app activation.
 
-Every readiness build has one unique `detach-app-build:<UUID>` in the main
-executable's `__TEXT,__detach_build` section and signed build marker. Both
-values must match. The packaged-app UI smoke uses a stripped private
-background copy under `/private/tmp/detach-ui-e2e.*`. Its identity has
-no production CLI payload, watchdog, helper, power or state executable, or
-tmux. All injected paths resolve below the private root. An escape, unsafe
-identity, build mismatch, or payload fails closed. The smoke proves startup
-does not take focus. It then
-activates the copy, posts AppKit mouse events to measured SwiftUI controls, and
-restores the prior application. Its locator bridge exposes semantics but has no
-actions. Each isolated launch has a driver deadline below its process
-deadline. A 40-second global deadline bounds the stage. It covers the
-dashboard, session actions, new-session sheet, empty and failure states,
-Settings, onboarding, and focus restoration. It disconnects Stop before it
-proves that the real control invokes the action. Onboarding fixture
-states are isolated; only a visible control completes first-run setup.
+Each readiness build stores one `detach-app-build:<UUID>` in its executable and
+signed marker. UI smoke uses a stripped private copy at
+`/private/tmp/detach-ui-e2e.*`. It excludes production CLI, watchdog, helper,
+power, state, and tmux payloads. Injections stay below its root. An escape,
+unsafe identity, build mismatch, or payload fails closed.
+
+The smoke keeps the prior app focused. It posts AppKit events to measured
+SwiftUI controls, then restores that app. Its semantic locator has no actions.
+Each launch ends before its process deadline; the stage deadline is 40 seconds.
+Journeys cover all main surfaces, Settings, onboarding, and focus. It
+disconnects Stop before it proves that the real control invokes the action.
+Only a visible control completes isolated onboarding.
+
+Coverage validates the normal bundle, puts a coverage-enabled release
+executable only in the stripped copy, and signs it. The executable and profiles
+stay ignored or private and never enter a verified bundle or public artifact.
+If an overlay scroller ignores a page event, the driver reveals the measured
+semantic control, then posts the action to it.
 
 The per-user watchdog has an additional launch-readiness rule. macOS can report
 an approved agent as enabled while no launchd job was loaded after the approval

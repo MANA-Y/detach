@@ -12,11 +12,13 @@ import subprocess
 import sys
 import tempfile
 from typing import Any, Optional, Tuple
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+import quality_metrics  # noqa: E402
 from quality_metrics import build_metrics, collect_coverage  # noqa: E402
 from quality_policy import POLICY_FILE, Policy  # noqa: E402
 
@@ -164,6 +166,7 @@ def evaluate_arguments(
     baseline: Optional[Path] = None,
     authority: str = "local-diagnostic",
     source_commit: str = SOURCE_COMMIT,
+    opportunities: Optional[Path] = None,
 ) -> list[str]:
     arguments = [
         "evaluate",
@@ -182,6 +185,8 @@ def evaluate_arguments(
     ]
     if baseline is not None:
         arguments.extend(("--baseline-root", str(baseline)))
+    if opportunities is not None:
+        arguments.extend(("--opportunities-output", str(opportunities)))
     return arguments
 
 
@@ -201,6 +206,45 @@ def main() -> None:
         baseline_metrics = root / "baseline-metrics.json"
         baseline_root = root / "baseline"
 
+        test_binary = root / "tests-binary"
+        unit_profile = root / "unit.profdata"
+        app_binary = root / "app-binary"
+        profile_directory = root / "ui-profiles"
+        profile_directory.mkdir()
+        for fixture in (test_binary, unit_profile, app_binary):
+            fixture.write_bytes(b"fixture")
+        (profile_directory / "ui.profraw").write_bytes(b"fixture")
+        coverage_export = json.dumps(coverage_document()).encode("utf-8")
+        coverage_commands: list[list[str]] = []
+
+        def fake_coverage_run(
+            command: list[str], *, text: bool = True
+        ) -> subprocess.CompletedProcess[Any]:
+            coverage_commands.append(command)
+            if "llvm-profdata" in command:
+                Path(command[-1]).write_bytes(b"combined")
+                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(
+                command, 0, stdout=coverage_export, stderr=b""
+            )
+
+        with patch.object(quality_metrics, "run", side_effect=fake_coverage_run):
+            merged_export = quality_metrics.export_coverage(
+                test_binary,
+                unit_profile,
+                [app_binary],
+                profile_directory,
+            )
+        assert merged_export == coverage_document()
+        assert len(coverage_commands) == 2
+        assert "llvm-profdata" in coverage_commands[0]
+        assert str(unit_profile) in coverage_commands[0]
+        assert str(profile_directory / "ui.profraw") in coverage_commands[0]
+        assert "llvm-cov" in coverage_commands[1]
+        assert coverage_commands[1][coverage_commands[1].index("-object") + 1] == str(
+            app_binary
+        )
+
         write_json(coverage, coverage_document())
         tests.write_text("\n".join(test_lines()) + "\n", encoding="utf-8")
         write_json(changed, {})
@@ -218,6 +262,7 @@ def main() -> None:
 
         write_json(changed, {"app/Sources/DetachApp/Synthetic.swift": list(range(1, 11))})
         current = root / "current.json"
+        current_opportunities = root / "current-opportunities.json"
         invoke(
             evaluate_arguments(
                 coverage,
@@ -226,6 +271,7 @@ def main() -> None:
                 changed,
                 baseline=baseline_root,
                 authority="ci-merge",
+                opportunities=current_opportunities,
             )
         )
         document = json.loads(current.read_text(encoding="utf-8"))
@@ -233,6 +279,52 @@ def main() -> None:
         assert document["suites"]["ui"]["line_coverage"]["percent"] == 90.0
         assert document["changed_lines"]["status"] == "passed"
         assert document["changed_lines"]["line_coverage"]["percent"] == 90.0
+        invoke(["validate-opportunities", str(current_opportunities)])
+        opportunity_document = json.loads(
+            current_opportunities.read_text(encoding="utf-8")
+        )
+        assert opportunity_document["observed"]["percent"] == 90.0
+        assert opportunity_document["next_milestone_percent"] == 95
+        assert opportunity_document["lines_to_milestone"] == 1
+        assert opportunity_document["opportunities"][0]["path"] == (
+            "app/Sources/DetachApp/Synthetic.swift"
+        )
+        assert opportunity_document["opportunities"][0]["uncovered"] == 1
+
+        malformed_opportunities = json.loads(
+            current_opportunities.read_text(encoding="utf-8")
+        )
+        malformed_opportunities["opportunities"][0]["uncovered"] = 2
+        malformed_opportunities_path = root / "malformed-opportunities.json"
+        write_json(malformed_opportunities_path, malformed_opportunities)
+        malformed_opportunities_result = invoke(
+            ["validate-opportunities", str(malformed_opportunities_path)],
+            expected=2,
+        )
+        require_text(
+            malformed_opportunities_result,
+            "uncovered count is inconsistent",
+        )
+
+        extra_coverage_input = invoke(
+            [
+                *evaluate_arguments(
+                    coverage,
+                    tests,
+                    root / "extra-coverage-input.json",
+                    changed,
+                ),
+                "--additional-object",
+                str(coverage),
+                "--additional-profile-directory",
+                str(root),
+            ],
+            expected=2,
+        )
+        require_text(
+            extra_coverage_input,
+            "additional coverage inputs require a test binary",
+        )
 
         promoted_metrics = root / "promoted-metrics.json"
         promoted_document = json.loads(baseline_metrics.read_text(encoding="utf-8"))

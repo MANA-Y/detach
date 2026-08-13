@@ -87,6 +87,14 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   excluded. A test-only region in a product source has a policy-owned name,
   checked source markers, and automated scenario evidence. The region is
   omitted only from changed-line metrics, not aggregate coverage.
+- Authoritative UI coverage combines instrumented Swift tests with
+  packaged-app journeys. The app stage verifies the normal bundle, then builds
+  an instrumented release executable for the stripped private copy. The
+  metric stage merges profiles after UI without another test run.
+- `coverage-opportunities.json` is a separate digest-bound advisory artifact.
+  It ranks uncovered UI sources from policy routes, release impact,
+  requirements, and journeys. Its next milestone is the five-point boundary
+  above observed coverage. It does not set a floor or change gate status.
 - A scheduled, manually dispatchable mutation workflow checks a small
   deterministic safety corpus. It runs mutants in parallel, gives each test a
   240-second deadline, and requires a 100-percent score. Mutation work does not
@@ -107,8 +115,9 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   run. Bounded quality care can also deploy its validated result before it
   marks an attention run as failed. Care evidence binds the source commit and
   SHA-256 digests of its eval and history inputs. The dashboard shows measured
-  coverage, mutation score, workflow evals, feedback p95 and SLO, and security
-  state when they exist. The security state comes from a typed current-policy
+  coverage, ranked UI coverage opportunities, mutation score, workflow evals,
+  feedback p95 and SLO, and security state when they exist. The security state
+  comes from a typed current-policy
   artifact. It includes both CodeQL job results, the analyzed commit, an
   identity fingerprint, and the exact workflow link. A later main, care, or
   mutation deploy restores the newest valid current-policy security and care

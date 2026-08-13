@@ -51,11 +51,11 @@ DIGEST = re.compile(r"^[0-9a-f]{64}$")
 POSITIVE_INTEGER = re.compile(r"^[1-9][0-9]*$")
 NONNEGATIVE_INTEGER = re.compile(r"^[0-9]+$")
 EXECUTION_PREREQUISITES = {
-    "quality-contracts": "swift",
-    "ui-e2e": "app",
-    "codex": "app",
-    "claude": "app",
-    "tmux-runtime": "app",
+    "quality-contracts": ("swift", "ui-e2e"),
+    "ui-e2e": ("app",),
+    "codex": ("app",),
+    "claude": ("app",),
+    "tmux-runtime": ("app",),
 }
 PROVIDER_WAVE = (
     "codex",
@@ -659,9 +659,10 @@ class QualityGate:
 
     def artifact_inventory(self) -> None:
         files: list[Path] = []
-        metrics = self.run_dir / "quality-metrics.json"
-        if metrics.exists():
-            files.append(metrics)
+        for name in ("quality-metrics.json", "coverage-opportunities.json"):
+            evidence = self.run_dir / name
+            if evidence.exists():
+                files.append(evidence)
         for name in ("scenarios.jsonl", "scenarios.junit.xml", "repair-bundle.json"):
             path = self.run_dir / name
             if path.exists():
@@ -899,6 +900,7 @@ class QualityGate:
                 raise GateError("resume artifact inventory path is unsafe")
             if not (
                 relative == "quality-metrics.json"
+                or relative == "coverage-opportunities.json"
                 or relative == "scenarios.jsonl"
                 or relative == "scenarios.junit.xml"
                 or relative == "repair-bundle.json"
@@ -1026,19 +1028,26 @@ class QualityGate:
 
     def reusable(self, stage: str) -> bool:
         result = self.prior_results.get(stage)
+        if stage == "ui-e2e" and "quality-contracts" in self.selected:
+            metrics = self.prior_results.get("quality-contracts")
+            if metrics is None or metrics.status not in ("passed", "reused"):
+                return False
         return result is not None and result.status in ("passed", "reused")
 
     def prerequisite_failed(self, stage: str) -> bool:
-        prerequisite = EXECUTION_PREREQUISITES.get(stage)
-        if prerequisite is None:
+        prerequisites = EXECUTION_PREREQUISITES.get(stage)
+        if prerequisites is None:
             return False
-        result = self.results.get(prerequisite)
-        return result is not None and result.status in (
-            "failed",
-            "environment-failed",
-            "timeout",
-            "interrupted",
-            "blocked",
+        return any(
+            self.results.get(prerequisite) is not None
+            and self.results[prerequisite].status in (
+                "failed",
+                "environment-failed",
+                "timeout",
+                "interrupted",
+                "blocked",
+            )
+            for prerequisite in prerequisites
         )
 
     def timeout_for_stage(self, stage: str) -> int:
@@ -1084,6 +1093,7 @@ class QualityGate:
                 "DETACH_QUALITY_GATE_RESOLVED_BASE": self.resolved_base,
                 "DETACH_QUALITY_GATE_MODE": self.options.mode,
                 "DETACH_QUALITY_GATE_DIAGNOSTIC_STAGE": self.options.stage,
+                "DETACH_QUALITY_GATE_SELECTED_STAGES": ",".join(self.selected),
                 "DETACH_QUALITY_GATE_TEST_MODE": str(int(self.test_mode)),
                 "DETACH_QUALITY_GATE_TEST_REAL_STATIC": str(
                     int(self.test_real_static)
@@ -1119,6 +1129,15 @@ class QualityGate:
                     )
                 shutil.copyfile(metrics, self.run_dir / "quality-metrics.json")
                 (self.run_dir / "quality-metrics.json").chmod(0o600)
+                opportunities = self.resume_dir / "coverage-opportunities.json"
+                if not opportunities.is_file() or opportunities.is_symlink():
+                    raise GateError(
+                        "reused quality-contracts evidence has no safe coverage opportunities"
+                    )
+                shutil.copyfile(
+                    opportunities, self.run_dir / "coverage-opportunities.json"
+                )
+                (self.run_dir / "coverage-opportunities.json").chmod(0o600)
             self.record_result(
                 stage,
                 StageResult("reused", prior.duration, reused_log, 0, origin),
@@ -1581,11 +1600,11 @@ class QualityGate:
             self.wait_for(("static",))
             self.launch("swift")
             self.wait_for(("swift",))
-            self.launch("quality-contracts")
             self.launch("app")
             self.wait_for(("app",))
             self.launch("ui-e2e")
             self.wait_for(("ui-e2e",))
+            self.launch("quality-contracts")
             self.wait_for(("quality-contracts",))
             for stage in PROVIDER_WAVE:
                 self.launch(stage)
@@ -1975,6 +1994,9 @@ def run_stage_worker(stage: str) -> int:
                     "DETACH_QUALITY_METRICS_OUTPUT": str(
                         run_dir / "quality-metrics.json"
                     ),
+                    "DETACH_QUALITY_OPPORTUNITIES_OUTPUT": str(
+                        run_dir / "coverage-opportunities.json"
+                    ),
                     "DETACH_QUALITY_SOURCE_COMMIT": source_commit,
                     "DETACH_QUALITY_AUTHORITY": authority,
                 }
@@ -1988,6 +2010,10 @@ def run_stage_worker(stage: str) -> int:
         for scenario_id in instrumented:
             record_scenario_event("begin", scenario_id)
         status = child_run([str(fixture)], cwd=root, env=environment)
+        if status == 0 and stage == "quality-contracts":
+            opportunities = run_dir / "coverage-opportunities.json"
+            if not opportunities.exists():
+                write_private(opportunities, "{}\n")
         if status == 0:
             for scenario_id in instrumented:
                 record_scenario_event("pass", scenario_id)
@@ -2029,20 +2055,94 @@ def run_stage_worker(stage: str) -> int:
             {
                 "DETACH_SWIFT_TEST_LOG": str(run_dir / "swift.log"),
                 "DETACH_QUALITY_METRICS_OUTPUT": str(run_dir / "quality-metrics.json"),
+                "DETACH_QUALITY_OPPORTUNITIES_OUTPUT": str(
+                    run_dir / "coverage-opportunities.json"
+                ),
                 "DETACH_QUALITY_SOURCE_COMMIT": source_commit,
                 "DETACH_QUALITY_AUTHORITY": authority,
             }
         )
-        return child_run([str(root / "tests/quality-contracts.sh")], env=environment)
+        selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
+        if "ui-e2e" in selected:
+            profile_directory = (
+                root / "app/build/quality-ui-coverage" / run_dir.name
+            )
+            environment.update(
+                {
+                    "DETACH_UI_COVERAGE_BINARY": str(
+                        root / "app/.build/arm64-apple-macosx/release/DetachApp"
+                    ),
+                    "DETACH_UI_COVERAGE_PROFILE_DIR": str(profile_directory),
+                }
+            )
+        status = child_run([str(root / "tests/quality-contracts.sh")], env=environment)
+        if "ui-e2e" in selected:
+            if profile_directory.is_symlink():
+                print(
+                    "quality-gate: refusing unsafe UI coverage cleanup",
+                    file=sys.stderr,
+                )
+                return status or 2
+            shutil.rmtree(profile_directory, ignore_errors=True)
+        return status
     if stage == "app":
-        return child_run([str(root / "app/scripts/make-app.sh")])
+        status = child_run([str(root / "app/scripts/make-app.sh")])
+        if status:
+            return status
+        selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
+        if "quality-contracts" not in selected:
+            return 0
+        return child_run(
+            [
+                "swift",
+                "build",
+                "--enable-code-coverage",
+                "--disable-sandbox",
+                "--disable-automatic-resolution",
+                "-c",
+                "release",
+                "--triple",
+                "arm64-apple-macosx26.0",
+                "--scratch-path",
+                ".build",
+                "--product",
+                "DetachApp",
+            ],
+            cwd=root / "app",
+        )
     if stage == "ui-e2e":
         status = child_run([str(root / "tests/ui-e2e-contract.sh")])
         if status:
             return status
         environment = os.environ.copy()
         environment["DETACH_UI_E2E_ARTIFACT_DIR"] = str(run_dir / "ui-e2e-artifacts")
-        return child_run([str(root / "tests/ui-e2e.sh")], env=environment)
+        selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
+        coverage_dir = root / "app/build/quality-ui-coverage" / run_dir.name
+        if "quality-contracts" in selected:
+            coverage_binary = (
+                root / "app/.build/arm64-apple-macosx/release/DetachApp"
+            )
+            if not coverage_binary.is_file() or coverage_binary.is_symlink():
+                print(
+                    "quality-gate: app stage emitted no safe coverage executable",
+                    file=sys.stderr,
+                )
+                return 2
+            coverage_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            environment["LLVM_PROFILE_FILE"] = str(
+                coverage_dir / "%p-%m.profraw"
+            )
+            environment["DETACH_UI_E2E_COVERAGE_BINARY"] = str(coverage_binary)
+        status = child_run([str(root / "tests/ui-e2e.sh")], env=environment)
+        if status == 0 and "quality-contracts" in selected:
+            profiles = [
+                path for path in coverage_dir.glob("*.profraw")
+                if path.is_file() and not path.is_symlink()
+            ]
+            if not profiles:
+                print("quality-gate: UI e2e emitted no coverage profile", file=sys.stderr)
+                return 2
+        return status
     payload = root / "app/build/Detach.app/Contents/Resources/DetachCLI"
     tmux = payload / "tmux"
     state = payload / "detach-state"

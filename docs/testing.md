@@ -9,9 +9,11 @@
   analysis; use it after a wider Swift edit when `critical` is too narrow.
 - `scripts/test coverage` — every coverage-enabled Swift test followed by
   automatic test-identity, aggregate, critical-source, and changed-line
-  metrics. Local use records diagnostic facts. Hosted CI compares them with
-  the last green `main` artifact. It deletes only the active SwiftPM build
-  path's prior profile, so stale build evidence cannot satisfy the command.
+  metrics. This fast local diagnostic is unit-only. An authoritative gate adds
+  the passed packaged-app profiles without another Swift test run. Hosted CI
+  compares the combined result with the last green `main` artifact. The local
+  command deletes only the active SwiftPM build path's prior profile, so stale
+  build evidence cannot satisfy the command.
 - `scripts/test smoke` — builds a fresh app, validates and runs the isolated
   packaged-app Accessibility flow, then verifies the bundled runtime. It needs
   a logged-in WindowServer session and an environment that permits the private
@@ -134,14 +136,18 @@
 - `cd app && swift test --enable-code-coverage --disable-sandbox`, followed by
   `tests/quality-contracts.sh` — unit tests plus measured UI and business test
   identities, aggregate coverage, and coverage for the 13 critical sources.
-  CI rejects a reduction from the last green `main` artifact. It also rejects
+  The authoritative gate also merges the release-configuration packaged-app
+  profiles after all UI journeys pass. CI rejects a reduction from the last
+  green `main` artifact. It also rejects
   changed executable Swift-line coverage below 90 percent. New critical
   sources start at 100 percent. The quality policy owns each coverage
   exclusion and links it to automated scenario evidence. Excluded sources do
   not enter aggregate or changed-line denominators. Named test-only regions in
   product files stay in aggregate coverage but use their automated scenario as
   changed-line evidence. `tests/quality-metrics.sh` covers missing, malformed,
-  removed-test, aggregate, critical-file, and changed-line regressions.
+  removed-test, aggregate, critical-file, changed-line, combined-profile, and
+  ranked-opportunity contracts. The opportunity artifact is advisory. It does
+  not set a coverage floor.
   `tests/release-budget-ratchet-contract.sh` protects timing.
 - `tests/quality-mutation.sh` checks source restoration, timeout handling,
   failure classification, score enforcement, remote evidence restore, and the

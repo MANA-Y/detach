@@ -630,11 +630,28 @@ enum UIE2ETestDriver {
                 frame: pageFrame,
                 name: "scroll toward \(name)",
                 owningWindow: measuredView.window)
-            try await waitUntil("visible \(name)", attempts: 10) {
-                measuredView.publishFrame()
-                guard let moved = UIE2EGeometryRegistry.frame(for: identifier)
-                else { return false }
-                return moved != current
+            do {
+                try await waitUntil("visible \(name)", attempts: 10) {
+                    measuredView.publishFrame()
+                    guard let moved = UIE2EGeometryRegistry.frame(for: identifier)
+                    else { return false }
+                    return moved != current
+                }
+            } catch {
+                // Overlay scrollers can expose page geometry while ignoring a
+                // synthesized click until a physical scroll makes the track
+                // visible. Reveal only the measured semantic control, then
+                // keep the actual action on the real button below.
+                measuredView.scrollToVisible(measuredView.bounds)
+                if let scrollView = measuredView.enclosingScrollView {
+                    scrollView.reflectScrolledClipView(scrollView.contentView)
+                }
+                try await waitUntil("fallback reveal for \(name)", attempts: 10) {
+                    measuredView.publishFrame()
+                    guard let moved = UIE2EGeometryRegistry.frame(for: identifier)
+                    else { return false }
+                    return moved != current
+                }
             }
         }
         measuredView.publishFrame()

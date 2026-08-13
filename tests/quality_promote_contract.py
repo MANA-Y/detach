@@ -73,6 +73,32 @@ def metrics_document() -> dict[str, object]:
     }
 
 
+def opportunities_document() -> dict[str, object]:
+    return {
+        "schema": 1,
+        "policy": POLICY.version,
+        "source_commit": TESTED,
+        "suite": "ui",
+        "observed": {"covered": 3, "percent": 30.0, "total": 10},
+        "next_milestone_percent": 35,
+        "lines_to_milestone": 1,
+        "opportunities": [
+            {
+                "rank": 1,
+                "path": "app/Sources/DetachApp/Synthetic.swift",
+                "risk": "user-journey",
+                "risk_tier": 1,
+                "line_coverage": {"covered": 3, "percent": 30.0, "total": 10},
+                "uncovered": 7,
+                "capabilities": [],
+                "requirements": [],
+                "journeys": [],
+                "recommended_evidence": "behavioral-unit-test",
+            }
+        ],
+    }
+
+
 def create_evidence(root: Path) -> Path:
     run_dir = root / "20260812T120000Z-1"
     run_dir.mkdir(parents=True)
@@ -92,6 +118,7 @@ def create_evidence(root: Path) -> Path:
     environment = run_dir / "environment.tsv"
     environment.write_text("schema\t1\narchitecture\ttest\n", encoding="utf-8")
     write_json(run_dir / "quality-metrics.json", metrics_document())
+    write_json(run_dir / "coverage-opportunities.json", opportunities_document())
     (run_dir / "scenarios.jsonl").write_text("{}\n", encoding="utf-8")
     (run_dir / "scenarios.junit.xml").write_text(
         '<testsuite name="quality" tests="0"/>\n', encoding="utf-8"
@@ -102,6 +129,7 @@ def create_evidence(root: Path) -> Path:
         + "".join(
             f"file\t{name}\t{digest(run_dir / name)}\n"
             for name in (
+                "coverage-opportunities.json",
                 "quality-metrics.json",
                 "scenarios.jsonl",
                 "scenarios.junit.xml",

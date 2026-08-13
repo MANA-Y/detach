@@ -252,7 +252,12 @@ def artifact_inventory(run_dir: Path, manifest: dict[str, str]) -> dict[str, str
         if sha256(artifact) != fields[2]:
             raise PromotionError(f"evidence artifact digest does not match: {fields[1]}")
         values[fields[1]] = fields[2]
-    for required in ("quality-metrics.json", "scenarios.jsonl", "scenarios.junit.xml"):
+    for required in (
+        "coverage-opportunities.json",
+        "quality-metrics.json",
+        "scenarios.jsonl",
+        "scenarios.junit.xml",
+    ):
         if required not in values:
             raise PromotionError(f"required evidence artifact is missing: {required}")
     return values
@@ -318,7 +323,7 @@ def validate_evidence(
             raise PromotionError(f"{name} evidence digest does not match the manifest")
     validate_summary(run_dir, manifest, policy)
     artifact_inventory(run_dir, manifest)
-    from quality_metrics import read_json, validate_metrics
+    from quality_metrics import read_json, validate_metrics, validate_opportunities
 
     metrics = validate_metrics(
         read_json(run_dir / "quality-metrics.json", "quality metrics"),
@@ -326,6 +331,19 @@ def validate_evidence(
     )
     if metrics["source_commit"] != tested_commit or metrics["comparison"]["status"] != "passed":
         raise PromotionError("quality metrics are not passing evidence for the tested commit")
+    opportunities = validate_opportunities(
+        read_json(
+            run_dir / "coverage-opportunities.json", "coverage opportunities"
+        ),
+        expected_policy=policy.version,
+    )
+    if (
+        opportunities["source_commit"] != tested_commit
+        or opportunities["observed"] != metrics["suites"]["ui"]["line_coverage"]
+    ):
+        raise PromotionError(
+            "coverage opportunities do not match the tested UI metrics"
+        )
     return manifest, sha256(manifest_path)
 
 

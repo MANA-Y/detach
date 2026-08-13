@@ -22,7 +22,7 @@ from quality_care import (
     validate_input_bindings as validate_care_inputs,
     validate_summary as validate_care_summary,
 )
-from quality_metrics import MetricsError, validate_metrics
+from quality_metrics import MetricsError, validate_metrics, validate_opportunities
 from quality_mutation import MutationError, validate_summary
 from quality_promote import PromotionError, validate_promotion
 from quality_security import SecurityError, validate_summary as validate_security_summary
@@ -173,6 +173,47 @@ def read_metrics(run_dir: Path, manifest: dict[str, str]) -> Optional[dict[str, 
     if metrics["source_commit"] != manifest["source_commit"]:
         raise DashboardError("quality metrics source does not match the run")
     return metrics
+
+
+def read_coverage_opportunities(
+    run_dir: Path, manifest: dict[str, str], metrics: Optional[dict[str, Any]]
+) -> Optional[dict[str, Any]]:
+    if metrics is None:
+        return None
+    opportunities_path = safe_file(
+        run_dir / "coverage-opportunities.json", "coverage opportunities"
+    )
+    artifacts_path = safe_file(run_dir / "artifacts.tsv", "artifact inventory")
+    if hashlib.sha256(artifacts_path.read_bytes()).hexdigest() != manifest["artifacts_sha256"]:
+        raise DashboardError("artifact inventory digest does not match the manifest")
+    expected_digests: list[str] = []
+    for line_number, line in enumerate(
+        artifacts_path.read_text(encoding="utf-8").splitlines(), 1
+    ):
+        fields = line.split("\t")
+        if fields == ["schema", "1"]:
+            continue
+        if len(fields) != 3 or fields[0] != "file":
+            raise DashboardError(f"artifact inventory line {line_number} is malformed")
+        if fields[1] == "coverage-opportunities.json":
+            expected_digests.append(fields[2])
+    if len(expected_digests) != 1:
+        raise DashboardError("coverage opportunities digest is missing or duplicated")
+    if hashlib.sha256(opportunities_path.read_bytes()).hexdigest() != expected_digests[0]:
+        raise DashboardError("coverage opportunities digest does not match the inventory")
+    try:
+        opportunities = validate_opportunities(
+            json.loads(opportunities_path.read_text(encoding="utf-8"))
+        )
+    except (MetricsError, json.JSONDecodeError, UnicodeError) as error:
+        raise DashboardError(f"coverage opportunities are invalid: {error}") from error
+    if opportunities["policy"] != int(manifest["policy"]):
+        raise DashboardError("coverage opportunities policy does not match the run")
+    if opportunities["source_commit"] != manifest["source_commit"]:
+        raise DashboardError("coverage opportunities source does not match the run")
+    if opportunities["observed"] != metrics["suites"]["ui"]["line_coverage"]:
+        raise DashboardError("coverage opportunities do not match UI metrics")
+    return opportunities
 
 
 def read_policy() -> dict[str, Any]:
@@ -434,6 +475,9 @@ def build_data(
     trend_walls = [trend["wall_seconds"] for trend in trends]
     slowest = max(stages, key=lambda stage: stage["duration_seconds"], default=None)
     metrics = read_metrics(run_dir, manifest)
+    coverage_opportunities = read_coverage_opportunities(
+        run_dir, manifest, metrics
+    )
     mutation = read_mutation_summary(mutation_summary, int(manifest["policy"]))
     care = read_care_summary(
         care_summary,
@@ -444,7 +488,7 @@ def build_data(
         security_summary, int(manifest["policy"])
     )
     return {
-        "schema": 2,
+        "schema": 3,
         "run": {
             "id": run_dir.name,
             "commit": effective_commit,
@@ -478,6 +522,11 @@ def build_data(
             "run_wall_p50_seconds": percentile(trend_walls, 50),
             "run_wall_p95_seconds": percentile(trend_walls, 95),
             "coverage": metrics if metrics is not None else "not-yet-emitted",
+            "coverage_opportunities": (
+                coverage_opportunities
+                if coverage_opportunities is not None
+                else "not-yet-emitted"
+            ),
             "mutation": mutation if mutation is not None else "not-yet-emitted",
             "care": care if care is not None else "not-yet-emitted",
             "merge": merge_evidence(
@@ -564,6 +613,27 @@ def render_html(data: dict[str, Any]) -> str:
         )
     else:
         coverage_text = str(coverage)
+    opportunities = quality["coverage_opportunities"]
+    if isinstance(opportunities, dict):
+        opportunity_rows = "\n".join(
+            f'<tr><td class="number">{entry["rank"]}</td>'
+            f'<td><code>{html.escape(entry["path"])}</code></td>'
+            f'<td>{html.escape(entry["risk"])}</td>'
+            f'<td class="number">{entry["line_coverage"]["percent"]:.2f}%</td>'
+            f'<td class="number">{entry["uncovered"]}</td>'
+            f'<td>{html.escape(entry["recommended_evidence"])}</td>'
+            f'<td>{html.escape(", ".join(entry["journeys"]))}</td></tr>'
+            for entry in opportunities["opportunities"][:10]
+        ) or '<tr><td colspan="7">No uncovered UI source remains.</td></tr>'
+        opportunity_summary = (
+            f'Observed {opportunities["observed"]["percent"]:.2f}%. '
+            f'Next automatic milestone: {opportunities["next_milestone_percent"]}% '
+            f'({opportunities["lines_to_milestone"]} executable lines).'
+        )
+        opportunity_section = f'''
+    <section><h2>UI coverage opportunities</h2><p class="section-note">{html.escape(opportunity_summary)}</p><div class="table-wrap"><table><thead><tr><th class="number">Rank</th><th>Source</th><th>Risk</th><th class="number">Covered</th><th class="number">Missed</th><th>Evidence</th><th>User journeys</th></tr></thead><tbody>{opportunity_rows}</tbody></table></div></section>'''
+    else:
+        opportunity_section = ""
     mutation = quality["mutation"]
     if isinstance(mutation, dict):
         mutation_text = (
@@ -655,6 +725,7 @@ def render_html(data: dict[str, Any]) -> str:
     .journey li {{ display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid var(--line); }} .journey li:last-child {{ border:0; }}
     .gaps {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); }} .gap {{ padding:14px; background:var(--panel); }}
     .empty {{ padding:20px; border:1px dashed var(--line); }}
+    .section-note {{ margin:-8px 0 12px; color:var(--muted); }}
     footer {{ padding:20px 0 36px; border-top:1px solid var(--line); color:var(--muted); }}
     #freshness.stale {{ color:var(--bad); font-weight:700; }}
     @media (max-width:850px) {{ .metrics {{ grid-template-columns:repeat(2,1fr); }} .metric {{ border-bottom:1px solid var(--line); }} .journeys {{ grid-template-columns:1fr; }} .gaps {{ grid-template-columns:repeat(2,1fr); }} }}
@@ -693,6 +764,7 @@ def render_html(data: dict[str, Any]) -> str:
       <div class="gap"><span class="eyebrow">Bounded merge</span><p>{html.escape(merge_text)}</p></div>
       <div class="gap"><span class="eyebrow">Security</span><p>{security_html}</p></div>
     </div></section>
+    {opportunity_section}
     <section><h2>Recent runs</h2><div class="table-wrap"><table><thead><tr><th>Commit</th><th>Authority</th><th>Result</th><th class="number">Wall</th><th>Finished</th></tr></thead><tbody>{trend_rows}</tbody></table></div></section>
   </main>
   <footer>Generated from digest-bound quality evidence. No result is inferred from terminal text.</footer>

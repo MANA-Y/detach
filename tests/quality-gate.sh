@@ -434,9 +434,11 @@ resumed_run="$(find "$RESULT_ROOT" -mindepth 1 -maxdepth 1 -type d -print | LC_A
 grep -F 'reusing static from matching evidence' "$REPO/resume-second.out" >/dev/null
 grep -F 'reusing gate-contract from matching evidence' "$REPO/resume-second.out" >/dev/null
 grep -R $'static\treused' "$RESULT_ROOT" >/dev/null
-[ "$(wc -l <"$ACTION_LOG" | tr -d ' ')" = 14 ]
+[ "$(wc -l <"$ACTION_LOG" | tr -d ' ')" = 15 ]
+[ "$(awk '$0 == "ui-e2e" { count += 1 } END { print count + 0 }' \
+    "$ACTION_LOG")" = 2 ]
 grep -F $'result\tpassed' "$RESULT_ROOT"/*/manifest.tsv >/dev/null
-grep -F '<testsuite name="detach-quality-gate" tests="14" failures="0" skipped="11">' "$RESULT_ROOT"/*/junit.xml >/dev/null
+grep -F '<testsuite name="detach-quality-gate" tests="14" failures="0" skipped="10">' "$RESULT_ROOT"/*/junit.xml >/dev/null
 grep -F $'resumed_from_run\t'"$(basename "$resume_dir")" "$resumed_run/manifest.tsv" >/dev/null
 expected_parent_digest="$(shasum -a 256 "$resume_dir/manifest.tsv" | awk '{print $1}')"
 grep -F $'resumed_from_manifest_sha256\t'"$expected_parent_digest" "$resumed_run/manifest.tsv" >/dev/null
@@ -644,11 +646,12 @@ if FAIL_STAGES=app gate --mode repository --keep-going >"$REPO/dependency.out" 2
   printf 'quality gate unexpectedly passed a failed prerequisite\n' >&2
   exit 1
 fi
-[ "$(wc -l <"$ACTION_LOG" | tr -d ' ')" = 9 ]
+[ "$(wc -l <"$ACTION_LOG" | tr -d ' ')" = 8 ]
 grep -F $'codex\tblocked' "$RESULT_ROOT"/*/summary.tsv >/dev/null
 grep -F $'tmux-runtime\tblocked' "$RESULT_ROOT"/*/summary.tsv >/dev/null
 grep -F $'ui-e2e\tblocked' "$RESULT_ROOT"/*/summary.tsv >/dev/null
-grep -F '<testsuite name="detach-quality-gate" tests="14" failures="1" skipped="5">' "$RESULT_ROOT"/*/junit.xml >/dev/null
+grep -F $'quality-contracts\tblocked' "$RESULT_ROOT"/*/summary.tsv >/dev/null
+grep -F '<testsuite name="detach-quality-gate" tests="14" failures="1" skipped="6">' "$RESULT_ROOT"/*/junit.xml >/dev/null
 
 setup_fixture parallel-lanes
 PARALLEL_ROOT="$REPO/parallel"
@@ -694,6 +697,7 @@ cat >"$REPO/tests/quality-gate-fixtures/quality-contracts" <<'SH'
 #!/bin/bash
 set -eu
 [ -f "${GATE_ORDER_ROOT:?}/swift" ]
+[ -f "${GATE_ORDER_ROOT:?}/ui-e2e" ]
 sleep 1
 printf '{}\n' >"${DETACH_QUALITY_METRICS_OUTPUT:?}"
 : >"$GATE_ORDER_ROOT/quality-contracts"

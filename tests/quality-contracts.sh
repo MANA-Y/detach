@@ -39,15 +39,28 @@ fi
 source_commit="${DETACH_QUALITY_SOURCE_COMMIT:-$(git -C "$ROOT" rev-parse HEAD)}"
 authority="${DETACH_QUALITY_AUTHORITY:-local-diagnostic}"
 output="${DETACH_QUALITY_METRICS_OUTPUT:-$ROOT/app/build/quality-metrics/quality-metrics.json}"
+opportunities="${DETACH_QUALITY_OPPORTUNITIES_OUTPUT:-$ROOT/app/build/quality-metrics/coverage-opportunities.json}"
 arguments=(
   evaluate
   --test-binary "$test_binary"
   --profile "$profdata"
   --tests "$tests"
   --output "$output"
+  --opportunities-output "$opportunities"
   --source-commit "$source_commit"
   --authority "$authority"
 )
+if { [ -n "${DETACH_UI_COVERAGE_BINARY:-}" ] && [ -z "${DETACH_UI_COVERAGE_PROFILE_DIR:-}" ]; } || \
+   { [ -z "${DETACH_UI_COVERAGE_BINARY:-}" ] && [ -n "${DETACH_UI_COVERAGE_PROFILE_DIR:-}" ]; }; then
+  printf 'quality contracts: UI coverage binary and profile directory must occur together\n' >&2
+  exit 2
+fi
+if [ -n "${DETACH_UI_COVERAGE_BINARY:-}" ]; then
+  arguments+=(
+    --additional-object "$DETACH_UI_COVERAGE_BINARY"
+    --additional-profile-directory "$DETACH_UI_COVERAGE_PROFILE_DIR"
+  )
+fi
 [ -z "${RESOLVED_BASE:-}" ] || arguments+=(--base-commit "$RESOLVED_BASE")
 [ -z "${DETACH_QUALITY_BASELINE_ROOT:-}" ] || \
   arguments+=(--baseline-root "$DETACH_QUALITY_BASELINE_ROOT")
