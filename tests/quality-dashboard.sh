@@ -10,6 +10,7 @@ OUTPUT="$TMP_ROOT/dashboard"
 PROMOTED_OUTPUT="$TMP_ROOT/promoted-dashboard"
 MUTATION_SUMMARY="$TMP_ROOT/mutation-summary.json"
 CARE_SUMMARY="$TMP_ROOT/care-summary.json"
+SECURITY_SUMMARY="$TMP_ROOT/security-summary.json"
 CARE_EVALS="$TMP_ROOT/evals.json"
 CARE_HISTORY="$TMP_ROOT/history.json"
 POLICY_VERSION="$("$ROOT/scripts/quality-policy" version)"
@@ -175,16 +176,27 @@ cat >"$CARE_SUMMARY" <<JSON
 }
 JSON
 
+"$ROOT/scripts/quality-security" create \
+  --source-commit "$SOURCE_COMMIT" \
+  --run-id 901 \
+  --run-attempt 2 \
+  --run-url 'https://github.com/owner/repository/actions/runs/901' \
+  --actions-result success \
+  --swift-result success \
+  --output "$SECURITY_SUMMARY" >/dev/null
+
 "$ROOT/scripts/quality-dashboard" generate --result-root "$RESULT_ROOT" \
   --output "$OUTPUT" --run-url 'https://github.example/actions/runs/1' \
-  --mutation-summary "$MUTATION_SUMMARY" --care-summary "$CARE_SUMMARY" >/dev/null
+  --mutation-summary "$MUTATION_SUMMARY" --care-summary "$CARE_SUMMARY" \
+  --security-summary "$SECURITY_SUMMARY" >/dev/null
 [ -f "$OUTPUT/index.html" ] && [ -f "$OUTPUT/data.json" ] || \
   fail 'dashboard artifacts are missing'
 first_html="$(shasum -a 256 "$OUTPUT/index.html" | awk '{print $1}')"
 first_data="$(shasum -a 256 "$OUTPUT/data.json" | awk '{print $1}')"
 "$ROOT/scripts/quality-dashboard" generate --result-root "$RESULT_ROOT" \
   --output "$OUTPUT" --run-url 'https://github.example/actions/runs/1' \
-  --mutation-summary "$MUTATION_SUMMARY" --care-summary "$CARE_SUMMARY" >/dev/null
+  --mutation-summary "$MUTATION_SUMMARY" --care-summary "$CARE_SUMMARY" \
+  --security-summary "$SECURITY_SUMMARY" >/dev/null
 [ "$first_html" = "$(shasum -a 256 "$OUTPUT/index.html" | awk '{print $1}')" ] || \
   fail 'HTML generation is not deterministic'
 [ "$first_data" = "$(shasum -a 256 "$OUTPUT/data.json" | awk '{print $1}')" ] || \
@@ -210,11 +222,13 @@ grep -F '8/8 passed · passed · 1 repaired failure retained · source' "$OUTPUT
   fail 'workflow-eval summary is missing'
 grep -F 'p95 285s · alert 480s · SLO 600s · healthy' "$OUTPUT/index.html" >/dev/null || \
   fail 'feedback latency summary is missing'
-grep -F 'CodeQL actions + swift · weekly-and-manual · outside PR feedback' \
-  "$OUTPUT/index.html" >/dev/null || fail 'security cadence is stale'
+grep -F "CodeQL actions passed + swift passed · passed · weekly-and-manual · source ${SOURCE_COMMIT:0:10} · " \
+  "$OUTPUT/index.html" >/dev/null || fail 'security result is missing'
+grep -F 'href="https://github.com/owner/repository/actions/runs/901">run 901</a>' \
+  "$OUTPUT/index.html" >/dev/null || fail 'security run link is missing'
 ! grep -F '<svg' "$OUTPUT/index.html" >/dev/null || fail 'dashboard contains hand-drawn SVG'
 
-python3 - "$OUTPUT/data.json" <<'PY'
+python3 - "$OUTPUT/data.json" "$SECURITY_SUMMARY" <<'PY'
 import json
 import sys
 with open(sys.argv[1], encoding="utf-8") as source:
@@ -227,11 +241,13 @@ assert data["quality"]["planned_scenarios"] == 0
 assert data["quality"]["coverage"]["comparison"]["mode"] == "green-main-artifact"
 assert data["quality"]["mutation"]["score_percent"] == 100
 assert data["quality"]["merge"] == "not-yet-emitted"
+with open(sys.argv[2], encoding="utf-8") as source:
+    security = json.load(source)
 assert data["quality"]["security"] == {
     "cadence": "weekly-and-manual",
     "codeql_languages": ["actions", "swift"],
     "pull_request_feedback": "not-selected",
-    "status": "configured",
+    **security,
 }
 assert data["quality"]["care"]["evals"] == {
     "categories": {
@@ -334,6 +350,24 @@ fi
 grep -F 'care summary is invalid' "$TMP_ROOT/stale-care.out" >/dev/null || \
   fail 'stale care failure is unclear'
 mv "$TMP_ROOT/care-summary.backup.json" "$CARE_SUMMARY"
+
+cp "$SECURITY_SUMMARY" "$TMP_ROOT/security-summary.backup.json"
+python3 - "$SECURITY_SUMMARY" <<'PY'
+import json,sys
+path=sys.argv[1]
+value=json.load(open(path,encoding="utf-8"))
+value["policy"] += 1
+with open(path,"w",encoding="utf-8") as target:
+    json.dump(value,target)
+PY
+if "$ROOT/scripts/quality-dashboard" generate --result-root "$RESULT_ROOT" \
+    --output "$TMP_ROOT/stale-security" --security-summary "$SECURITY_SUMMARY" \
+    >"$TMP_ROOT/stale-security.out" 2>&1; then
+  fail 'security evidence from another policy was accepted'
+fi
+grep -F 'security summary is invalid' "$TMP_ROOT/stale-security.out" >/dev/null || \
+  fail 'stale security failure is unclear'
+mv "$TMP_ROOT/security-summary.backup.json" "$SECURITY_SUMMARY"
 
 cp "$CARE_EVALS" "$TMP_ROOT/evals.backup.json"
 printf 'tampered\n' >>"$CARE_EVALS"
