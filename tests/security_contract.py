@@ -16,7 +16,10 @@ PAGES_WORKFLOWS = (
     ROOT / ".github/workflows/quality-care.yml",
     ROOT / ".github/workflows/quality-mutations.yml",
 )
-PINNED_ACTION = re.compile(r"(?:-\s+)?uses:\s+[^\s@]+@[0-9a-f]{40}(?:\s+#\s+v[0-9]+)?$")
+PINNED_ACTION = re.compile(
+    r"(?:-\s+)?uses:\s+[^\s@]+@[0-9a-f]{40}"
+    r"(?:\s+#\s+v[0-9]+(?:\.[0-9]+){0,2})?$"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -42,7 +45,7 @@ def main() -> None:
     swift_analyze = workflow.index("Analyze Swift source")
     require(cache < resolve < clean < swift_init < build < swift_analyze,
             "Swift dependency preparation, supported build, and analysis are out of order")
-    require("actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830" in workflow,
+    require("actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9" in workflow,
             "Swift analysis must restore the immutable quality-gate cache")
     require("swift package --package-path app --force-resolved-versions resolve" in workflow,
             "Swift analysis must resolve the tracked lock before tracing")
