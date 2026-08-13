@@ -210,6 +210,8 @@ grep -F '8/8 passed · passed · 1 repaired failure retained · source' "$OUTPUT
   fail 'workflow-eval summary is missing'
 grep -F 'p95 285s · alert 480s · SLO 600s · healthy' "$OUTPUT/index.html" >/dev/null || \
   fail 'feedback latency summary is missing'
+grep -F 'CodeQL actions + swift · weekly-and-manual · outside PR feedback' \
+  "$OUTPUT/index.html" >/dev/null || fail 'security cadence is stale'
 ! grep -F '<svg' "$OUTPUT/index.html" >/dev/null || fail 'dashboard contains hand-drawn SVG'
 
 python3 - "$OUTPUT/data.json" <<'PY'
@@ -226,7 +228,7 @@ assert data["quality"]["coverage"]["comparison"]["mode"] == "green-main-artifact
 assert data["quality"]["mutation"]["score_percent"] == 100
 assert data["quality"]["merge"] == "not-yet-emitted"
 assert data["quality"]["security"] == {
-    "cadence": "main-and-weekly",
+    "cadence": "weekly-and-manual",
     "codeql_languages": ["actions", "swift"],
     "pull_request_feedback": "not-selected",
     "status": "configured",
