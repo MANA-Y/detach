@@ -5,6 +5,7 @@ import Foundation
 @MainActor
 enum UIE2EControlFault {
     static var stopActionDisconnected = false
+    static var stopActionAttempts = 0
 }
 
 @MainActor
@@ -183,7 +184,10 @@ enum UIE2ETestDriver {
         var checks: [String] = []
         let previousFrontmost = NSWorkspace.shared.frontmostApplication
         let previousActivationPolicy = NSApp.activationPolicy()
-        defer { UIE2EControlFault.stopActionDisconnected = false }
+        defer {
+            UIE2EControlFault.stopActionDisconnected = false
+            UIE2EControlFault.stopActionAttempts = 0
+        }
         do {
             trace("driver started")
             guard !NSApp.isActive else {
@@ -221,9 +225,8 @@ enum UIE2ETestDriver {
             checks.append("sidebar-selects-completed-session")
             trace("completed session selected")
 
-            try await click(deleteButton, name: "delete action")
-            let confirmDelete = try await sheetButton(
-                label: "Delete")
+            let confirmDelete = try await clickUntilSheetButton(
+                deleteButton, name: "delete action", label: "Delete")
             try requireSemanticControl(confirmDelete, name: "delete confirmation")
             try await clickUntil(
                 confirmDelete,
@@ -253,9 +256,14 @@ enum UIE2ETestDriver {
                 resultIdentifier: "session-detail-\(runningID)")
             let stopButton = try await element(identifier: "session-action-stop")
             try requireSemanticControl(stopButton, name: "stop action")
+            UIE2EControlFault.stopActionAttempts = 0
             UIE2EControlFault.stopActionDisconnected = true
-            try await click(stopButton, name: "disconnected stop action")
-            try await Task.sleep(nanoseconds: 500_000_000)
+            try await clickUntil(
+                stopButton,
+                name: "disconnected stop action",
+                outcome: "disconnected stop action reaches fault boundary") {
+                UIE2EControlFault.stopActionAttempts > 0
+            }
             let disconnectedActions = try? String(
                 contentsOf: configuration.root
                     .appendingPathComponent("fake/actions.log"),
@@ -498,11 +506,14 @@ enum UIE2ETestDriver {
         return result!
     }
 
-    private static func sheetButton(label: String) async throws
+    private static func sheetButton(
+        label: String,
+        attempts: Int = 100
+    ) async throws
         -> any NSAccessibilityProtocol
     {
         var result: (any NSAccessibilityProtocol)?
-        try await waitUntil("sheet button \(label)") {
+        try await waitUntil("sheet button \(label)", attempts: attempts) {
             let sheetFrames = NSApp.windows.flatMap(\.sheets).map(\.frame)
             result = elements().first { element in
                 roleOf(element) == .button
@@ -513,6 +524,22 @@ enum UIE2ETestDriver {
             return result != nil
         }
         return result!
+    }
+
+    private static func clickUntilSheetButton(
+        _ control: any NSAccessibilityProtocol,
+        name: String,
+        label: String
+    ) async throws -> any NSAccessibilityProtocol {
+        for _ in 0..<3 {
+            try await click(control, name: name)
+            do {
+                return try await sheetButton(label: label, attempts: 10)
+            } catch {
+                continue
+            }
+        }
+        throw Failure(message: "\(name) did not present \(label) confirmation")
     }
 
     private static func waitUntil(
