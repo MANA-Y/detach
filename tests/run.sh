@@ -1055,26 +1055,63 @@ switch_run_token="$("$STATE_HELPER" meta get "$meta" run_token)"
 pre_switch_id="$("$STATE_HELPER" meta get "$meta" codex_session_id)"
 [ -n "$pre_switch_id" ]
 switch_base_ms="$(($(date '+%s') * 1000))"
-switch_thread() {
+write_switch_rollout() {
   local switch_id="$1"
-  local switch_ms="$2"
-  local switch_source="$3"
-  local switch_turn="$4"
+  local switch_source="$2"
+  local switch_turn="$3"
   local switch_rollout="$CODEX_HOME/sessions/2099/01/01/rollout-test-$switch_id.jsonl"
 
   printf '{"timestamp":"2099-01-01T00:20:00Z","type":"session_meta","payload":{"id":"%s","cwd":"%s","originator":"detach_%s"}}\n' \
     "$switch_id" "$switch_project_dir" "$switch_run_token" >"$switch_rollout"
   printf '{"timestamp":"2099-01-01T00:20:01Z","type":"event_msg","payload":{"type":"task_started","turn_id":"%s"}}\n' \
     "$switch_turn" >>"$switch_rollout"
+  printf '%s\n' "$switch_rollout"
+}
+
+switch_thread() {
+  local switch_id="$1"
+  local switch_ms="$2"
+  local switch_source="$3"
+  local switch_turn="$4"
+  local switch_rollout
+
+  switch_rollout="$(write_switch_rollout \
+    "$switch_id" "$switch_source" "$switch_turn")"
   test_sqlite "$CODEX_HOME/state_5.sqlite" \
     "INSERT OR REPLACE INTO threads (id, rollout_path, created_at_ms, updated_at_ms, source, thread_source, cwd) \
      VALUES ('$switch_id', '${switch_rollout//\'/\'\'}', $switch_ms, $switch_ms, 'cli', '$switch_source', '${switch_project_dir//\'/\'\'}');"
 }
+
+switch_thread_pair() {
+  local first_id="$1"
+  local first_ms="$2"
+  local first_source="$3"
+  local first_turn="$4"
+  local second_id="$5"
+  local second_ms="$6"
+  local second_source="$7"
+  local second_turn="$8"
+  local first_rollout
+  local second_rollout
+
+  first_rollout="$(write_switch_rollout \
+    "$first_id" "$first_source" "$first_turn")"
+  second_rollout="$(write_switch_rollout \
+    "$second_id" "$second_source" "$second_turn")"
+  test_sqlite "$CODEX_HOME/state_5.sqlite" \
+    "BEGIN IMMEDIATE; \
+     INSERT OR REPLACE INTO threads (id, rollout_path, created_at_ms, updated_at_ms, source, thread_source, cwd) \
+     VALUES ('$first_id', '${first_rollout//\'/\'\'}', $first_ms, $first_ms, 'cli', '$first_source', '${switch_project_dir//\'/\'\'}'); \
+     INSERT OR REPLACE INTO threads (id, rollout_path, created_at_ms, updated_at_ms, source, thread_source, cwd) \
+     VALUES ('$second_id', '${second_rollout//\'/\'\'}', $second_ms, $second_ms, 'cli', '$second_source', '${switch_project_dir//\'/\'\'}'); \
+     COMMIT;"
+}
 switch_a="22222222-2222-7222-8222-222222222222"
 switch_b="33333333-3333-7333-8333-333333333333"
 switch_subagent="44444444-4444-7444-8444-444444444444"
-switch_thread "$switch_a" "$((switch_base_ms + 1000))" user clear-turn-a
-switch_thread "$switch_b" "$((switch_base_ms + 1000))" user clear-turn-b
+switch_thread_pair \
+  "$switch_a" "$((switch_base_ms + 1000))" user clear-turn-a \
+  "$switch_b" "$((switch_base_ms + 1000))" user clear-turn-b
 switch_thread "$switch_subagent" "$((switch_base_ms + 5000))" subagent clear-turn-subagent
 wait_for_file_text "$DETACH_CODEX_STATE_ROOT/sessions/$SESSION/checkpoint.log" \
   'ambiguous Codex thread switch'
@@ -1113,8 +1150,9 @@ grep -F 'clear-turn-a' "$checkpoint/rollout.jsonl" >/dev/null
 # unambiguous.
 switch_c="55555555-5555-7555-8555-555555555555"
 switch_d="66666666-6666-7666-8666-666666666666"
-switch_thread "$switch_c" "$((switch_base_ms + 10000))" user clear-turn-c
-switch_thread "$switch_d" "$((switch_base_ms + 11000))" user clear-turn-d
+switch_thread_pair \
+  "$switch_c" "$((switch_base_ms + 10000))" user clear-turn-c \
+  "$switch_d" "$((switch_base_ms + 11000))" user clear-turn-d
 attempts=0
 while [ "$("$STATE_HELPER" meta get "$meta" codex_session_id)" != "$switch_d" ] && \
       [ "$attempts" -lt 80 ]; do

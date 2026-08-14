@@ -378,9 +378,11 @@ struct SessionDetailView: View {
     private func run(_ action: SessionAction) {
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
-        if action == .stop, AppSettings.uiE2E != nil,
-           UIE2EControlFault.stopActionDisconnected {
-            return
+        if action == .stop, AppSettings.uiE2E != nil {
+            UIE2EControlFault.stopActionAttempts += 1
+            if UIE2EControlFault.stopActionDisconnected {
+                return
+            }
         }
 #endif
 // quality-coverage:end ui-e2e-instrumentation
