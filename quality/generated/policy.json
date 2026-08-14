@@ -658,7 +658,7 @@
     "mutation_timeout_seconds": 240,
     "pr_feedback_seconds": 600
   },
-  "policy": 41,
+  "policy": 42,
   "release_domains": [
     {
       "gates": "-",
@@ -666,7 +666,7 @@
       "unknown": false
     },
     {
-      "gates": "install",
+      "gates": "-",
       "id": "install",
       "unknown": false
     },
@@ -676,12 +676,12 @@
       "unknown": false
     },
     {
-      "gates": "install,lid",
+      "gates": "lid",
       "id": "both",
       "unknown": false
     },
     {
-      "gates": "install,lid",
+      "gates": "lid",
       "id": "unknown",
       "unknown": true
     }

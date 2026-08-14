@@ -94,7 +94,17 @@ unknown="$("$ROOT/scripts/quality-policy" classify product/new-runtime)"
 [ "$(field "$unknown" 1)" = unknown ] || fail 'new product path must fail safe'
 [ "$(field "$unknown" 5)" = "$("$ROOT/scripts/quality-policy" stages all | paste -sd, -)" ] || \
   fail 'unknown product path must select every stage'
-[ "$(field "$unknown" 6)" = install,lid ] || fail 'unknown product path must select both release gates'
+[ "$(field "$unknown" 6)" = lid ] || fail 'unknown product path must select the closed-lid release gate'
+
+awk -F '\t' -v OFS='\t' \
+  '$1 == "release-domain" && $2 == "install" {$3="install"} {print}' \
+  "$ROOT/quality/policy.tsv" >"$TMP_ROOT/removed-install-gate.tsv"
+if DETACH_QUALITY_POLICY="$TMP_ROOT/removed-install-gate.tsv" \
+    "$ROOT/scripts/quality-policy" validate >"$TMP_ROOT/removed-install-gate.out" 2>&1; then
+  fail 'removed clean-account release gate was accepted'
+fi
+grep -F 'unknown release gate' "$TMP_ROOT/removed-install-gate.out" >/dev/null || \
+  fail 'removed clean-account gate failure is unclear'
 
 cp "$ROOT/quality/policy.tsv" "$TMP_ROOT/duplicate.tsv"
 printf '%s\n' $'route\t950\tREADME.md\tdocs\tsafe\tdocs/specs/documentation.md' \

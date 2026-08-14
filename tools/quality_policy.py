@@ -221,7 +221,7 @@ class Policy:
                 name, gates, raw_unknown = values
                 if not IDENTIFIER.fullmatch(name) or not self._csv(gates, allow_dash=True):
                     raise PolicyError(f"line {line_number}: invalid release domain")
-                if gates != "-" and any(gate not in ("install", "lid") for gate in gates.split(",")):
+                if gates != "-" and any(gate != "lid" for gate in gates.split(",")):
                     raise PolicyError(f"line {line_number}: unknown release gate")
                 self._unique(self.release_domains, name, "release domain", line_number)
                 self.release_domains[name] = (gates, self._boolean(raw_unknown, line_number))
