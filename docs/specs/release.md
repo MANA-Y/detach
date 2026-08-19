@@ -33,25 +33,22 @@ change real power state, upload assets, or claim publication.
   DMG. The workflow never installs a mutable intermediate app build.
 - Developer ID signing, notarization, and the real signed power smoke are
   mandatory for every release. `scripts/release-impact` compares the last
-  published tag with the release source. It selects the clean-account/system UI
-  matrix only for install, onboarding, approval, update, entitlement, or
-  localization impact. It selects supervised closed-lid testing only for
-  power, helper, watchdog, lease, assertion, or lid-probe impact. An unknown
-  product path selects both manual gates. Test-only, documentation-only, and
-  known unrelated product paths do not select them.
+  published tag with the release source. It selects supervised closed-lid
+  testing only for power, helper, watchdog, lease, assertion, or lid-probe
+  impact. An unknown product path selects the closed-lid gate. Test-only,
+  documentation-only, and known unrelated product paths do not select it.
 - Notary credential preflight gives `notarytool` a private PTY and captures its
   output in private workflow evidence. This supports protected Keychain
   profiles without exposing submission history in the release log.
 - The path classifier is the fail-safe default. An explicit private semantic
   review can omit a false-positive manual gate only when it is permission-safe,
   ignored by Git, bound to the exact base and head commits, and gives a reason
-  for each decision. It cannot narrow unknown-path impact or omit automated
+  for the decision. It cannot narrow unknown-path impact or omit automated
   tests, signing, notarization, the signed power smoke, or artifact checks.
 - A selected closed-lid probe must emit its first liveness sample within a
   bounded ten-second launch window before owner confirmation is accepted.
-  Automated release tests cover failed install and update paths. A selected
-  clean-account/system UI matrix uses the short checklist in `docs/testing.md`
-  and does not repeat the signed power or lid gates.
+  Automated release tests cover install, repair, uninstall, update, CLI
+  synchronization, and helper replacement paths.
 - The release entry point supplies the low-level publication confirmation after
   all selected gates pass. After upload, every remote asset is downloaded and
   its digest is independently matched. Missing, extra, changed, or mismatched

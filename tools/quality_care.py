@@ -169,7 +169,7 @@ def impact(policy: Policy, paths: list[str]) -> dict[str, Any]:
             "specs": list(policy.specs),
             "capabilities": list(policy.capabilities),
             "journeys": list(policy.journeys),
-            "release_gates": ["install", "lid"],
+            "release_gates": ["lid"],
             "unknown": True,
         }
     stages = {
@@ -207,7 +207,7 @@ def impact(policy: Policy, paths: list[str]) -> dict[str, Any]:
         "specs": [identifier for identifier, (path, _) in policy.specs.items() if path in spec_paths],
         "capabilities": in_policy_order(capabilities, list(policy.capabilities)),
         "journeys": in_policy_order(journeys, list(policy.journeys)),
-        "release_gates": in_policy_order(gates, ["install", "lid"]),
+        "release_gates": in_policy_order(gates, ["lid"]),
         "unknown": False,
     }
 

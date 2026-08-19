@@ -26,25 +26,16 @@ HEAD_COMMIT="$(git -C "$ROOT" rev-parse --verify "$HEAD^{commit}" 2>/dev/null)" 
 git -C "$ROOT" merge-base --is-ancestor "$BASE_COMMIT" "$HEAD_COMMIT" || \
   die 'base must be an ancestor of head'
 
-INSTALL_MATRIX_REQUIRED=false
 LID_TEST_REQUIRED=false
 UNKNOWN_IMPACT=false
-INSTALL_REASONS=()
 LID_REASONS=()
 UNKNOWN_REASONS=()
 SEMANTIC_REVIEW_APPLIED=false
-INSTALL_REVIEW_REASON=""
 LID_REVIEW_REASON=""
 
 add_unique() {
   local array_name="$1" value="$2" existing
   case "$array_name" in
-    INSTALL_REASONS)
-      for existing in "${INSTALL_REASONS[@]-}"; do
-        [ "$existing" != "$value" ] || return 0
-      done
-      INSTALL_REASONS+=( "$value" )
-      ;;
     LID_REASONS)
       for existing in "${LID_REASONS[@]-}"; do
         [ "$existing" != "$value" ] || return 0
@@ -61,21 +52,9 @@ add_unique() {
   esac
 }
 
-require_install_matrix() {
-  INSTALL_MATRIX_REQUIRED=true
-  add_unique INSTALL_REASONS "$1"
-}
-
 require_lid_test() {
   LID_TEST_REQUIRED=true
   add_unique LID_REASONS "$1"
-}
-
-require_both_unknown() {
-  UNKNOWN_IMPACT=true
-  add_unique UNKNOWN_REASONS "$1"
-  require_install_matrix "$1"
-  require_lid_test "$1"
 }
 
 review_value() {
@@ -89,7 +68,7 @@ review_value() {
 apply_semantic_review() {
   local review="${DETACH_RELEASE_IMPACT_REVIEW:-}" review_root review_parent
   local relative mode mode_value schema reviewed_base reviewed_head
-  local reviewed_install reviewed_lid key
+  local reviewed_lid key
 
   [ -n "$review" ] || return 0
   case "$review" in /*) ;; *) die 'impact review path must be absolute' ;; esac
@@ -115,33 +94,28 @@ apply_semantic_review() {
     die 'impact review must not be accessible by group/other'
   awk -F '\t' '
     NF != 2 {exit 1}
-    $1 !~ /^(schema|base_commit|head_commit|install_matrix_required|install_matrix_rationale|lid_test_required|lid_test_rationale)$/ {exit 1}
+    $1 !~ /^(schema|base_commit|head_commit|lid_test_required|lid_test_rationale)$/ {exit 1}
   ' "$review" || die 'impact review has malformed or unsupported fields'
-  for key in schema base_commit head_commit install_matrix_required \
-      install_matrix_rationale lid_test_required lid_test_rationale; do
+  for key in schema base_commit head_commit lid_test_required lid_test_rationale; do
     review_value "$review" "$key" >/dev/null
   done
   schema="$(review_value "$review" schema)"
   reviewed_base="$(review_value "$review" base_commit)"
   reviewed_head="$(review_value "$review" head_commit)"
-  reviewed_install="$(review_value "$review" install_matrix_required)"
-  INSTALL_REVIEW_REASON="$(review_value "$review" install_matrix_rationale)"
   reviewed_lid="$(review_value "$review" lid_test_required)"
   LID_REVIEW_REASON="$(review_value "$review" lid_test_rationale)"
-  [ "$schema" = 1 ] || die 'impact review schema is unsupported'
+  [ "$schema" = 2 ] || die 'impact review schema is unsupported'
   [ "$reviewed_base" = "$BASE_COMMIT" ] && [ "$reviewed_head" = "$HEAD_COMMIT" ] || \
     die 'impact review does not match the exact release source range'
-  case "$reviewed_install:$reviewed_lid" in
-    true:true|true:false|false:true|false:false) ;;
-    *) die 'impact review gate values must be true or false' ;;
+  case "$reviewed_lid" in
+    true|false) ;;
+    *) die 'impact review gate value must be true or false' ;;
   esac
-  [ "${#INSTALL_REVIEW_REASON}" -ge 20 ] && [ "${#LID_REVIEW_REASON}" -ge 20 ] || \
-    die 'impact review rationales must each contain at least 20 characters'
-  if [ "$UNKNOWN_IMPACT" = true ] && \
-     { [ "$reviewed_install" = false ] || [ "$reviewed_lid" = false ]; }; then
+  [ "${#LID_REVIEW_REASON}" -ge 20 ] || \
+    die 'impact review rationale must contain at least 20 characters'
+  if [ "$UNKNOWN_IMPACT" = true ] && [ "$reviewed_lid" = false ]; then
     die 'impact review cannot omit a gate selected by an unknown product path'
   fi
-  INSTALL_MATRIX_REQUIRED="$reviewed_install"
   LID_TEST_REQUIRED="$reviewed_lid"
   SEMANTIC_REVIEW_APPLIED=true
 }
@@ -160,7 +134,6 @@ classify_path() {
     IFS=, read -r -a selected_gates <<<"$gates"
     for gate in "${selected_gates[@]}"; do
       case "$gate" in
-        install) require_install_matrix "$path" ;;
         lid) require_lid_test "$path" ;;
         *) die "quality policy selected an unknown release gate: $gate" ;;
       esac
@@ -180,20 +153,15 @@ done < <(git -C "$ROOT" diff --name-status -z --find-renames "$BASE_COMMIT" "$HE
 
 apply_semantic_review
 
-printf 'schema\t1\n'
+printf 'schema\t2\n'
 printf 'base_commit\t%s\n' "$BASE_COMMIT"
 printf 'head_commit\t%s\n' "$HEAD_COMMIT"
-printf 'install_matrix_required\t%s\n' "$INSTALL_MATRIX_REQUIRED"
 printf 'lid_test_required\t%s\n' "$LID_TEST_REQUIRED"
 printf 'unknown_impact\t%s\n' "$UNKNOWN_IMPACT"
 printf 'semantic_review_applied\t%s\n' "$SEMANTIC_REVIEW_APPLIED"
 [ "$SEMANTIC_REVIEW_APPLIED" = false ] || {
-  printf 'install_matrix_review_reason\t%s\n' "$INSTALL_REVIEW_REASON"
   printf 'lid_test_review_reason\t%s\n' "$LID_REVIEW_REASON"
 }
-for path in "${INSTALL_REASONS[@]-}"; do
-  [ -z "$path" ] || printf 'install_matrix_reason\t%s\n' "$path"
-done
 for path in "${LID_REASONS[@]-}"; do
   [ -z "$path" ] || printf 'lid_test_reason\t%s\n' "$path"
 done

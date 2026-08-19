@@ -267,14 +267,13 @@ resolve_release_impact() {
   schema="$(impact_value "$temporary" schema)"
   base_commit="$(impact_value "$temporary" base_commit)"
   head_commit="$(impact_value "$temporary" head_commit)"
-  INSTALL_MATRIX_REQUIRED="$(impact_value "$temporary" install_matrix_required)"
   LID_TEST_REQUIRED="$(impact_value "$temporary" lid_test_required)"
   unknown="$(impact_value "$temporary" unknown_impact)"
-  [ "$schema" = 1 ] || die 'release impact schema is unsupported'
+  [ "$schema" = 2 ] || die 'release impact schema is unsupported'
   [[ "$base_commit" =~ ^[0-9a-f]{40}$ ]] || die 'release impact base commit is invalid'
   [ "$head_commit" = "$SOURCE_COMMIT" ] || die 'release impact head commit does not match source'
-  case "$INSTALL_MATRIX_REQUIRED:$LID_TEST_REQUIRED:$unknown" in
-    true:true:true|true:true:false|true:false:false|false:true:false|false:false:false) ;;
+  case "$LID_TEST_REQUIRED:$unknown" in
+    true:true|true:false|false:false) ;;
     *) die 'release impact booleans are invalid or fail-open' ;;
   esac
   if [ -f "$impact" ]; then
@@ -284,7 +283,7 @@ resolve_release_impact() {
   else
     mv -f "$temporary" "$impact"
   fi
-  note "manual release gates: install-matrix=$INSTALL_MATRIX_REQUIRED lid=$LID_TEST_REQUIRED"
+  note "manual release gate: lid=$LID_TEST_REQUIRED"
 }
 
 has_stage() {
@@ -343,8 +342,11 @@ release_tooling_path_allowed() {
     scripts/release-version|scripts/release-pr|scripts/release-sbom|\
     scripts/release-impact|scripts/quality-gate|scripts/quality-merge|\
     tools/release_pr.py|tools/release_sbom.py|tools/quality_merge.py|\
+    tools/quality_policy.py|tools/quality_care.py|\
     app/scripts/publish-release.sh|\
+    quality/policy.tsv|quality/evals.json|quality/generated/policy.json|\
     tests/quality-gate.sh|tests/release-impact.sh|tests/release-workflow.sh|\
+    tests/quality-policy.sh|\
     tests/publish-preflight.sh|tests/shell-safety.sh|tests/shell-safety-contract.sh|\
     docs/quality-gates.md|docs/specs/release.md|docs/testing.md)
       return 0
@@ -834,21 +836,6 @@ build_release_artifacts() {
   has_stage artifacts || record_stage artifacts
 }
 
-confirm_install_update_matrix() {
-  has_stage install-matrix && return
-  release_artifacts_valid || die 'release artifacts changed before install-matrix review'
-  if [ "$INSTALL_MATRIX_REQUIRED" = false ]; then
-    note 'skipping clean installation and system UI matrix: release impact does not select it'
-    record_stage install-matrix
-    return
-  fi
-  printf '%s\n' \
-    'Complete the clean installation and update checklist in docs/testing.md with the signed Detach.dmg. Use a clean macOS account or VM. Do not reuse the signed power or lid tests as evidence.'
-  exact_confirmation DETACH_CONFIRM_INSTALL_MATRIX \
-    'clean installation and update matrix'
-  record_stage install-matrix
-}
-
 installed_candidate_valid() {
   [ -d "$INSTALLED_APP" ] && [ ! -L "$INSTALLED_APP" ] || return 1
   [ "$(file_line "$INSTALLED_APP/Contents/Resources/DetachCLI/VERSION" 2>/dev/null || true)" = "$VERSION" ] || return 1
@@ -1135,7 +1122,6 @@ run_locked() {
   prepare_release_commit
   push_release_source
   build_release_artifacts
-  confirm_install_update_matrix
   install_release_candidate
   run_power_smoke
   run_lid_test

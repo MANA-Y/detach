@@ -472,7 +472,6 @@ SH
 run_workflow() {
   local fail_after="${1:-}" lid_confirmation="${2:-example/detach@$TARGET_TAG}"
   local release_confirmation="${3:-}" ignore_timing="${4:-0}"
-  local install_confirmation="${5:-example/detach@$TARGET_TAG}"
   (
     cd -P "$REPO"
     PATH="$BIN:/usr/bin:/bin" \
@@ -492,7 +491,6 @@ run_workflow() {
       DETACH_RELEASE_IGNORE_TIMING="$ignore_timing" \
       DETACH_QUALITY_AUTHORITY= \
       DETACH_CONFIRM_RELEASE="$release_confirmation" \
-      DETACH_CONFIRM_INSTALL_MATRIX="$install_confirmation" \
       DETACH_CONFIRM_LID_TEST="$lid_confirmation" \
       "$REPO/scripts/release-version" "$TARGET_VERSION"
   )
@@ -560,7 +558,7 @@ run_resume_case() {
   git -C "$REPO" add docs/testing.md
   git -C "$REPO" commit -qm 'adjust release tooling guidance'
   git -C "$REPO" push -q origin main
-  for stage in install-matrix installed power-smoke lid published verified; do
+  for stage in installed power-smoke lid published verified; do
     expect_failure "resume-$stage" "injected safe failure after $stage" \
       run_workflow "$stage"
   done
@@ -576,7 +574,8 @@ run_resume_case() {
   [ "$(grep -c '^release-preflight.sh$' "$ACTION_LOG")" = 2 ]
   [ "$(grep -c '^publish-preflight.sh$' "$ACTION_LOG")" = 2 ]
   [ -z "$(git -C "$REPO" ls-remote origin "refs/heads/detach-release/$TARGET_TAG")" ]
-  grep -F $'install_matrix_required\tfalse' \
+  [ ! -e "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-install-matrix" ]
+  grep -F $'schema\t2' \
     "$REPO/app/build/release-workflow/$TARGET_VERSION/release-impact.tsv" >/dev/null
   grep -F $'lid_test_required\tfalse' \
     "$REPO/app/build/release-workflow/$TARGET_VERSION/release-impact.tsv" >/dev/null
@@ -655,15 +654,6 @@ run_hardware_rejection_case() {
   git -C "$REPO" add app/Sources/DetachPower/main.swift
   git -C "$REPO" commit -qm 'change power runtime'
   git -C "$REPO" push -q origin main
-  expect_failure install-matrix-gate \
-    "clean installation and update matrix confirmation must exactly equal example/detach@$TARGET_TAG" \
-    run_workflow '' "example/detach@$TARGET_TAG" \
-      "example/detach@$TARGET_TAG" 0 wrong-confirmation
-  [ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-artifacts" ]
-  [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-install-matrix" ]
-  ! grep -q '^power-smoke$' "$ACTION_LOG"
-  ! grep -q '^publish$' "$ACTION_LOG"
-
   expect_failure hardware-gate \
     "closed-lid hardware test confirmation must exactly equal example/detach@$TARGET_TAG" \
     run_workflow '' wrong-confirmation
