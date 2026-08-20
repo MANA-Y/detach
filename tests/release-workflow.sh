@@ -553,10 +553,12 @@ run_resume_case() {
   printf '%s\n' development \
     >"$REPO/app/build/Detach.app/Contents/Resources/DetachCLI/VERSION"
   export FAKE_NOTARY_UNAVAILABLE=1
-  mkdir -p "$REPO/docs"
+  mkdir -p "$REPO/docs" "$REPO/app/Tests/DetachAppTests"
   printf '%s\n' 'release tooling follow-up' >"$REPO/docs/testing.md"
-  git -C "$REPO" add docs/testing.md
-  git -C "$REPO" commit -qm 'adjust release tooling guidance'
+  printf '%s\n' 'test-only Swift source' \
+    >"$REPO/app/Tests/DetachAppTests/ResumeTests.swift"
+  git -C "$REPO" add docs/testing.md app/Tests/DetachAppTests/ResumeTests.swift
+  git -C "$REPO" commit -qm 'adjust release tooling and app tests'
   git -C "$REPO" push -q origin main
   for stage in installed power-smoke lid published verified; do
     expect_failure "resume-$stage" "injected safe failure after $stage" \
@@ -680,7 +682,7 @@ run_post_push_main_rejection_case() {
   git -C "$REPO" commit -qm 'advance product source after tag'
   git -C "$REPO" push -q origin main
   expect_failure post-push-main \
-    'main advanced after the release with non-tooling changes' run_workflow
+    'main advanced after the release with disallowed changes' run_workflow
   [ ! -f "$RELEASE_EXISTS" ]
 }
 
