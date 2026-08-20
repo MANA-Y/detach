@@ -337,12 +337,13 @@ remote_ref_commit() {
   printf '%s\n' "$commit"
 }
 
-release_tooling_path_allowed() {
+release_resume_path_allowed() {
   case "$1" in
     scripts/release-version|scripts/release-pr|scripts/release-sbom|\
     scripts/release-impact|scripts/quality-gate|scripts/quality-merge|\
     tools/release_pr.py|tools/release_sbom.py|tools/quality_merge.py|\
     tools/quality_policy.py|tools/quality_care.py|\
+    app/Tests/*|\
     app/scripts/publish-release.sh|\
     quality/policy.tsv|quality/evals.json|quality/generated/policy.json|\
     tests/quality-gate.sh|tests/release-impact.sh|tests/release-workflow.sh|\
@@ -357,11 +358,11 @@ release_tooling_path_allowed() {
   esac
 }
 
-release_tooling_descendant_valid() {
+release_resume_descendant_valid() {
   local descendant="$1" path
   git -C "$ROOT" merge-base --is-ancestor "$RELEASE_COMMIT" "$descendant" || return 1
   while IFS= read -r -d '' path; do
-    release_tooling_path_allowed "$path" || return 1
+    release_resume_path_allowed "$path" || return 1
   done < <(git -C "$ROOT" diff --name-only -z "$RELEASE_COMMIT" "$descendant")
 }
 
@@ -372,8 +373,8 @@ verify_release_remote_refs() {
   [ "$remote_tag" = "$RELEASE_COMMIT" ] || \
     die 'remote release tag does not match the release commit'
   if [ "$remote_main" != "$RELEASE_COMMIT" ]; then
-    release_tooling_descendant_valid "$remote_main" || \
-      die 'remote main advanced after the release with non-tooling changes'
+    release_resume_descendant_valid "$remote_main" || \
+      die 'remote main advanced after the release with disallowed changes'
   fi
 }
 
@@ -393,8 +394,8 @@ verify_resumable_release_head() {
   remote_main="$(git -C "$ROOT" rev-parse --verify refs/remotes/origin/main)"
   [ "$head" = "$remote_main" ] || \
     die 'resumed release tooling must use synchronized main'
-  release_tooling_descendant_valid "$head" || \
-    die 'main advanced after the release with non-tooling changes'
+  release_resume_descendant_valid "$head" || \
+    die 'main advanced after the release with disallowed changes'
 }
 
 release_api_status() {
