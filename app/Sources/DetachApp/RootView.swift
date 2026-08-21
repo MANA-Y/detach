@@ -106,7 +106,11 @@ struct RootView: View {
             await notifications.configure(enabled: notificationsEnabled)
         }
 // quality-coverage:begin ui-e2e-instrumentation
-        .task { await UIE2ETestDriver.runIfRequested(installation: installation) }
+        .task {
+            await UIE2ETestDriver.runIfRequested(
+                installation: installation,
+                store: store)
+        }
 // quality-coverage:end ui-e2e-instrumentation
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
