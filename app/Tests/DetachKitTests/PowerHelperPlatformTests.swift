@@ -1,3 +1,4 @@
+import Security
 import XCTest
 @testable import DetachKit
 
@@ -463,6 +464,13 @@ final class PowerHelperPlatformTests: XCTestCase {
             teamIdentifier: "TOO-SHORT"))
         XCTAssertNil(PowerHelperCodeSigningRequirement.client(
             teamIdentifier: "AB12CD34E\""))
+    }
+
+    func testHelperSelfValidationAllowsNetworkAndRequiresStrictChecks() {
+        let flags = PowerHelperCodeSigningValidationPolicy.helperSelfFlags
+
+        XCTAssertNotEqual(flags.rawValue & kSecCSAllowNetworkAccess, 0)
+        XCTAssertNotEqual(flags.rawValue & kSecCSStrictValidate, 0)
     }
 
     func testPlatformErrorsHaveActionableStableDescriptions() {

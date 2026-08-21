@@ -38,6 +38,13 @@ surface is limited to status, acquire, renew, release, and the typed
 prepare/cancel unregistration lifecycle; it must never execute arbitrary paths,
 shell strings, or provider commands as root.
 
+Before it creates the listener or changes power state, the helper must pass a
+strict check of its own signature with Security network access enabled. This
+check lets macOS refresh the system trust result that the listener needs for
+the same Developer ID chain. If trust cannot be proved, the helper exits and
+launchd retries it. The listener requirement stays Apple-anchored and is not
+weakened for an unavailable trust service.
+
 The client opens a short-lived XPC connection for every request. After Fast
 User Switching, the previous background user's next heartbeat, status, or
 release request is rejected and an unrenewed lease expires through the normal
