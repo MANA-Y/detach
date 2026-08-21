@@ -6,6 +6,14 @@ import XCTest
 
 @MainActor
 final class InstallationStorePowerStateTests: XCTestCase {
+    func testDefaultPowerStateRootUsesTheSharedHeartbeatResolver() {
+        let store = InstallationStore(detachPath: "/tmp/detach-test")
+
+        XCTAssertEqual(
+            store.watchdogHeartbeat.statusURL.standardizedFileURL,
+            PowerHeartbeatReader.defaultStatusURL().standardizedFileURL)
+    }
+
     func testInitialAppContextChecksTruthfullyDescribeUnconfiguredServices() throws {
         let root = try makeStateRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -203,6 +211,24 @@ final class InstallationStorePowerStateTests: XCTestCase {
                     providerInstalled: true,
                     onboardingEverCompleted: true)),
             .mainApp)
+    }
+
+    func testCompletedOnboardingShowsActionableLocationGuidance() {
+        XCTAssertEqual(
+            InstallationStore.onboardingStep(
+                phase: .actionRequired,
+                onboardingEverCompleted: true,
+                input: .init(
+                    isStableApplicationLocation: false,
+                    isBusy: false,
+                    failureMessage: nil,
+                    distributionMatchesBundle: true,
+                    powerHelperEnabled: true,
+                    watchdogEnabled: true,
+                    powerReadinessConfirmed: true,
+                    providerInstalled: true,
+                    onboardingEverCompleted: true)),
+            .moveToApplications)
     }
 
     func testHealthyReadinessInputsStillProduceReadyPhase() {
@@ -697,6 +723,33 @@ final class InstallationStorePowerStateTests: XCTestCase {
         XCTAssertFalse(fixture.store.powerHelperReadinessConfirmed)
     }
 
+    func testRefreshRejectsAnApplicationLocationThatBecameUnstable()
+        async throws
+    {
+        var stableLocation = true
+        let distribution = InstallationDistributionProbe(
+            synchronizeResults: [.success("installed")],
+            doctorResults: [
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport()),
+            ])
+        let fixture = try makePackagedInstallationFixture(
+            distribution: distribution,
+            watchdog: InstallationWatchdogProbe(status: .enabled),
+            powerHelper: InstallationPowerHelperProbe(status: .enabled),
+            applicationLocationValidator: { _ in stableLocation })
+        defer { fixture.cleanup() }
+        await fixture.store.bootstrap()
+        XCTAssertEqual(fixture.store.phase, .ready)
+
+        stableLocation = false
+        let refreshed = await fixture.store.refreshContext()
+
+        XCTAssertTrue(refreshed)
+        XCTAssertEqual(fixture.store.phase, .actionRequired)
+        XCTAssertEqual(distribution.doctorCallCount, 2)
+    }
+
     func testPostRegistrationDoctorFailureCannotPublishStaleReadiness()
         async throws
     {
@@ -1002,6 +1055,7 @@ final class InstallationStorePowerStateTests: XCTestCase {
         distribution: InstallationDistributionProbe,
         watchdog: InstallationWatchdogProbe,
         powerHelper: InstallationPowerHelperProbe,
+        applicationLocationValidator: @escaping @MainActor (URL) -> Bool = { _ in true },
         cli: InstallationCLIProbe = InstallationCLIProbe(result: .success(
             CLIResult(exitCode: 0, stdout: "", stderr: "", timedOut: false)))
     ) throws -> PackagedInstallationFixture {
@@ -1018,7 +1072,7 @@ final class InstallationStorePowerStateTests: XCTestCase {
             defaults: defaults,
             watchdog: watchdog,
             powerHelper: powerHelper,
-            applicationLocationValidator: { _ in true },
+            applicationLocationValidator: applicationLocationValidator,
             distributionClientFactory: { _, _, _, _ in distribution },
             cliFactory: { _ in cli })
         return PackagedInstallationFixture(

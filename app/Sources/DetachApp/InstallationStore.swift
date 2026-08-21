@@ -400,27 +400,7 @@ final class InstallationStore {
     }
 
     private static var defaultPowerStateRoot: URL {
-        let environment = ProcessInfo.processInfo.environment
-        func path(_ key: String) -> String? {
-            guard let value = environment[key], !value.isEmpty else { return nil }
-            return value
-        }
-        if let explicit = path("DETACH_POWER_STATE_ROOT") {
-            return URL(fileURLWithPath: explicit, isDirectory: true)
-        }
-        let base: URL
-        if let explicit = path("DETACH_STATE_ROOT") {
-            base = URL(fileURLWithPath: explicit, isDirectory: true)
-        } else if let xdgStateHome = path("XDG_STATE_HOME") {
-            base = URL(fileURLWithPath: xdgStateHome, isDirectory: true)
-                .appendingPathComponent("detach", isDirectory: true)
-        } else {
-            let home = path("HOME").map {
-                URL(fileURLWithPath: $0, isDirectory: true)
-            } ?? FileManager.default.homeDirectoryForCurrentUser
-            base = home.appendingPathComponent(".local/state/detach", isDirectory: true)
-        }
-        return base.appendingPathComponent("power", isDirectory: true)
+        PowerHeartbeatReader.defaultStatusURL().deletingLastPathComponent()
     }
 
     @discardableResult
