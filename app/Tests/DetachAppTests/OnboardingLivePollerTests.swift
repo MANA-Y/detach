@@ -5,6 +5,15 @@ import XCTest
 
 @MainActor
 final class OnboardingLivePollerTests: XCTestCase {
+    func testProductionWiringConstructsAnIdlePoller() {
+        let store = InstallationStore(detachPath: "/tmp/detach-test")
+        let poller = OnboardingLivePoller(store: store)
+
+        XCTAssertEqual(poller.providerAvailability, ProviderAvailability())
+        XCTAssertFalse(poller.heartbeatHealthy)
+        XCTAssertFalse(poller.installedCopyPresent)
+    }
+
     func testEnableTransitionTriggersExactlyOneReconcile() async {
         var enabled = false
         var confirmed = false

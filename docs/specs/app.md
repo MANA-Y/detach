@@ -47,8 +47,9 @@ signed marker. UI smoke uses a stripped private copy at
 power, state, and tmux payloads. Injections stay below its root. An escape,
 unsafe identity, build mismatch, or payload fails closed.
 
-The smoke keeps the prior app focused. It posts AppKit events to measured
-SwiftUI controls, then restores that app. Its semantic locator has no actions.
+The smoke preserves prior focus. It queues AppKit down/up pairs for
+measured SwiftUI controls, then restores focus. Its semantic locator has no
+actions.
 Each launch ends before its process deadline; the stage deadline is 40 seconds.
 Journeys cover all main surfaces, Settings, onboarding, and focus. It
 disconnects Stop before it proves that the real control invokes the action.

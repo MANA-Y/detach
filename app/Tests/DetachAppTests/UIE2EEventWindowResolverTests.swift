@@ -47,7 +47,7 @@ final class UIE2EEventWindowResolverTests: XCTestCase {
             candidate)
     }
 
-    func testAttachedSheetWinsOverItsAccessibilityOwner() {
+    func testAttachedSheetWinsOverItsAccessibilityOwner() throws {
         let owner = NSWindow(
             contentRect: NSRect(x: 100, y: 100, width: 400, height: 400),
             styleMask: .titled,
@@ -58,6 +58,8 @@ final class UIE2EEventWindowResolverTests: XCTestCase {
             styleMask: .titled,
             backing: .buffered,
             defer: false)
+        let view = NSView(frame: NSRect(x: 20, y: 30, width: 80, height: 40))
+        sheet.contentView?.addSubview(view)
         owner.beginSheet(sheet)
         defer { owner.endSheet(sheet) }
         let point = NSPoint(x: sheet.frame.midX, y: sheet.frame.midY)
@@ -70,6 +72,19 @@ final class UIE2EEventWindowResolverTests: XCTestCase {
                 at: point,
                 candidates: [sheet, owner]),
             sheet)
+
+        let localFrame = view.convert(view.bounds, to: nil)
+        let screenFrame = try XCTUnwrap(UIE2EEventWindowResolver.screenFrame(
+            view.bounds,
+            in: view))
+
+        XCTAssertEqual(
+            screenFrame,
+            CGRect(
+                x: sheet.frame.minX + localFrame.minX,
+                y: sheet.frame.minY + localFrame.minY,
+                width: localFrame.width,
+                height: localFrame.height))
     }
 
     func testClippedControlUsesTheRealScrollerTrackTowardIt() throws {

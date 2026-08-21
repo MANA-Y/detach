@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import DetachKit
 import Foundation
 
 @MainActor
@@ -125,8 +126,13 @@ enum UIE2ETestDriver {
 
     private static var started = false
     private static var scenarioDeadline = TimeInterval.greatestFiniteMagnitude
+    private static var nextMouseEventNumber = Int(
+        ProcessInfo.processInfo.systemUptime * 1_000)
 
-    static func runIfRequested(installation: InstallationStore) async {
+    static func runIfRequested(
+        installation: InstallationStore,
+        store: SessionStore
+    ) async {
         guard let configuration = AppSettings.uiE2E, !started else { return }
         started = true
         Task { @MainActor in
@@ -137,7 +143,8 @@ enum UIE2ETestDriver {
                     + "(budget \(configuration.driverBudgetSeconds)s)")
             let report = await runScenario(
                 configuration: configuration,
-                installation: installation)
+                installation: installation,
+                store: store)
             trace("\(configuration.scenario) driver finished: \(report.passed)")
             try? write(report, to: configuration.result)
             NSApp.terminate(nil)
@@ -152,7 +159,8 @@ enum UIE2ETestDriver {
 
     private static func runScenario(
         configuration: UIE2EConfiguration,
-        installation: InstallationStore
+        installation: InstallationStore,
+        store: SessionStore
     ) async -> Report {
         switch configuration.scenario {
         case "failure":
@@ -174,12 +182,15 @@ enum UIE2ETestDriver {
                 evidenceIdentifier: "onboarding-open-system-settings",
                 check: "onboarding-explains-approval")
         default:
-            return await runMainScenario(configuration: configuration)
+            return await runMainScenario(
+                configuration: configuration,
+                store: store)
         }
     }
 
     private static func runMainScenario(
-        configuration: UIE2EConfiguration
+        configuration: UIE2EConfiguration,
+        store: SessionStore
     ) async -> Report {
         var checks: [String] = []
         let previousFrontmost = NSWorkspace.shared.frontmostApplication
@@ -241,9 +252,14 @@ enum UIE2ETestDriver {
             }
             checks.append("safe-delete-reaches-fake-cli")
             trace("delete reached fake CLI")
+            let deleteObservedAt = Date()
+            try await waitUntil("post-delete session refresh") {
+                store.lastUpdated.map { $0 >= deleteObservedAt } == true
+            }
             try await waitUntil("delete confirmation dismissal") {
                 NSApp.windows.allSatisfy(\.sheets.isEmpty)
             }
+            try await activate(mainWindow)
             try await Task.sleep(nanoseconds: 200_000_000)
 
             let runningID = "detach-codex-ui-running"
@@ -788,21 +804,31 @@ enum UIE2ETestDriver {
             }
             trace("hit chain for \(name): \(names.joined(separator: " > "))")
         }
+        var events: [NSEvent] = []
+        let timestamp = ProcessInfo.processInfo.systemUptime
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let eventNumber = nextMouseEventNumber
+            nextMouseEventNumber += 1
             guard let event = NSEvent.mouseEvent(
                 with: type,
                 location: windowPoint,
                 modifierFlags: [],
-                timestamp: ProcessInfo.processInfo.systemUptime,
+                timestamp: timestamp + Double(events.count) / 1_000,
                 windowNumber: window.windowNumber,
                 context: nil,
-                eventNumber: 0,
+                eventNumber: eventNumber,
                 clickCount: 1,
                 pressure: type == .leftMouseDown ? 1 : 0)
             else { continue }
-            NSApp.postEvent(event, atStart: false)
-            try await Task.sleep(nanoseconds: 100_000_000)
+            events.append(event)
         }
+        // Queue the complete pair before yielding. Dispatching only mouseDown
+        // can enter AppKit's tracking loop before this main-actor task gets a
+        // chance to enqueue the matching mouseUp.
+        for event in events {
+            NSApp.postEvent(event, atStart: false)
+        }
+        try await Task.sleep(nanoseconds: 200_000_000)
     }
 
     private static func keyPress(
