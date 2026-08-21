@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Security
 
 // Swift imports Darwin's `struct flock` under the same name as flock(2), so
 // bind the process-scoped BSD syscall explicitly.
@@ -758,6 +759,12 @@ public final class SecureFilePowerHelperStateStore:
                 operation: "fsync directory", code: errno)
         }
     }
+}
+
+/// Security flags for root-helper startup validation.
+public enum PowerHelperCodeSigningValidationPolicy {
+    public static let helperSelfFlags = SecCSFlags(
+        rawValue: kSecCSStrictValidate | kSecCSAllowNetworkAccess)
 }
 
 /// Code requirement installed directly on the NSXPC listener. Foundation

@@ -7,26 +7,57 @@ private func log(_ message: String) {
     FileHandle.standardError.write(Data("DetachPowerHelper: \(message)\n".utf8))
 }
 
-private final class CodeSigningIdentityResolver {
-    func ownTeamIdentifier() -> String? {
-        var code: SecCode?
-        guard SecCodeCopySelf([], &code) == errSecSuccess,
-              let code,
-              let info = signingInformation(for: code) else { return nil }
-        return info[kSecCodeInfoTeamIdentifier as String] as? String
-    }
+private enum CodeSigningIdentityError: Error, LocalizedError {
+    case security(operation: String, status: OSStatus)
+    case missingTeamIdentifier
 
-    private func signingInformation(for code: SecCode) -> [String: Any]? {
+    var errorDescription: String? {
+        switch self {
+        case let .security(operation, status):
+            return "code-signing \(operation) failed with Security status \(status)"
+        case .missingTeamIdentifier:
+            return "helper is missing a trusted Team ID signature"
+        }
+    }
+}
+
+private final class CodeSigningIdentityResolver {
+    func trustedOwnTeamIdentifier() throws -> String {
+        var code: SecCode?
+        let selfStatus = SecCodeCopySelf([], &code)
+        guard selfStatus == errSecSuccess, let code else {
+            throw CodeSigningIdentityError.security(
+                operation: "self lookup", status: selfStatus)
+        }
         var staticCode: SecStaticCode?
-        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess,
-              let staticCode else { return nil }
+        let staticStatus = SecCodeCopyStaticCode(code, [], &staticCode)
+        guard staticStatus == errSecSuccess, let staticCode else {
+            throw CodeSigningIdentityError.security(
+                operation: "static-code lookup", status: staticStatus)
+        }
+        let validationStatus = SecStaticCodeCheckValidity(
+            staticCode,
+            PowerHelperCodeSigningValidationPolicy.helperSelfFlags,
+            nil)
+        guard validationStatus == errSecSuccess else {
+            throw CodeSigningIdentityError.security(
+                operation: "trust validation", status: validationStatus)
+        }
         var information: CFDictionary?
         let status = SecCodeCopySigningInformation(
             staticCode,
             SecCSFlags(rawValue: kSecCSSigningInformation),
             &information)
-        guard status == errSecSuccess else { return nil }
-        return information as? [String: Any]
+        guard status == errSecSuccess else {
+            throw CodeSigningIdentityError.security(
+                operation: "identity lookup", status: status)
+        }
+        guard let info = information as? [String: Any],
+              let teamIdentifier = info[
+                  kSecCodeInfoTeamIdentifier as String] as? String else {
+            throw CodeSigningIdentityError.missingTeamIdentifier
+        }
+        return teamIdentifier
     }
 }
 
@@ -93,9 +124,9 @@ do {
     // mutation. An ad-hoc or otherwise untrusted helper exits without touching
     // machine state.
     let resolver = CodeSigningIdentityResolver()
-    guard let teamIdentifier = resolver.ownTeamIdentifier(),
-          let clientRequirement = PowerHelperCodeSigningRequirement.client(
-              teamIdentifier: teamIdentifier) else {
+    let teamIdentifier = try resolver.trustedOwnTeamIdentifier()
+    guard let clientRequirement = PowerHelperCodeSigningRequirement.client(
+        teamIdentifier: teamIdentifier) else {
         log("helper is missing a trusted Team ID signature")
         exit(1)
     }
