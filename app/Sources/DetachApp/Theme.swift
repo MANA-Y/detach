@@ -52,6 +52,36 @@ enum SessionIdentity {
     }
 }
 
+enum SessionDetailSignalPresentation {
+    static let identityMarkerWidth: CGFloat = 4
+    static let identityMarkerHeight: CGFloat = 24
+
+    /// These strengths match the dense, muted-edge, and faint tmux blends.
+    static func identityTintPercent(for status: EffectiveStatus) -> UInt8 {
+        switch status {
+        case .completed, .stopped, .interrupted:
+            25
+        case .recoverable, .orphaned, .corrupt, .collision, .unknown:
+            45
+        case .starting, .running, .recovering, .hung, .failed:
+            55
+        }
+    }
+
+    static func powerColor(for state: PowerProtectionState?) -> Color {
+        switch state ?? .unknown {
+        case .protected:
+            Brand.teal
+        case .transitioning, .lowBattery, .temperature:
+            .orange
+        case .unavailable:
+            .red
+        case .allowed, .unknown:
+            Color.white.opacity(0.70)
+        }
+    }
+}
+
 /// Small circle carrying the three brand colors; used as a discreet signature.
 struct TriColorDot: View {
     var size: CGFloat = 8

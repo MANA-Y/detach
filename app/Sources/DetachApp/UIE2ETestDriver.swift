@@ -270,6 +270,23 @@ enum UIE2ETestDriver {
                 runningRow,
                 name: "running session row",
                 resultIdentifier: "session-detail-\(runningID)")
+            let identityMarker = try await measuredFrame(
+                identifier: "session-detail-identity-marker",
+                name: "session identity marker")
+            guard identityMarker.height >= identityMarker.width * 3 else {
+                throw Failure(message: "session identity marker reads as a status dot")
+            }
+            let previewIdentity = try await measuredFrame(
+                identifier: "session-preview-identity",
+                name: "session preview identity")
+            let previewPower = try await measuredFrame(
+                identifier: "session-preview-power",
+                name: "session preview power")
+            guard previewIdentity.intersection(previewPower).width <= 1,
+                  previewIdentity.maxX <= previewPower.minX + 1 else {
+                throw Failure(message: "session identity and power share one surface")
+            }
+            checks.append("session-signals-stay-distinct")
             let stopButton = try await element(identifier: "session-action-stop")
             try requireSemanticControl(stopButton, name: "stop action")
             UIE2EControlFault.stopActionAttempts = 0
