@@ -68,28 +68,29 @@ without a fresh heartbeat must be replaced through the same durable
 unregister/barrier/register transaction. Ordinary activation refreshes must not
 force replacement merely because a heartbeat is temporarily stale.
 
-The menu bar item is display-only. Its image is the Detach prompt mark:
-a filled dot means protected, the dimmed mark means sleep is allowed, an
-exclamation badge means attention, and an outline means unknown. Active
-sessions additionally tint the glyph's dot — green while working, orange when
-a session waits for a reply (answer-ready outranks working; the badge states
-suppress the tint so a power warning stays visible). The image stays template
-while monochrome; only the tinted states draw with real color, using
-label/system colors resolved at composite time, and VoiceOver names the
-session state in words. The first menu line is `state · reason · freshness`.
-Protected state counts working sessions. Allowed state names all-waiting or an
-unprotected working session and never claims no sessions. The glyph and words
-derive from the shared `checked_at`-based heartbeat reader and the
-app-level shared session poller — never `pmset` or root XPC from UI, and
-freshness comes from the document timestamp, not file mtime. One
-`detach list --json` poller serves the window, notifications, and the menu
-(foreground cadence with the window visible, slower idle cadence after it
-closes — polling never stops while the app runs). Closing the last window keeps
-the app and icon alive; ⌘Q and Quit genuinely terminate the app while sessions,
-checkpoints, and protection continue. Settings → General owns the two menu bar
-toggles; the Mac Power block in Settings → System remains the single place for
-power status and approval controls. Temperature safety uses its own warning
+The menu bar item is display-only. Its Detach prompt mark uses a filled dot for
+protected, a dim mark for sleep allowed, an exclamation badge for attention,
+and an outline for unknown. With active sessions, green means working and
+orange means waiting. Waiting outranks working. A badge suppresses both tints
+so a power warning stays visible. Monochrome states remain template. Tinted
+states use label or system colors resolved at composite time. VoiceOver names
+the session state. The first menu line is `state · reason · freshness`.
+Protected counts working sessions. Allowed names all-waiting or an unprotected
+working session and never claims no sessions. The shared `checked_at` heartbeat
+reader and app-level session poller supply the glyph and words. UI never calls
+`pmset` or root XPC. Freshness uses the document timestamp, not file mtime. One
+`detach list --json` poller serves the window, notifications, and menu. It polls
+faster with a visible window, slower after it closes, and never stops. Closing
+the last window keeps the app and icon alive.
+⌘Q and Quit end the app while sessions, checkpoints, and protection continue.
+Settings → General owns both menu bar toggles. Settings → System keeps the only
+Mac Power status and approval controls. Temperature safety has its own warning
 shape and the text **Mac can sleep: temperature**.
+
+The dashboard keeps identity, status, and Mac Power separate. A thin capsule
+carries identity; a filled circle carries status. The preview uses the tmux
+blend, not the raw hue. Power words use a neutral surface and semantic color.
+Sidebar and detail share one status-color function.
 
 Every app CLI invocation runs in a fresh process group with concurrent bounded
 stdout/stderr draining. Its deadline sends TERM and then KILL to the complete

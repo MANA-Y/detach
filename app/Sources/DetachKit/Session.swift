@@ -57,6 +57,25 @@ public struct SessionColor: Equatable, Hashable, Sendable, Codable {
         self.hex = String(format: "#%02X%02X%02X", red, green, blue)
     }
 
+    private init(red: UInt8, green: UInt8, blue: UInt8) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        hex = String(format: "#%02X%02X%02X", red, green, blue)
+    }
+
+    /// Applies the same dark-anchor blend as the private tmux status line.
+    /// Callers use fixed presentation strengths from 0 through 100.
+    public func tmuxStatusTint(percent: UInt8) -> SessionColor {
+        precondition(percent <= 100, "tmux status tint percent must be at most 100")
+        let foreground = Int(percent)
+        let background = 100 - foreground
+        return SessionColor(
+            red: UInt8((Int(red) * foreground + 32 * background) / 100),
+            green: UInt8((Int(green) * foreground + 32 * background) / 100),
+            blue: UInt8((Int(blue) * foreground + 43 * background) / 100))
+    }
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let raw = try container.decode(String.self)

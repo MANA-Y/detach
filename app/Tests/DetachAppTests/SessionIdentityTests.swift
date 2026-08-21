@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 import DetachKit
 @testable import DetachApp
 
@@ -14,6 +15,76 @@ final class SessionIdentityTests: XCTestCase {
         XCTAssertLessThan(SessionIdentity.emphasis(for: .completed), 1)
         XCTAssertLessThan(SessionIdentity.emphasis(for: .stopped), 1)
         XCTAssertLessThan(SessionIdentity.emphasis(for: .interrupted), 1)
+    }
+
+    func testDetailIdentityMarkerCannotReadAsAStatusDot() {
+        XCTAssertLessThan(
+            SessionDetailSignalPresentation.identityMarkerWidth,
+            SessionDetailSignalPresentation.identityMarkerHeight)
+        XCTAssertGreaterThanOrEqual(
+            SessionDetailSignalPresentation.identityMarkerHeight,
+            SessionDetailSignalPresentation.identityMarkerWidth * 3)
+    }
+
+    func testPreviewUsesTheRuntimeTintStrengths() {
+        XCTAssertEqual(
+            SessionDetailSignalPresentation.identityTintPercent(for: .running),
+            55)
+        XCTAssertEqual(
+            SessionDetailSignalPresentation.identityTintPercent(for: .completed),
+            25)
+        XCTAssertEqual(
+            SessionDetailSignalPresentation.identityTintPercent(for: .recoverable),
+            45)
+    }
+
+    func testEveryTypedPowerStateHasItsOwnExpectedSignalColor() throws {
+        try assertColorsEqual(
+            SessionDetailSignalPresentation.powerColor(for: .protected),
+            Brand.teal)
+        for state in [
+            PowerProtectionState.transitioning,
+            .lowBattery,
+            .temperature,
+        ] {
+            try assertColorsEqual(
+                SessionDetailSignalPresentation.powerColor(for: state),
+                .orange)
+        }
+        try assertColorsEqual(
+            SessionDetailSignalPresentation.powerColor(for: .unavailable),
+            .red)
+        for state in [
+            PowerProtectionState.allowed,
+            .unknown,
+            nil,
+        ] {
+            try assertColorsEqual(
+                SessionDetailSignalPresentation.powerColor(for: state),
+                Color.white.opacity(0.70))
+        }
+    }
+
+    private func assertColorsEqual(
+        _ actual: Color,
+        _ expected: Color,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let actualRGB = try XCTUnwrap(
+            NSColor(actual).usingColorSpace(.deviceRGB),
+            file: file, line: line)
+        let expectedRGB = try XCTUnwrap(
+            NSColor(expected).usingColorSpace(.deviceRGB),
+            file: file, line: line)
+        XCTAssertEqual(actualRGB.redComponent, expectedRGB.redComponent,
+                       accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(actualRGB.greenComponent, expectedRGB.greenComponent,
+                       accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(actualRGB.blueComponent, expectedRGB.blueComponent,
+                       accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(actualRGB.alphaComponent, expectedRGB.alphaComponent,
+                       accuracy: 0.001, file: file, line: line)
     }
 }
 

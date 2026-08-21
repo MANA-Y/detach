@@ -83,12 +83,22 @@ struct SessionDetailView: View {
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Circle()
+                Capsule(style: .continuous)
                     .fill(identityColor)
-                    .frame(width: 11, height: 11)
+                    .frame(
+                        width: SessionDetailSignalPresentation.identityMarkerWidth,
+                        height: SessionDetailSignalPresentation.identityMarkerHeight)
                     .help(session.sessionColor.map {
                         L10n.format("Session base color: %@", $0.hex)
                     } ?? "")
+                    .accessibilityHidden(true)
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                    .background {
+                        uiE2EGeometryProbe(identifier: "session-detail-identity-marker")
+                    }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
                 Text(session.displayTitle)
                     .appFont(.title2, weight: .bold)
                     .lineLimit(1)
@@ -250,27 +260,57 @@ struct SessionDetailView: View {
     @ViewBuilder
     private var sessionColorStrip: some View {
         if let sessionColor = session.sessionColor {
-            let emphasis = SessionIdentity.emphasis(for: session.effectiveStatus)
+            let tint = sessionColor.tmuxStatusTint(percent:
+                SessionDetailSignalPresentation.identityTintPercent(
+                    for: session.effectiveStatus))
             HStack(spacing: 0) {
-                Text(verbatim: "● \(session.displayTitle)")
-                    .font(.system(size: 10, design: .monospaced))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
+                HStack(spacing: 0) {
+                    Text(session.displayTitle)
+                        .font(.system(size: 10, design: .monospaced))
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, minHeight: 18)
+                .background(SessionIdentity.color(tint))
+                .foregroundStyle(Color.white.opacity(0.92))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(L10n.string("Session identity color"))
+                .accessibilityValue(sessionColor.hex)
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                .background {
+                    uiE2EGeometryProbe(identifier: "session-preview-identity")
+                }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
+
+                Rectangle()
+                    .fill(Color.white.opacity(0.12))
+                    .frame(width: 1)
+                    .accessibilityHidden(true)
+
                 Label(
                     session.powerProtectionLabel,
                     systemImage: session.powerProtectionSystemImage)
                     .font(.system(size: 10, weight: .medium))
                     .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .frame(minHeight: 18)
+                    .background(Color(nsColor: ANSIParser.terminalBackground))
+                    .foregroundStyle(SessionDetailSignalPresentation.powerColor(
+                        for: session.powerProtectionState))
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text(session.powerProtectionLabel))
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                    .background {
+                        uiE2EGeometryProbe(identifier: "session-preview-power")
+                    }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
             }
-            .padding(.horizontal, 8)
-            .frame(height: 16)
-            .background(SessionIdentity.color(sessionColor).opacity(emphasis))
-            // The identity palette is dark and saturated; only a light
-            // foreground stays readable on every one of its colors.
-            .foregroundStyle(Color.white.opacity(0.92))
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(L10n.string("Session identity color"))
-            .accessibilityValue(sessionColor.hex)
+            .frame(height: 18)
         }
     }
 
