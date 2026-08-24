@@ -3,6 +3,54 @@ import XCTest
 @testable import DetachApp
 
 final class MacPowerSettingsPresentationTests: XCTestCase {
+    func testPowerHelperHealthRequiresConfirmedLiveCheck() {
+        let unreachable = PowerHelperSettingsPresentation(
+            registrationStatus: .enabled,
+            readinessConfirmed: false)
+        XCTAssertEqual(unreachable.status, .error)
+        XCTAssertEqual(
+            unreachable.detailLocalizationKey,
+            "The native power helper is registered, but its live check failed.")
+
+        let reachable = PowerHelperSettingsPresentation(
+            registrationStatus: .enabled,
+            readinessConfirmed: true)
+        XCTAssertEqual(reachable.status, .ok)
+        XCTAssertNil(reachable.detailLocalizationKey)
+
+        let staleReadiness = PowerHelperSettingsPresentation(
+            registrationStatus: .notRegistered,
+            readinessConfirmed: true)
+        XCTAssertEqual(staleReadiness.status, .error)
+        XCTAssertEqual(
+            staleReadiness.detailLocalizationKey,
+            "The native power helper is not registered yet.")
+    }
+
+    func testPowerHelperHealthExplainsRegistrationFailures() {
+        let expected: [(PowerHelperRegistrationStatus, String)] = [
+            (
+                .requiresApproval,
+                "One-time administrator approval is required for native sleep protection."),
+            (
+                .notRegistered,
+                "The native power helper is not registered yet."),
+            (
+                .unavailable,
+                "The native power helper is unavailable."),
+        ]
+
+        for (registrationStatus, detailLocalizationKey) in expected {
+            let presentation = PowerHelperSettingsPresentation(
+                registrationStatus: registrationStatus,
+                readinessConfirmed: false)
+            XCTAssertEqual(presentation.status, .error)
+            XCTAssertEqual(
+                presentation.detailLocalizationKey,
+                detailLocalizationKey)
+        }
+    }
+
     func testStateLabelsDescribeSleepInWords() {
         let expected: [(PowerProtectionState, String)] = [
             (.protected, "Mac stays awake"),
