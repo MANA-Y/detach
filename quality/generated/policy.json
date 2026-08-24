@@ -225,9 +225,10 @@
       "region": "ui-e2e-instrumentation",
       "scenarios": [
         "SC-UI-SESSION-STOP",
-        "SC-UI-SESSION-DELETE"
+        "SC-UI-SESSION-DELETE",
+        "SC-UI-SESSION-DETAIL"
       ],
-      "summary": "The packaged journey covers action geometry and its negative control."
+      "summary": "The packaged journey covers action geometry, UUID copy, and its negative control."
     },
     {
       "group": "ui",

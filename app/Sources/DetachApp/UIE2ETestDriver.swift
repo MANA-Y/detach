@@ -236,6 +236,20 @@ enum UIE2ETestDriver {
             checks.append("sidebar-selects-completed-session")
             trace("completed session selected")
 
+            let copiedUUID = "a9f58f1d-1234-5678-9abc-def012342ed9"
+            let pasteboardSnapshot = captureGeneralPasteboard()
+            defer { restoreGeneralPasteboard(pasteboardSnapshot) }
+            let pasteboardGeneration = NSPasteboard.general.changeCount
+            try await clickMeasuredControl(
+                identifier: "session-uuid-chip",
+                name: "session UUID chip text",
+                offset: CGSize(width: 24, height: 0),
+                size: CGSize(width: 36, height: 18))
+            try await waitUntil("copied full UUID and confirmation", attempts: 15) {
+                NSPasteboard.general.changeCount > pasteboardGeneration
+                    && NSPasteboard.general.string(forType: .string) == copiedUUID
+            }
+            checks.append("session-uuid-copies-from-text-side")
             let runningID = "detach-codex-ui-running"
             let runningRow = try await element(
                 identifier: "session-row-\(runningID)")
@@ -571,6 +585,28 @@ enum UIE2ETestDriver {
         FileHandle.standardError.write(Data("UI e2e: \(message)\n".utf8))
     }
 
+    private static func captureGeneralPasteboard() -> [[NSPasteboard.PasteboardType: Data]] {
+        (NSPasteboard.general.pasteboardItems ?? []).map { item in
+            Dictionary(uniqueKeysWithValues: item.types.compactMap { type in
+                item.data(forType: type).map { (type, $0) }
+            })
+        }
+    }
+
+    private static func restoreGeneralPasteboard(
+        _ snapshot: [[NSPasteboard.PasteboardType: Data]]
+    ) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        for payload in snapshot {
+            let item = NSPasteboardItem()
+            for (type, data) in payload {
+                item.setData(data, forType: type)
+            }
+            pasteboard.writeObjects([item])
+        }
+    }
+
     private static func restoreFocus(
         to application: NSRunningApplication?,
         policy: NSApplication.ActivationPolicy
@@ -834,6 +870,37 @@ enum UIE2ETestDriver {
             }
         }
         throw Failure(message: "\(name) did not produce \(outcome)")
+    }
+
+    private static func clickMeasuredControl(
+        identifier: String,
+        name: String,
+        offset: CGSize = .zero,
+        size: CGSize? = nil
+    ) async throws {
+        var target: UIE2EGeometryView?
+        try await waitUntil("measured control \(name)") {
+            target = elements().compactMap { $0 as? UIE2EGeometryView }.first {
+                $0.identifierValue == identifier
+            }
+            target?.publishFrame()
+            return target.map { $0.window != nil && !$0.bounds.isEmpty } == true
+        }
+        guard let view = target, let window = view.window else {
+            throw Failure(message: "\(name) has no measured control view")
+        }
+        let windowFrame = view.convert(view.bounds, to: nil)
+        var screen = window.convertToScreen(windowFrame)
+        if let size {
+            screen = CGRect(
+                x: screen.minX + offset.width,
+                y: screen.minY + offset.height - (size.height - screen.height) / 2,
+                width: size.width,
+                height: size.height)
+        } else if offset != .zero {
+            screen = screen.offsetBy(dx: offset.width, dy: offset.height)
+        }
+        try await click(frame: screen, name: name, owningWindow: window)
     }
 
     private static func measuredFrame(
