@@ -299,7 +299,8 @@ run_app_scenario() {
       background-app-starts-without-focus|disconnected-stop-blocks-action|\
       finished-selection-clears-scrollbar|session-uuid-copies-from-text-side|\
       settings-window-stays-on-screen|\
-      settings-system-reveals-storage-and-installation) ;;
+      settings-system-reveals-storage-and-installation|\
+      new-session-advanced-keeps-top-edge) ;;
       dashboard-accessible) pass=SC-UI-DASHBOARD ;;
       sidebar-selects-completed-session) ;;
       bulk-delete-reaches-fake-cli) pass=SC-UI-SESSION-DELETE ;;
@@ -334,6 +335,7 @@ run_app_scenario main sessions 24 \
   safe-action-reaches-fake-cli \
   finished-selection-clears-scrollbar \
   bulk-delete-reaches-fake-cli \
+  new-session-advanced-keeps-top-edge \
   new-session-sheet-semantics \
   empty-dashboard-state \
   actionable-failure-presentation \

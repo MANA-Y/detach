@@ -169,8 +169,9 @@ If none runs, the launch environment sets a private `.zshenv` as outer
 original `ZDOTDIR` for that process. Open, Resume, and Recover use the selected
 terminal, with Terminal as fallback.
 The new-session sheet accepts an optional UTF-8 name up to 100 bytes. It rejects
-control characters, explains invalid input, blocks launch, and passes one
-shell-quoted `--name` argument. The app uses `display_name` as the title, with
+control characters, blocks launch, and passes one `--name`. The launch button
+names the selected terminal. Advanced holds terminal choice and the prompt and
+grows down, top fixed. The app uses `display_name` as the title, with
 the project/internal name fallback for old records.
 Notifications are opt-in. One app poller deduplicates baseline and transitions.
 
