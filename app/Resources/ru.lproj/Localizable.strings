@@ -277,8 +277,8 @@
 "The bundled power helper definition is missing or incomplete." = "Встроенная конфигурация системного помощника отсутствует или неполна.";
 "The current sleep state comes from the latest background power check." = "Текущий режим сна определяется по последней фоновой проверке питания.";
 "The helper is bundled with Detach; no third-party keep-awake app is needed." = "Помощник входит в Detach; стороннее приложение для блокировки сна не нужно.";
-"The native power helper is enabled." = "Встроенный системный помощник включён.";
 "The native power helper is not registered yet." = "Встроенный системный помощник ещё не зарегистрирован.";
+"The native power helper is registered, but its live check failed." = "Встроенный системный помощник зарегистрирован, но проверка связи с ним не пройдена.";
 "The native power helper is reachable" = "Встроенный системный помощник отвечает";
 "The native power helper is unavailable." = "Встроенный системный помощник недоступен.";
 "The native power helper is unavailable or needs approval" = "Встроенный системный помощник недоступен или ожидает разрешения";

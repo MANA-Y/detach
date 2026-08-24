@@ -134,16 +134,14 @@ recorded and the journal cleared. Approval and retry failures remain pending for
 the next launch. An ordinary helper SIGTERM/SIGINT uses only the process-local
 termination gate and must not create this persistent update state.
 
-Settings → System contains one **Mac Power** block; do not duplicate its status
-or approval controls elsewhere in that tab. It presents the sleep state in
-words, helper and background-monitor health, the 10% battery rule, and the
-appropriate approval, setup, repair, or refresh action. Its effective state is
-read from a healthy watchdog heartbeat newer than three minutes and is
-`unknown` when that snapshot is missing, stale, or malformed. Refresh the
-installation context when Settings appears or the app becomes active. While the
-System tab remains visible, publish a fresh heartbeat snapshot every ten seconds
-so the displayed state cannot remain stale merely because SwiftUI did not
-otherwise re-render.
+Settings → System owns one **Mac Power** block. It shows the sleep state,
+component health, the 10% battery rule, and the correct action. Helper Ready
+requires a doctor-confirmed live XPC connection. Registration alone is Needs
+attention. Power state comes from a healthy watchdog heartbeat no older than
+three minutes. A missing, stale, or malformed snapshot means `unknown`. Refresh
+the installation context when Settings appears or the app becomes active.
+While this tab is visible, publish a heartbeat snapshot every ten seconds so
+the state does not remain stale when SwiftUI does not re-render.
 
 The watchdog heartbeat carries both the effective power state and typed raw
 thermal state/latch. When notifications are enabled, the app emits one

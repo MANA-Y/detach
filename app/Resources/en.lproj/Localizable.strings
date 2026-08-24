@@ -277,8 +277,8 @@
 "The bundled power helper definition is missing or incomplete." = "The bundled power helper definition is missing or incomplete.";
 "The current sleep state comes from the latest background power check." = "The current sleep state comes from the latest background power check.";
 "The helper is bundled with Detach; no third-party keep-awake app is needed." = "The helper is bundled with Detach; no third-party keep-awake app is needed.";
-"The native power helper is enabled." = "The native power helper is enabled.";
 "The native power helper is not registered yet." = "The native power helper is not registered yet.";
+"The native power helper is registered, but its live check failed." = "The native power helper is registered, but its live check failed.";
 "The native power helper is reachable" = "The native power helper is reachable";
 "The native power helper is unavailable." = "The native power helper is unavailable.";
 "The native power helper is unavailable or needs approval" = "The native power helper is unavailable or needs approval";

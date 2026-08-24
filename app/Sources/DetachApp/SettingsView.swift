@@ -100,6 +100,36 @@ struct MacPowerSettingsPresentation: Equatable {
     }
 }
 
+struct PowerHelperSettingsPresentation: Equatable {
+    let status: DiagnosticCheck.Status
+    let detailLocalizationKey: String?
+
+    init(
+        registrationStatus: PowerHelperRegistrationStatus,
+        readinessConfirmed: Bool
+    ) {
+        if registrationStatus == .enabled, readinessConfirmed {
+            status = .ok
+            detailLocalizationKey = nil
+            return
+        }
+
+        status = .error
+        switch registrationStatus {
+        case .enabled:
+            detailLocalizationKey =
+                "The native power helper is registered, but its live check failed."
+        case .requiresApproval:
+            detailLocalizationKey =
+                "One-time administrator approval is required for native sleep protection."
+        case .notRegistered:
+            detailLocalizationKey = "The native power helper is not registered yet."
+        case .unavailable:
+            detailLocalizationKey = "The native power helper is unavailable."
+        }
+    }
+}
+
 private extension SettingsDestination {
     /// Content height measured at the default text size; the window follows
     /// the selected tab like classic AppKit preference panes.
@@ -723,12 +753,13 @@ struct SettingsView: View {
                 macPowerHeroRow
                 requiredComponentStatus(
                     label: L10n.string("Sleep Protection Helper"),
-                    status: installation.powerHelperStatus == .enabled ? .ok : .error)
+                    status: powerHelperSettingsPresentation.status)
                 requiredComponentStatus(
                     label: L10n.string("Background Power Monitor"),
                     status: installation.watchdogStatus == .enabled ? .ok : .error)
-                if installation.powerHelperStatus != .enabled {
-                    Text(powerHelperStatusText)
+                if let detail = powerHelperSettingsPresentation
+                    .detailLocalizationKey {
+                    Text(L10n.string(detail))
                         .settingsMessage(color: .red)
                 }
                 macPowerAction
@@ -1061,18 +1092,12 @@ struct SettingsView: View {
         return requiredComponentStatus(label: label, status: status)
     }
 
-    private var powerHelperStatusText: String {
-        switch installation.powerHelperStatus {
-        case .enabled:
-            L10n.string("The native power helper is enabled.")
-        case .requiresApproval:
-            L10n.string(
-                "One-time administrator approval is required for native sleep protection.")
-        case .notRegistered:
-            L10n.string("The native power helper is not registered yet.")
-        case .unavailable:
-            L10n.string("The native power helper is unavailable.")
-        }
+    private var powerHelperSettingsPresentation:
+        PowerHelperSettingsPresentation
+    {
+        PowerHelperSettingsPresentation(
+            registrationStatus: installation.powerHelperStatus,
+            readinessConfirmed: installation.powerHelperReadinessConfirmed)
     }
 
     private func requiredComponentStatus(
