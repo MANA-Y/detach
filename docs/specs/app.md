@@ -96,11 +96,10 @@ the full UUID and shows **Copied**.
 **Finished** bulk Delete uses typed Delete, asks once, tolerates failures, and
 keeps provider transcripts. Select/Done has 12-point scroll clearance.
 
-Every app CLI invocation runs in a fresh process group with concurrent bounded
-stdout/stderr draining. Its deadline sends TERM and then KILL to the complete
-group, and a descendant that only inherits a pipe cannot hold the caller past
-the drain deadline. GUI PATH augmentation orders NVM and mise Node directories
-by semantic version, with valid versions ahead of non-version aliases.
+Every app CLI invocation runs in a fresh process group that drains stdout and
+stderr. Its deadline sends TERM then KILL to the group. A pipe-only descendant
+cannot hold the caller past the drain deadline. GUI PATH orders NVM and mise
+Node directories by semantic version.
 
 Helper replacement is a durable fail-closed transaction. One versioned JSON
 journal records `preparing`, `unregisterSubmitted`, `removed`, or `registering`,
