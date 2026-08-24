@@ -81,6 +81,34 @@ final class TextSizeTests: XCTestCase {
         XCTAssertGreaterThan(AppFontSize.settingsHeight(base: 420, for: 20), 420)
     }
 
+    func testSettingsWindowUsesTheHostingScreenVisibleHeight() {
+        XCTAssertEqual(
+            SettingsWindowLayout.contentHeight(
+                base: 780,
+                fontPointSize: AppFontSize.defaultValue,
+                visibleScreenHeight: 1200),
+            SettingsWindowLayout.comfortableContentHeight)
+        XCTAssertEqual(
+            SettingsWindowLayout.contentHeight(
+                base: 450,
+                fontPointSize: AppFontSize.defaultValue,
+                visibleScreenHeight: 1200),
+            450)
+        let shortScreen = SettingsWindowLayout.contentHeight(
+            base: 780,
+            fontPointSize: AppFontSize.defaultValue,
+            visibleScreenHeight: 480)
+        XCTAssertLessThan(shortScreen, 480)
+        XCTAssertGreaterThanOrEqual(
+            shortScreen, SettingsWindowLayout.minimumContentHeight)
+        XCTAssertLessThan(
+            shortScreen,
+            SettingsWindowLayout.contentHeight(
+                base: 780,
+                fontPointSize: AppFontSize.defaultValue,
+                visibleScreenHeight: 900))
+    }
+
     func testLogResizeUsesExactPointSizeAndPreservesTraitsAndColors() throws {
         let regular = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
         let bold = NSFont.monospacedSystemFont(ofSize: 10, weight: .bold)

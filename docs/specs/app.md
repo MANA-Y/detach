@@ -84,8 +84,9 @@ faster with a window and slower without one. It never stops. Closing the last
 window keeps the app and icon.
 ⌘Q and Quit end the app while sessions, checkpoints, and protection continue.
 Settings → General owns both menu bar toggles. Settings → System keeps the only
-Mac Power status and approval controls. Temperature safety has its own warning
-shape and the text **Mac can sleep: temperature**.
+Mac Power status and approval controls. The Settings window follows the hosting
+screen; System scrolls. Temperature safety has its own warning shape and the
+text **Mac can sleep: temperature**.
 
 The dashboard shows identity, status, and Mac Power separately. Identity is a
 thin tmux-colored capsule. Status is a filled circle. Power has a neutral

@@ -251,6 +251,16 @@ struct SettingsView: View {
             systemTab.tabItem {
                 tabLabel(L10n.string("System"), systemImage: "moon.stars.fill",
                          color: .systemOrange)
+                    .accessibilityIdentifier("settings-tab-system")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                    .background {
+                        if AppSettings.uiE2E != nil {
+                            UIE2EGeometryProbe(identifier: "settings-tab-system")
+                        }
+                    }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
             }
             .tag(SettingsDestination.system)
             updatesTab.tabItem {
@@ -260,10 +270,11 @@ struct SettingsView: View {
             .tag(SettingsDestination.updates)
         }
         .appFontSize(fontPointSize)
-        .frame(
+        .frame(width: AppFontSize.settingsWidth(for: fontPointSize))
+        .background(SettingsWindowFrame(
             width: AppFontSize.settingsWidth(for: fontPointSize),
-            height: AppFontSize.settingsHeight(
-                base: navigation.selectedTab.baseHeight, for: fontPointSize))
+            baseHeight: navigation.selectedTab.baseHeight,
+            fontPointSize: fontPointSize))
         .task {
             let clampedFontPointSize = AppFontSize.clamped(fontPointSize)
             if fontSizeDraft == nil {
@@ -785,7 +796,7 @@ struct SettingsView: View {
                     .settingsMessage()
             }
             storageSection
-            Section(L10n.string("Installation")) {
+            Section {
                 Button(L10n.string("Reinstall command-line tools")) {
                     Task { await installation.repair() }
                 }
@@ -800,6 +811,10 @@ struct SettingsView: View {
                     confirmPurge = true
                 }
                 .disabled(installation.isBusy)
+            } header: {
+                settingsSectionHeader(
+                    L10n.string("Installation"),
+                    identifier: "settings-installation")
             }
             if let version = installation.report?.version {
                 Section {
@@ -819,7 +834,7 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var storageSection: some View {
-        Section(L10n.string("Storage")) {
+        Section {
             if let report = storageStore.report {
                 LabeledContent(L10n.string("Detach data"), value: storageSize(report.allocatedBytes))
                 LabeledContent(
@@ -899,7 +914,28 @@ struct SettingsView: View {
                 Text(L10n.string("The installed Detach CLI returned incompatible storage data."))
                     .settingsMessage(color: .red)
             }
+        } header: {
+            settingsSectionHeader(
+                L10n.string("Storage"),
+                identifier: "settings-storage")
         }
+    }
+
+    private func settingsSectionHeader(
+        _ title: String,
+        identifier: String
+    ) -> some View {
+        Text(title)
+            .accessibilityIdentifier(identifier)
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+            .background {
+                if AppSettings.uiE2E != nil {
+                    UIE2EGeometryProbe(identifier: identifier)
+                }
+            }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
     }
 
     private func storageSelectionBinding(for session: StorageSession) -> Binding<Bool> {
@@ -1301,6 +1337,77 @@ struct SettingsView: View {
         ]
         guard let url = candidates.lazy.compactMap(URL.init(string:)).first else { return }
         NSWorkspace.shared.open(url)
+    }
+}
+
+/// Settings content may be taller than a laptop screen. The window stays
+/// inside the hosting window's visible frame; the form scrolls.
+private struct SettingsWindowFrame: NSViewRepresentable {
+    var width: CGFloat
+    var baseHeight: CGFloat
+    var fontPointSize: Double
+
+    func makeNSView(context: Context) -> SettingsWindowFrameView {
+        let view = SettingsWindowFrameView()
+        view.apply(width: width, baseHeight: baseHeight, fontPointSize: fontPointSize)
+        return view
+    }
+
+    func updateNSView(_ view: SettingsWindowFrameView, context: Context) {
+        view.apply(width: width, baseHeight: baseHeight, fontPointSize: fontPointSize)
+    }
+}
+
+private final class SettingsWindowFrameView: NSView {
+    private var width: CGFloat = 0
+    private var baseHeight: CGFloat = 0
+    private var fontPointSize = AppFontSize.defaultValue
+
+    func apply(width: CGFloat, baseHeight: CGFloat, fontPointSize: Double) {
+        self.width = width
+        self.baseHeight = baseHeight
+        self.fontPointSize = fontPointSize
+        pinToHostingScreen()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        NotificationCenter.default.removeObserver(
+            self, name: NSWindow.didChangeScreenNotification, object: nil)
+        if let window {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(screenDidChange),
+                name: NSWindow.didChangeScreenNotification,
+                object: window)
+        }
+        pinToHostingScreen()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func screenDidChange(_ notification: Notification) {
+        pinToHostingScreen()
+    }
+
+    private func pinToHostingScreen() {
+        guard let window, width > 0 else { return }
+        let visibleHeight = window.screen?.visibleFrame.height ?? 720
+        let size = CGSize(
+            width: width,
+            height: SettingsWindowLayout.contentHeight(
+                base: baseHeight,
+                fontPointSize: fontPointSize,
+                visibleScreenHeight: visibleHeight))
+        window.contentMinSize = size
+        window.contentMaxSize = size
+        let current = window.contentView?.bounds.size ?? .zero
+        if abs(current.width - size.width) > 0.5
+            || abs(current.height - size.height) > 0.5 {
+            window.setContentSize(size)
+        }
     }
 }
 
