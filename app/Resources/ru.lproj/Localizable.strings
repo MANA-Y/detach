@@ -112,6 +112,7 @@
 "Installation" = "Установка";
 "Launch Codex or Claude in Terminal" = "Запустить Codex или Claude в терминале";
 "Launch in Terminal" = "Запустить в терминале";
+"Live session terminal" = "Интерактивный терминал сессии";
 "Model context used" = "Занятый контекст модели";
 "Move Detach to Applications" = "Переместите Detach в Applications";
 "Move Detach.app to Applications and open the installed copy" = "Переместите Detach.app в Applications и откройте установленную копию";

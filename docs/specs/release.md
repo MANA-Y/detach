@@ -54,7 +54,8 @@ change real power state, upload assets, or claim publication.
   its digest is independently matched. Missing, extra, changed, or mismatched
   assets fail closed.
 - Each release includes a deterministic SPDX 2.3 SBOM. It lists the exact
-  Swift resolution and the checksummed tmux, libevent, and utf8proc sources.
+  Swift resolution, including SwiftTerm, and the checksummed tmux, libevent,
+  and utf8proc sources.
   The SBOM names the exact tag and commit. The release manifest binds its
   digest to the signed and notarized artifacts. Publication validates the SBOM
   before upload and after an independent remote download.

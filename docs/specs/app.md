@@ -4,16 +4,16 @@
 
 `app/` is a SwiftPM package containing `DetachKit`, `DetachApp`,
 `DetachWatchdog`, `DetachState`, `DetachPower`, and `DetachPowerHelper`. The app
-bundles and signs arm64-only versions of every executable, the immutable CLI
-payload, pinned tmux sources/licenses/provenance, Sparkle, and the complete
-pinned Sparkle license notice.
+bundles and signs arm64-only executables, the immutable CLI
+payload, pinned tmux sources/licenses/provenance, Sparkle, SwiftTerm, and
+their license notices.
 
 `ANSIParser` is the single terminal-preview decoder. It strips non-SGR control
 sequences and preserves terminal foreground/background colors, bold, dim,
 italic, underline, strikethrough, and reverse video. Reverse video swaps
 against `ANSIParser.terminalBackground`, which is also the `LogTextView`
 background; do not duplicate that canvas color. Font-size scaling may replace
-only the font attribute and must preserve every ANSI-derived attribute.
+only the font and must keep every ANSI attribute.
 
 Onboarding uses the pure reducer in `SetupGuidance.step(for:)`; a setup failure
 outranks provider discovery. A bare
@@ -162,19 +162,20 @@ user-specific path. Native power protection requires no Apple Events or
 Automation entitlement.
 
 Distribution bootstrap runs only from `/Applications`, never a DMG or App
-Translocation path. Terminal actions use `NSWorkspace`, not Apple Events. They
-open a private self-deleting `.command` file and reuse a running terminal app.
-If none runs, the launch environment sets a private `.zshenv` as outer
-`ZDOTDIR`. It blocks startup prompts until payload removal, then restores the
-original `ZDOTDIR` for that process. Open, Resume, and Recover use the selected
-terminal, with Terminal as fallback.
+Translocation path. A live managed session is interactive in Detach: an
+ephemeral PTY client runs `detach <provider> attach`. Closing
+the view or app ends only that client. Health and power stay typed. Open,
+Resume, and Recover use `NSWorkspace` and a `.command` file.
+They reuse a running selected terminal, or Terminal. If none runs, a private
+`.zshenv` is the outer `ZDOTDIR` until payload removal, then the original
+`ZDOTDIR` is restored.
 The new-session sheet accepts an optional UTF-8 name up to 100 bytes. It rejects
 control characters, explains invalid input, blocks launch, and passes one
 shell-quoted `--name` argument. The app uses `display_name` as the title, with
 the project/internal name fallback for old records.
-Notifications are opt-in. One app poller deduplicates baseline and transitions.
+Notifications are opt-in. One poller deduplicates baseline and transitions.
 
-Sparkle 2 is pinned in `Package.resolved`, embedded with its symlink layout
+Sparkle 2 and SwiftTerm 1.19.0 are pinned in `Package.resolved`. Sparkle is embedded with its symlink layout
 intact, and signed inside-out before the outer app. Ad-hoc development builds
 alone use `com.apple.security.cs.disable-library-validation`; it must never
 appear in a Developer ID build. `UpdaterService` starts only for a packaged app

@@ -9,12 +9,14 @@ struct SessionDetailView: View {
     @AppStorage(AppSettings.terminalBundleIdentifierKey, store: AppSettings.defaults)
     private var terminalBundleIdentifier =
         TerminalCatalog.defaultBundleIdentifier
+    @Environment(\.appFontPointSize) private var fontPointSize
 
     @State private var logPoller: LogPoller?
     @State private var actionError: String?
     @State private var terminalFailure: TerminalLaunchFailure?
     @State private var isLaunchingTerminal = false
     @State private var confirmDelete = false
+    @State private var attachClientActive = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -23,7 +25,14 @@ struct SessionDetailView: View {
             actionBar
         }
         .padding(16)
-        .task(id: session.effectiveStatus) {
+        .onChange(of: session.id) { _, _ in
+            attachClientActive = true
+        }
+        .task(id: "\(session.id)-\(showsEmbeddedTerminal)") {
+            guard !showsEmbeddedTerminal else {
+                logPoller = nil
+                return
+            }
             let poller = LogPoller(
                 cli: ProcessDetachCLI(executable: URL(fileURLWithPath: detachPath)),
                 provider: session.provider, sessionName: session.sessionName)
@@ -219,10 +228,25 @@ struct SessionDetailView: View {
         return NSAttributedString(string: "…", attributes: Self.placeholderAttributes)
     }
 
+    private var showsEmbeddedTerminal: Bool {
+        SessionAttachInvocation.shouldEmbed(session, clientActive: attachClientActive)
+    }
+
     private var logView: some View {
         VStack(spacing: 0) {
-            LogTextView(text: logContent)
-                .frame(maxHeight: .infinity)
+            if showsEmbeddedTerminal {
+                SessionAttachTerminalView(
+                    detachPath: detachPath,
+                    session: session,
+                    fontPointSize: fontPointSize,
+                    onTerminated: { _ in attachClientActive = false })
+                    .id(session.sessionName)
+                    .frame(maxHeight: .infinity)
+                    .accessibilityLabel(L10n.string("Live session terminal"))
+            } else {
+                LogTextView(text: logContent)
+                    .frame(maxHeight: .infinity)
+            }
             sessionColorStrip
         }
         .clipShape(RoundedRectangle(cornerRadius: 8))
