@@ -220,7 +220,7 @@ def warm(root: Path, logical_cpus: int | None = None) -> int:
     coverage_command = [
         "swift", "build", "--enable-code-coverage", "--disable-sandbox",
         "--disable-automatic-resolution", "--cache-path", str(app / ".build"),
-        "-c", "release", "--triple", "arm64-apple-macosx26.0",
+        "-c", "release", "--triple", "arm64-apple-macosx15.0",
         "--scratch-path", str(coverage_scratch), "--product", "DetachApp",
         "--jobs", str(coverage_jobs),
     ]

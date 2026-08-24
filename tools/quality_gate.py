@@ -2506,7 +2506,7 @@ def run_app_stage(root: Path) -> int:
         "-c",
         "release",
         "--triple",
-        "arm64-apple-macosx26.0",
+        "arm64-apple-macosx15.0",
         "--scratch-path",
         str(root / "app/.build" / UI_COVERAGE_SCRATCH),
         "--product",

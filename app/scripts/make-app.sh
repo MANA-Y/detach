@@ -224,7 +224,7 @@ build_arch() {
   if [ "$QUALITY_APP_SCRATCH" = 1 ]; then
     scratch="$APP_ROOT/.build/quality-app-release"
   fi
-  local triple="$arch-apple-macosx26.0"
+  local triple="$arch-apple-macosx15.0"
   local build_args=(
     --disable-sandbox
     --disable-automatic-resolution
