@@ -297,6 +297,17 @@ enum UIE2ETestDriver {
                 identifier: "finished-selection-mode-button")
             try requireSemanticControl(
                 selectionMode, name: "finished selection mode")
+            let selectionModeFrame = try await measuredFrame(
+                identifier: "finished-selection-mode-button",
+                name: "finished selection mode")
+            let finishedHeaderFrame = try await measuredFrame(
+                identifier: "finished-section-header",
+                name: "finished section header")
+            guard finishedHeaderFrame.maxX - selectionModeFrame.maxX >= 10 else {
+                throw Failure(
+                    message: "finished selection mode has no trailing scroll clearance")
+            }
+            checks.append("finished-selection-clears-scrollbar")
             _ = try await clickUntilElement(
                 selectionMode,
                 name: "finished selection mode",
