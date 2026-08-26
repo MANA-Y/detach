@@ -138,6 +138,36 @@ class QualityGateContract(unittest.TestCase):
             ROOT / "app/.build/quality-ui-release/arm64-apple-macosx/release/DetachApp",
         )
 
+    def test_exact_hosted_app_is_verified_while_coverage_builds(self) -> None:
+        commands: list[list[str]] = []
+
+        class FakeProcess:
+            def __init__(self, command, *, cwd, env):
+                self.command = command
+
+            def wait(self):
+                return 0
+
+        def fake_child_run(command, *, cwd=ROOT, env=None):
+            commands.append(command)
+            return 0
+
+        environment = {
+            "DETACH_QUALITY_EXACT_APP": "1",
+            "DETACH_QUALITY_GATE_SELECTED_STAGES": "app,quality-contracts",
+            "DETACH_QUALITY_GATE_AUTHORITY": "ci-shard",
+            "GITHUB_ACTIONS": "true",
+        }
+        with patch.dict("os.environ", environment, clear=True), patch(
+            "quality_gate.subprocess.Popen", FakeProcess
+        ), patch("quality_gate.child_run", fake_child_run):
+            self.assertEqual(run_app_stage(ROOT), 0)
+        self.assertEqual(commands, [[str(ROOT / "app/scripts/verify-app.sh")]])
+
+        environment["DETACH_QUALITY_GATE_AUTHORITY"] = "local-diagnostic"
+        with patch.dict("os.environ", environment, clear=True):
+            self.assertEqual(run_app_stage(ROOT), 2)
+
 
 def main() -> int:
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(QualityGateContract)

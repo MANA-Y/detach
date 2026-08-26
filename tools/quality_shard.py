@@ -127,7 +127,7 @@ def shard_plan(plan: dict[str, object]) -> list[dict[str, object]]:
             raise ShardError(f"planned stage has more than one shard: {sorted(overlap)[0]}")
         owned.update(stages)
         remaining.difference_update(stages)
-        needs_app = bool({"codex", "claude", "tmux-runtime"} & set(stages))
+        needs_app = bool({"app", "codex", "claude", "tmux-runtime"} & set(stages))
         needs_cache = bool({"swift", "app", "ui-e2e"} & set(stages))
         shards.append(
             {

@@ -73,6 +73,7 @@ class QualityShardContract(unittest.TestCase):
         self.assertEqual(len(flattened), len(stages))
         build = shard_for({"stages": stages}, "build-and-coverage")
         self.assertEqual(build["stages"], "swift,quality-contracts,app,ui-e2e")
+        self.assertTrue(build["needs_app"])
         self.assertTrue(build["needs_cache"])
         self.assertTrue(build["needs_metrics"])
         contracts = shard_for({"stages": stages}, "contracts-and-runtime")

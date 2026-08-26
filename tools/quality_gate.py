@@ -1137,6 +1137,7 @@ class QualityGate:
 
     def stage_environment(self, stage: str) -> dict[str, str]:
         environment = os.environ.copy()
+        exact_app = environment.pop("DETACH_QUALITY_EXACT_APP", "")
         for name in (
             "DETACH_RELEASE_TIMING_OVERRIDE",
             "DETACH_CONFIRM_RELEASE",
@@ -1177,6 +1178,8 @@ class QualityGate:
                 ),
             }
         )
+        if stage == "app" and exact_app:
+            environment["DETACH_QUALITY_EXACT_APP"] = exact_app
         if not self.test_direct:
             environment["DETACH_RELEASE_TESTS_DETACHED"] = "1"
         return environment
@@ -2150,9 +2153,25 @@ def split_quality_pipeline_jobs(
 
 def run_app_stage(root: Path) -> int:
     make_app = [str(root / "app/scripts/make-app.sh")]
+    exact_app = os.environ.get("DETACH_QUALITY_EXACT_APP", "")
+    if exact_app not in ("", "1"):
+        print("quality-gate: DETACH_QUALITY_EXACT_APP must be 1", file=sys.stderr)
+        return 2
+    if exact_app and (
+        os.environ.get("GITHUB_ACTIONS") != "true"
+        or os.environ.get("DETACH_QUALITY_GATE_AUTHORITY") != "ci-shard"
+    ):
+        print(
+            "quality-gate: exact app reuse requires hosted shard authority",
+            file=sys.stderr,
+        )
+        return 2
+    normal_command = (
+        [str(root / "app/scripts/verify-app.sh")] if exact_app else make_app
+    )
     selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
     if "quality-contracts" not in selected:
-        return child_run(make_app)
+        return child_run(normal_command)
 
     parallel_swift = "swift" in selected and (os.cpu_count() or 0) >= 3
     if parallel_swift:
@@ -2195,7 +2214,7 @@ def run_app_stage(root: Path) -> int:
         cwd=root / "app",
         env=coverage_environment,
     )
-    normal_status = child_run(make_app, env=normal_environment)
+    normal_status = child_run(normal_command, env=normal_environment)
     coverage_status = coverage_process.wait()
     return normal_status or coverage_status
 
