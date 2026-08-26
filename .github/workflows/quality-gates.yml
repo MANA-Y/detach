@@ -99,9 +99,21 @@ jobs:
             app/build/Detach.app
             app/.build/tmux-runtime/arm64/product
           key: detach-app-v2-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Resources/**/*', 'app/scripts/make-app.sh', 'app/scripts/bundle-modes.sh', 'app/scripts/verify-app.sh', 'bin/detach', 'bin/detach-core', 'scripts/install.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
+      - name: Restore exact executable quality products
+        id: product-cache
+        if: matrix.needs_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            app/.build/quality-products-v1.json
+            app/.build/quality-swift-tests/arm64-apple-macosx/debug/DetachAppPackageTests.xctest
+            app/.build/quality-swift-tests/arm64-apple-macosx/debug/Sparkle.framework
+            app/.build/quality-ui-release/arm64-apple-macosx/release/DetachApp
+            app/.build/quality-ui-release/arm64-apple-macosx/release/Sparkle.framework
+          key: detach-quality-products-v1-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Tests/**/*.swift', 'app/Resources/DetachWatchdog-Info.plist', 'tools/quality_cache_warm.py', 'tools/quality_products.py', 'VERSION', 'BUILD') }}
       - name: Restore exact Swift and tmux inputs
         id: swift-cache
-        if: matrix.needs_cache || (matrix.needs_app && steps.app-cache.outputs.cache-hit != 'true')
+        if: (matrix.needs_cache && steps.product-cache.outputs.cache-hit != 'true') || (matrix.needs_app && steps.app-cache.outputs.cache-hit != 'true')
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -115,6 +127,11 @@ jobs:
       - name: Materialize exact Swift dependencies
         if: steps.swift-cache.outcome == 'success'
         run: scripts/quality-cache-warm --dependencies-only
+      - name: Verify and bind exact executable quality products
+        if: matrix.needs_cache && steps.product-cache.outputs.cache-hit == 'true'
+        run: |
+          python3 tools/quality_products.py verify
+          printf 'DETACH_QUALITY_EXACT_PRODUCTS=1\n' >>"$GITHUB_ENV"
       - name: Verify and bind exact packaged test app
         if: matrix.needs_app && steps.app-cache.outputs.cache-hit == 'true'
         run: |
@@ -213,9 +230,21 @@ jobs:
             app/build/Detach.app
             app/.build/tmux-runtime/arm64/product
           key: detach-app-v2-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Resources/**/*', 'app/scripts/make-app.sh', 'app/scripts/bundle-modes.sh', 'app/scripts/verify-app.sh', 'bin/detach', 'bin/detach-core', 'scripts/install.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
+      - name: Restore exact executable quality products
+        id: product-cache
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            app/.build/quality-products-v1.json
+            app/.build/quality-swift-tests/arm64-apple-macosx/debug/DetachAppPackageTests.xctest
+            app/.build/quality-swift-tests/arm64-apple-macosx/debug/Sparkle.framework
+            app/.build/quality-ui-release/arm64-apple-macosx/release/DetachApp
+            app/.build/quality-ui-release/arm64-apple-macosx/release/Sparkle.framework
+          key: detach-quality-products-v1-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Tests/**/*.swift', 'app/Resources/DetachWatchdog-Info.plist', 'tools/quality_cache_warm.py', 'tools/quality_products.py', 'VERSION', 'BUILD') }}
       - name: Restore Swift and tmux caches
         id: swift-cache
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && (steps.product-cache.outputs.cache-hit != 'true' || steps.app-cache.outputs.cache-hit != 'true')
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -226,6 +255,16 @@ jobs:
       - name: Reuse exact cached Swift products
         if: github.event_name != 'pull_request' && steps.swift-cache.outputs.cache-hit == 'true'
         run: scripts/quality-cache-warm --reuse-exact-products
+      - name: Verify and bind exact executable quality products
+        if: github.event_name != 'pull_request' && steps.product-cache.outputs.cache-hit == 'true'
+        run: |
+          python3 tools/quality_products.py verify
+          printf 'DETACH_QUALITY_EXACT_PRODUCTS=1\n' >>"$GITHUB_ENV"
+      - name: Verify and bind exact packaged test app
+        if: github.event_name != 'pull_request' && steps.app-cache.outputs.cache-hit == 'true'
+        run: |
+          app/scripts/verify-app.sh
+          printf 'DETACH_QUALITY_EXACT_APP=1\n' >>"$GITHUB_ENV"
       - id: swift-warm
         name: Warm exact promoted-main Swift cache
         if: steps.promoted-main.outputs.promoted == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
@@ -250,6 +289,10 @@ jobs:
         name: Record completed main Swift products
         if: github.event_name != 'pull_request' && steps.swift-cache.outputs.cache-hit != 'true' && steps.promoted-main.outputs.promoted != 'true' && steps.main-gate.outcome == 'success'
         run: scripts/quality-cache-warm --record-product-inputs
+      - id: product-warm
+        name: Publish exact main executable products
+        if: github.event_name != 'pull_request' && steps.product-cache.outputs.cache-hit != 'true' && ((steps.promoted-main.outputs.promoted == 'true' && (steps.swift-cache.outputs.cache-hit == 'true' || steps.swift-warm.outcome == 'success')) || (steps.promoted-main.outputs.promoted != 'true' && steps.main-gate.outcome == 'success'))
+        run: python3 tools/quality_products.py publish
       - name: Save Swift and tmux caches
         if: always() && github.event_name != 'pull_request' && steps.swift-cache.outcome == 'success' && steps.swift-cache.outputs.cache-hit != 'true' && ((steps.promoted-main.outputs.promoted == 'true' && steps.swift-warm.outcome == 'success') || (steps.promoted-main.outputs.promoted != 'true' && steps.main-products.outcome == 'success'))
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -265,6 +308,17 @@ jobs:
             app/build/Detach.app
             app/.build/tmux-runtime/arm64/product
           key: detach-app-v2-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Resources/**/*', 'app/scripts/make-app.sh', 'app/scripts/bundle-modes.sh', 'app/scripts/verify-app.sh', 'bin/detach', 'bin/detach-core', 'scripts/install.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
+      - name: Save exact executable quality products
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.product-cache.outcome == 'success' && steps.product-cache.outputs.cache-hit != 'true' && steps.product-warm.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            app/.build/quality-products-v1.json
+            app/.build/quality-swift-tests/arm64-apple-macosx/debug/DetachAppPackageTests.xctest
+            app/.build/quality-swift-tests/arm64-apple-macosx/debug/Sparkle.framework
+            app/.build/quality-ui-release/arm64-apple-macosx/release/DetachApp
+            app/.build/quality-ui-release/arm64-apple-macosx/release/Sparkle.framework
+          key: detach-quality-products-v1-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Tests/**/*.swift', 'app/Resources/DetachWatchdog-Info.plist', 'tools/quality_cache_warm.py', 'tools/quality_products.py', 'VERSION', 'BUILD') }}
       - name: Publish gate summary
         if: always()
         shell: bash

@@ -66,6 +66,7 @@ It lists current specification ownership and verification links.
 - `tools/quality_metrics.py`
 - `tools/quality_mutation.py`
 - `tools/quality_policy.py`
+- `tools/quality_products.py`
 - `tools/quality_promote.py`
 - `tools/quality_scenarios.py`
 - `tools/quality_security.py`

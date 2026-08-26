@@ -18,6 +18,7 @@ from quality_gate import (  # noqa: E402
     EXECUTION_PREREQUISITES,
     GateError,
     QualityGate,
+    exact_products_enabled,
     gate_contract_definitions,
     gate_orchestrator_limit,
     include_gate_orchestrators,
@@ -137,6 +138,10 @@ class QualityGateContract(unittest.TestCase):
             ui_coverage_binary(ROOT),
             ROOT / "app/.build/quality-ui-release/arm64-apple-macosx/release/DetachApp",
         )
+        self.assertEqual(
+            ui_coverage_binary(ROOT, exact_products=True),
+            ROOT / "app/.build/quality-ui-release/arm64-apple-macosx/release/DetachApp",
+        )
 
     def test_exact_hosted_app_is_verified_while_coverage_builds(self) -> None:
         commands: list[list[str]] = []
@@ -167,6 +172,33 @@ class QualityGateContract(unittest.TestCase):
         environment["DETACH_QUALITY_GATE_AUTHORITY"] = "local-diagnostic"
         with patch.dict("os.environ", environment, clear=True):
             self.assertEqual(run_app_stage(ROOT), 2)
+
+    def test_exact_products_are_hosted_only_and_skip_coverage_build(self) -> None:
+        commands: list[list[str]] = []
+
+        def fake_child_run(command, *, cwd=ROOT, env=None):
+            commands.append(command)
+            return 0
+
+        environment = {
+            "DETACH_QUALITY_EXACT_APP": "1",
+            "DETACH_QUALITY_EXACT_PRODUCTS": "1",
+            "DETACH_QUALITY_GATE_SELECTED_STAGES": "app,quality-contracts",
+            "DETACH_QUALITY_GATE_AUTHORITY": "ci-shard",
+            "GITHUB_ACTIONS": "true",
+        }
+        with patch.dict("os.environ", environment, clear=True), patch(
+            "quality_gate.subprocess.Popen"
+        ) as coverage, patch("quality_gate.child_run", fake_child_run):
+            self.assertTrue(exact_products_enabled())
+            self.assertEqual(run_app_stage(ROOT), 0)
+        coverage.assert_not_called()
+        self.assertEqual(commands, [[str(ROOT / "app/scripts/verify-app.sh")]])
+
+        environment["DETACH_QUALITY_GATE_AUTHORITY"] = "local-diagnostic"
+        with patch.dict("os.environ", environment, clear=True):
+            with self.assertRaisesRegex(GateError, "hosted CI authority"):
+                exact_products_enabled()
 
 
 def main() -> int:

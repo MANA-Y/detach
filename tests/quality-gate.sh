@@ -54,6 +54,22 @@ grep -F 'DETACH_QUALITY_EXACT_APP=1' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F "steps.app-cache.outputs.cache-hit != 'true'" \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'key: detach-quality-products-v1-' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'app/.build/quality-products-v1.json' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'python3 tools/quality_products.py verify' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'DETACH_QUALITY_EXACT_PRODUCTS=1' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F "steps.product-cache.outputs.cache-hit != 'true'" \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'name: Publish exact main executable products' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'run: python3 tools/quality_products.py publish' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'name: Save exact executable quality products' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'key: detach-swift-v3-' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'run: scripts/quality-cache-warm --reuse-exact-products' \
