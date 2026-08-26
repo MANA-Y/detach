@@ -81,8 +81,8 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   more CPUs. Smaller hosts run them in order. UI waits for the app; metrics
   wait for Swift and UI. Later work uses two heavy lanes and one integration
   lane. Distribution waits for gate-contract.
-- The Swift key covers the compiler, package, code, build scripts, and version.
-  A promoted `main` run can warm all products. Warming is not evidence.
+- Exact keys bind code, resources, scripts, version, and toolchain. Promoted
+  `main` warms Swift products and the test app. Warming is not evidence.
 - CI uses the newest green `main` artifact with measured metrics. A later run
   without metrics does not replace it. Test identities, aggregate coverage,
   and critical-source coverage cannot decrease. Changed Swift lines need 90

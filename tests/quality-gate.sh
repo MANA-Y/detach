@@ -42,6 +42,12 @@ grep -F 'if: matrix.needs_metrics' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'if: matrix.needs_cache' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'key: detach-app-v1-' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'name: Verify exact packaged test app' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F "steps.app-cache.outputs.cache-hit != 'true'" \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'key: detach-swift-v3-' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'run: scripts/quality-cache-warm --reuse-exact-products' \

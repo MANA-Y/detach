@@ -128,9 +128,7 @@ def shard_plan(plan: dict[str, object]) -> list[dict[str, object]]:
         owned.update(stages)
         remaining.difference_update(stages)
         needs_app = bool({"codex", "claude", "tmux-runtime"} & set(stages))
-        needs_cache = needs_app or bool(
-            {"swift", "app", "ui-e2e", "tmux-runtime"} & set(stages)
-        )
+        needs_cache = bool({"swift", "app", "ui-e2e"} & set(stages))
         shards.append(
             {
                 "id": identifier,
