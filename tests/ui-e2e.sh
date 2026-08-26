@@ -323,10 +323,10 @@ run_app_scenario main sessions 20 \
   background-app-starts-without-focus \
   dashboard-accessible \
   sidebar-selects-completed-session \
-  bulk-delete-reaches-fake-cli \
   session-signals-stay-distinct \
   disconnected-stop-blocks-action \
   safe-action-reaches-fake-cli \
+  bulk-delete-reaches-fake-cli \
   new-session-sheet-semantics \
   empty-dashboard-state \
   installed-app-focus-restored

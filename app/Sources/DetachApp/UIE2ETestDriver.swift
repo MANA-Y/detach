@@ -236,51 +236,6 @@ enum UIE2ETestDriver {
             checks.append("sidebar-selects-completed-session")
             trace("completed session selected")
 
-            let selectionMode = try await element(
-                identifier: "finished-selection-mode-button")
-            try requireSemanticControl(
-                selectionMode, name: "finished selection mode")
-            _ = try await clickUntilElement(
-                selectionMode,
-                name: "finished selection mode",
-                resultIdentifier: "finished-select-all-button")
-            let selectAll = try await element(identifier: "finished-select-all-button")
-            try requireSemanticControl(selectAll, name: "select all finished sessions")
-            try await click(selectAll, name: "select all finished sessions")
-            let bulkDeleteButton = try await element(identifier: "finished-delete-button")
-            try await waitUntil("enabled bulk delete button") {
-                find(identifier: "finished-delete-button")
-                    .map(isEnabled) == true
-            }
-            try requireSemanticControl(bulkDeleteButton, name: "bulk delete action")
-            let confirmDelete = try await clickUntilSheetButton(
-                bulkDeleteButton, name: "bulk delete action", label: "Delete")
-            try requireSemanticControl(confirmDelete, name: "delete confirmation")
-            try await clickUntil(
-                confirmDelete,
-                name: "delete confirmation",
-                outcome: "fake CLI records both delete actions") {
-                let actions = try? String(
-                    contentsOf: configuration.root
-                        .appendingPathComponent("fake/actions.log"),
-                    encoding: .utf8)
-                return actions?.contains(
-                    "claude delete --force \(completedID)") == true
-                    && actions?.contains(
-                        "codex delete --force detach-codex-ui-stopped") == true
-            }
-            checks.append("bulk-delete-reaches-fake-cli")
-            trace("bulk delete reached fake CLI")
-            let deleteObservedAt = Date()
-            try await waitUntil("post-delete session refresh") {
-                store.lastUpdated.map { $0 >= deleteObservedAt } == true
-            }
-            try await waitUntil("delete confirmation dismissal") {
-                NSApp.windows.allSatisfy(\.sheets.isEmpty)
-            }
-            try await activate(mainWindow)
-            try await Task.sleep(nanoseconds: 200_000_000)
-
             let runningID = "detach-codex-ui-running"
             let runningRow = try await element(
                 identifier: "session-row-\(runningID)")
@@ -337,6 +292,91 @@ enum UIE2ETestDriver {
             }
             checks.append("safe-action-reaches-fake-cli")
             trace("stop reached fake CLI")
+
+            let selectionMode = try await element(
+                identifier: "finished-selection-mode-button")
+            try requireSemanticControl(
+                selectionMode, name: "finished selection mode")
+            _ = try await clickUntilElement(
+                selectionMode,
+                name: "finished selection mode",
+                resultIdentifier: "finished-select-all-button")
+            let completedSelectionID = "finished-selection-\(completedID)"
+            var completedSelection = try await element(identifier: completedSelectionID)
+            try requireSemanticControl(
+                completedSelection, name: "completed session selection")
+            try await click(completedSelection, name: "select completed session")
+            try await waitUntil("selected completed session") {
+                find(identifier: completedSelectionID)
+                    .flatMap(label)?.hasPrefix("Deselect") == true
+            }
+            completedSelection = try await element(identifier: completedSelectionID)
+            try await click(completedSelection, name: "deselect completed session")
+            try await waitUntil("deselected completed session") {
+                find(identifier: completedSelectionID)
+                    .flatMap(label)?.hasPrefix("Select") == true
+            }
+
+            var selectAll = try await element(identifier: "finished-select-all-button")
+            try requireSemanticControl(selectAll, name: "select all finished sessions")
+            try await click(selectAll, name: "select all finished sessions")
+            try await waitUntil("all finished sessions selected") {
+                find(identifier: "finished-select-all-button")
+                    .flatMap(label) == "Clear selection"
+            }
+            selectAll = try await element(identifier: "finished-select-all-button")
+            try await click(selectAll, name: "clear finished selection")
+            try await waitUntil("finished selection cleared") {
+                find(identifier: "finished-select-all-button")
+                    .flatMap(label) == "Select all"
+            }
+
+            let done = try await element(identifier: "finished-selection-mode-button")
+            try await click(done, name: "leave finished selection mode")
+            try await waitUntil("finished selection mode closed") {
+                find(identifier: "finished-select-all-button") == nil
+            }
+            let selectAgain = try await element(
+                identifier: "finished-selection-mode-button")
+            _ = try await clickUntilElement(
+                selectAgain,
+                name: "reopen finished selection mode",
+                resultIdentifier: "finished-select-all-button")
+            selectAll = try await element(identifier: "finished-select-all-button")
+            try await click(selectAll, name: "select all finished sessions")
+            let bulkDeleteButton = try await element(identifier: "finished-delete-button")
+            try await waitUntil("enabled bulk delete button") {
+                find(identifier: "finished-delete-button")
+                    .map(isEnabled) == true
+            }
+            try requireSemanticControl(bulkDeleteButton, name: "bulk delete action")
+            let confirmDelete = try await clickUntilSheetButton(
+                bulkDeleteButton, name: "bulk delete action", label: "Delete")
+            try requireSemanticControl(confirmDelete, name: "delete confirmation")
+            try await clickUntil(
+                confirmDelete,
+                name: "delete confirmation",
+                outcome: "fake CLI records both delete actions") {
+                let actions = try? String(
+                    contentsOf: configuration.root
+                        .appendingPathComponent("fake/actions.log"),
+                    encoding: .utf8)
+                return actions?.contains(
+                    "claude delete --force \(completedID)") == true
+                    && actions?.contains(
+                        "codex delete --force detach-codex-ui-stopped") == true
+            }
+            checks.append("bulk-delete-reaches-fake-cli")
+            trace("bulk delete reached fake CLI")
+            let deleteObservedAt = Date()
+            try await waitUntil("post-delete session refresh") {
+                store.lastUpdated.map { $0 >= deleteObservedAt } == true
+            }
+            try await waitUntil("delete confirmation dismissal") {
+                NSApp.windows.allSatisfy(\.sheets.isEmpty)
+            }
+            try await activate(mainWindow)
+            try await Task.sleep(nanoseconds: 200_000_000)
 
             let newSession = try await element(identifier: "new-session-button")
             try requireSemanticControl(newSession, name: "new session action")

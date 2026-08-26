@@ -15,6 +15,11 @@ public struct SessionDeletionFailure: Equatable, Sendable {
 
 @Observable @MainActor
 public final class SessionStore {
+    private enum Mutation {
+        case stop
+        case delete
+    }
+
     public enum State: Equatable, Sendable {
         case ok
         case cliMissing
@@ -127,7 +132,8 @@ public final class SessionStore {
                 "Internal error: %@ must run in Terminal",
                 action.rawValue)
         }
-        let result = await run(action, on: session)
+        let mutation: Mutation = action == .stop ? .stop : .delete
+        let result = await run(mutation, on: session)
         if result.launched { await refresh() }
         return result.message
     }
@@ -162,19 +168,15 @@ public final class SessionStore {
     }
 
     private func run(
-        _ action: SessionAction,
+        _ mutation: Mutation,
         on session: Session
     ) async -> (message: String?, launched: Bool) {
         let arguments: [String]
-        switch action {
+        switch mutation {
         case .stop:
             arguments = [session.provider.rawValue, "stop", session.sessionName]
         case .delete:
             arguments = [session.provider.rawValue, "delete", "--force", session.sessionName]
-        case .attach, .resume, .recover:
-            return (L10n.format(
-                "Internal error: %@ must run in Terminal",
-                action.rawValue), false)
         }
         do {
             let result = try await cli.run(arguments: arguments, timeout: 30)

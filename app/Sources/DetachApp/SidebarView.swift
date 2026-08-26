@@ -1,6 +1,14 @@
 import SwiftUI
 import DetachKit
 
+enum FinishedDeletionPresentation {
+    static func errorMessage(for failures: [SessionDeletionFailure]) -> String {
+        failures
+            .map { "\($0.displayTitle): \($0.message)" }
+            .joined(separator: "\n")
+    }
+}
+
 struct SidebarView: View {
     @Environment(\.appFontPointSize) private var fontPointSize
     let store: SessionStore
@@ -315,9 +323,8 @@ struct SidebarView: View {
             if failures.isEmpty {
                 isSelectingFinished = false
             } else {
-                finishedDeleteError = failures
-                    .map { "\($0.displayTitle): \($0.message)" }
-                    .joined(separator: "\n")
+                finishedDeleteError = FinishedDeletionPresentation.errorMessage(
+                    for: failures)
             }
         }
     }
