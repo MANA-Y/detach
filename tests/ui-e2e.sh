@@ -295,7 +295,8 @@ run_app_scenario() {
       exit 1
     }
     case "$check" in
-      background-app-starts-without-focus|disconnected-stop-blocks-action) ;;
+      background-app-starts-without-focus|disconnected-stop-blocks-action|\
+      finished-selection-clears-scrollbar) ;;
       dashboard-accessible) pass=SC-UI-DASHBOARD ;;
       sidebar-selects-completed-session) ;;
       bulk-delete-reaches-fake-cli) pass=SC-UI-SESSION-DELETE ;;
@@ -326,6 +327,7 @@ run_app_scenario main sessions 20 \
   session-signals-stay-distinct \
   disconnected-stop-blocks-action \
   safe-action-reaches-fake-cli \
+  finished-selection-clears-scrollbar \
   bulk-delete-reaches-fake-cli \
   new-session-sheet-semantics \
   empty-dashboard-state \
