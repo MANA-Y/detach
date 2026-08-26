@@ -23,6 +23,28 @@ grep -F 'run: scripts/quality-gate --mode impact --base "$BASE_SHA" --keep-going
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'run: scripts/quality-gate --mode repository --keep-going --without-release-budget' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'name: Validate and plan exact pull-request impact' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'scripts/quality-gate --mode impact --base "$BASE_SHA" --plan' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'name: Run fail-fast static contracts' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'run: scripts/quality-gate --mode impact --base "$BASE_SHA" --stage static --without-release-budget' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'DETACH_QUALITY_GATE_RESULT_ROOT: ${{ runner.temp }}/quality-fail-fast' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F "steps.impact.outputs.needs_metrics == 'true'" \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F "steps.impact.outputs.needs_swift_cache == 'true'" \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'key: detach-swift-v2-' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'run: scripts/quality-cache-warm' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+if grep -F 'jq ' "$ROOT/.github/workflows/quality-gates.yml" >/dev/null; then
+  printf 'quality workflow reintroduced ambient jq\n' >&2
+  exit 1
+fi
 grep -F 'name: Promote exact pull-request evidence' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F '  pull-requests: read' \
@@ -82,7 +104,7 @@ prepare_template() {
   printf '%s\n' baseline >"$TEMPLATE_REPO/README.md"
   printf '%s\n' actions.log results '*.out' /presentations/ >"$TEMPLATE_REPO/.gitignore"
   for stage in static gate-contract swift quality-contracts app ui-e2e codex claude distribution tmux-runtime release-preflight publish-preflight release-workflow; do
-    printf '#!/bin/bash\nset -eu\n[ -z "${DETACH_RELEASE_TIMING_OVERRIDE:-}" ] || { printf "release timing override leaked into stage\\n" >&2; exit 1; }\n[ -z "${DETACH_CONFIRM_RELEASE:-}" ] || { printf "release confirmation leaked into stage\\n" >&2; exit 1; }\n[ "${CLANG_MODULE_CACHE_PATH:-}" = "${GATE_EXPECTED_MODULE_CACHE:?}" ] || { printf "unexpected Clang module cache: %%s\\n" "${CLANG_MODULE_CACHE_PATH:-missing}" >&2; exit 1; }\n[ "${SWIFTPM_MODULECACHE_OVERRIDE:-}" = "$GATE_EXPECTED_MODULE_CACHE" ] || { printf "unexpected SwiftPM module cache: %%s\\n" "${SWIFTPM_MODULECACHE_OVERRIDE:-missing}" >&2; exit 1; }\nprintf "%%s\\n" "%s" >>"${GATE_ACTION_LOG:?}"\nsleep "${STAGE_SLEEP:-0}"\ncase " ${FAIL_STAGES:-} " in *" %s "*) exit 23 ;; esac\n' "$stage" "$stage" \
+    printf '#!/bin/bash\nset -eu\nexpected_cache="${GATE_EXPECTED_MODULE_CACHE:?}/%s"\n[ -z "${DETACH_RELEASE_TIMING_OVERRIDE:-}" ] || { printf "release timing override leaked into stage\\n" >&2; exit 1; }\n[ -z "${DETACH_CONFIRM_RELEASE:-}" ] || { printf "release confirmation leaked into stage\\n" >&2; exit 1; }\n[ "${CLANG_MODULE_CACHE_PATH:-}" = "$expected_cache" ] || { printf "unexpected Clang module cache: %%s\\n" "${CLANG_MODULE_CACHE_PATH:-missing}" >&2; exit 1; }\n[ "${SWIFTPM_MODULECACHE_OVERRIDE:-}" = "$expected_cache" ] || { printf "unexpected SwiftPM module cache: %%s\\n" "${SWIFTPM_MODULECACHE_OVERRIDE:-missing}" >&2; exit 1; }\nprintf "%%s\\n" "%s" >>"${GATE_ACTION_LOG:?}"\nsleep "${STAGE_SLEEP:-0}"\ncase " ${FAIL_STAGES:-} " in *" %s "*) exit 23 ;; esac\n' "$stage" "$stage" "$stage" \
       >"$TEMPLATE_REPO/tests/quality-gate-fixtures/$stage"
     chmod 0755 "$TEMPLATE_REPO/tests/quality-gate-fixtures/$stage"
   done
@@ -733,13 +755,27 @@ mkdir -p "$ORDER_ROOT"
 cat >"$REPO/tests/quality-gate-fixtures/swift" <<'SH'
 #!/bin/bash
 set -eu
+: >"${GATE_ORDER_ROOT:?}/swift-started"
+attempt=0
+while [ ! -f "$GATE_ORDER_ROOT/app-started" ] && [ "$attempt" -lt 50 ]; do
+  attempt=$((attempt + 1))
+  sleep 0.1
+done
+[ -f "$GATE_ORDER_ROOT/app-started" ]
 sleep 1
-: >"${GATE_ORDER_ROOT:?}/swift"
+: >"$GATE_ORDER_ROOT/swift"
 SH
 cat >"$REPO/tests/quality-gate-fixtures/app" <<'SH'
 #!/bin/bash
 set -eu
-[ -f "${GATE_ORDER_ROOT:?}/swift" ]
+: >"${GATE_ORDER_ROOT:?}/app-started"
+attempt=0
+while [ ! -f "$GATE_ORDER_ROOT/swift-started" ] && [ "$attempt" -lt 50 ]; do
+  attempt=$((attempt + 1))
+  sleep 0.1
+done
+[ -f "$GATE_ORDER_ROOT/swift-started" ]
+[ ! -f "$GATE_ORDER_ROOT/swift" ]
 : >"$GATE_ORDER_ROOT/app"
 SH
 cat >"$REPO/tests/quality-gate-fixtures/quality-contracts" <<'SH'

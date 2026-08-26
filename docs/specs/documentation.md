@@ -67,30 +67,33 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
 - A local timing-budget failure creates performance work. Warm-cache or
   variance reruns cannot turn it into readiness; an unchanged rerun is allowed
   only for an evidenced unrelated external transient whose cause is recorded.
-- Pull-request CI runs each selected check once. Only the tested merge first
-  parent is a valid impact base. CI keeps timing ratchets but not reference-Mac
-  ceilings. Its overall deadline is ten minutes.
+- Pull-request CI runs each check once from the tested merge and first parent.
+  It validates the plan and static contracts before optional cache restore.
+  The gate recomputes both. CI keeps timing ratchets, a ten-minute deadline,
+  and no reference-Mac ceilings.
 - The gate-contract runner admits three process-heavy orchestrator shards on a
   host with at least eight logical CPUs, and two on a smaller host. Lightweight
   contracts stay concurrent. The runner does not increase a timing budget to
   hide process oversubscription.
-- After exclusive SwiftPM and UI phases, a priority queue starts ready work.
-  At most two top-level process-heavy lanes compete. One separate integration
-  and preflight lane can run with them. Short preflight and runtime checks can
-  use it during gate-contract. Distribution waits for gate-contract. A
-  completed stage opens its slot without a fixed wave barrier.
+- Swift tests and both release builds use separate caches. A host with three
+  CPUs splits them. Smaller hosts run Swift and app in order.
+  UI waits for the normal app; metrics wait for Swift tests and UI. Later work
+  uses two heavy lanes and one integration lane. Distribution waits for
+  gate-contract.
+- The Swift key covers the compiler, package, code, build scripts, and version
+  metadata. A promoted `main` run can warm the three
+  products. Warming emits no evidence and cannot replace a selected check.
 - CI uses the newest green `main` artifact with measured metrics. A later run
   without metrics does not replace it. Test identities, aggregate coverage,
   and critical-source coverage cannot decrease. Changed Swift lines need 90
   percent coverage. A person cannot raise floors. Policy-owned exclusions need
   scenario evidence and cannot cover critical sources. Named test-only regions
   stay in aggregate coverage but not changed-line metrics.
-- Authoritative UI coverage combines instrumented Swift tests with
-  packaged-app journeys. The app stage builds the normal bundle and an
-  instrumented release executable in isolated SwiftPM paths at the same time.
-  It splits the available workers between them and verifies the normal bundle.
-  Only the stripped private copy gets the instrumented executable. The metric
-  stage merges profiles after UI without another test run.
+- Authoritative coverage combines instrumented Swift tests and packaged-app
+  journeys. Their three builds have isolated paths and one content cache. The
+  gate splits workers and verifies the normal bundle. Only the stripped private
+  copy gets the instrumented executable. Metrics merge profiles without a
+  second test run.
 - `coverage-opportunities.json` is a separate digest-bound advisory artifact.
   It ranks uncovered UI sources from policy routes, release impact,
   requirements, and journeys. Its next milestone is the five-point boundary

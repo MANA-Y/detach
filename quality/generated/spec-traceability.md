@@ -33,6 +33,7 @@ It lists current specification ownership and verification links.
 - `quality/policy.tsv`
 - `scripts/*`
 - `scripts/quality-baseline`
+- `scripts/quality-cache-warm`
 - `scripts/quality-care`
 - `scripts/quality-dashboard`
 - `scripts/quality-gate`
@@ -55,6 +56,7 @@ It lists current specification ownership and verification links.
 - `tests/shell-safety*`
 - `tests/test-suite-contract.sh`
 - `tools/quality_baseline.py`
+- `tools/quality_cache_warm.py`
 - `tools/quality_care.py`
 - `tools/quality_dashboard.py`
 - `tools/quality_gate.py`

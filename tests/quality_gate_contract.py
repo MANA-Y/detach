@@ -23,6 +23,7 @@ from quality_gate import (  # noqa: E402
     include_gate_orchestrators,
     parse_name_status,
     run_app_stage,
+    split_quality_pipeline_jobs,
     split_swift_build_jobs,
     ui_coverage_binary,
 )
@@ -112,6 +113,7 @@ class QualityGateContract(unittest.TestCase):
             self.assertEqual(events, ["coverage-started"])
             self.assertEqual(command, [str(ROOT / "app/scripts/make-app.sh")])
             self.assertEqual(env["DETACH_SWIFT_BUILD_JOBS"], "5")
+            self.assertEqual(env["DETACH_QUALITY_APP_SCRATCH"], "1")
             events.append("normal-finished")
             return 0
 
@@ -129,6 +131,8 @@ class QualityGateContract(unittest.TestCase):
             ["coverage-started", "normal-finished", "coverage-finished"],
         )
         self.assertEqual(split_swift_build_jobs(10), (5, 5))
+        self.assertEqual(split_quality_pipeline_jobs(3), (1, 1, 1))
+        self.assertEqual(split_quality_pipeline_jobs(10), (4, 3, 3))
         self.assertEqual(
             ui_coverage_binary(ROOT),
             ROOT / "app/.build/quality-ui-release/arm64-apple-macosx/release/DetachApp",

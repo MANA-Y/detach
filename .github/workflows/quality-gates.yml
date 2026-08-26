@@ -26,6 +26,42 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - id: impact
+        name: Validate and plan exact pull-request impact
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DETACH_QUALITY_AUTHORITY: ci-merge
+        run: |
+          plan="$RUNNER_TEMP/quality-impact.json"
+          scripts/quality-gate --mode impact --base "$BASE_SHA" --plan \
+            --format json --without-release-budget >"$plan"
+          python3 - "$plan" "$GITHUB_OUTPUT" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          stages = value.get("stages")
+          if not isinstance(stages, list) or not all(isinstance(stage, str) for stage in stages):
+              raise SystemExit("quality impact plan has invalid stages")
+          selected = set(stages)
+          outputs = {
+              "needs_metrics": "quality-contracts" in selected,
+              "needs_swift_cache": bool({"swift", "app"} & selected),
+              "stages": ",".join(stages),
+          }
+          with Path(sys.argv[2]).open("a", encoding="utf-8") as output:
+              for name, value in outputs.items():
+                  output.write(f"{name}={str(value).lower()}\n")
+          PY
+      - name: Run fail-fast static contracts
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DETACH_QUALITY_GATE_RESULT_ROOT: ${{ runner.temp }}/quality-fail-fast
+          DETACH_QUALITY_AUTHORITY: ci-merge
+        run: scripts/quality-gate --mode impact --base "$BASE_SHA" --stage static --without-release-budget
       - id: promoted-main
         name: Promote exact pull-request evidence
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -42,7 +78,7 @@ jobs:
             printf 'promoted=false\n' >>"$GITHUB_OUTPUT"
           fi
       - name: Restore last green main quality metrics
-        if: steps.promoted-main.outputs.promoted != 'true'
+        if: steps.promoted-main.outputs.promoted != 'true' && (github.event_name != 'pull_request' || steps.impact.outputs.needs_metrics == 'true')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -50,15 +86,18 @@ jobs:
           printf 'DETACH_QUALITY_BASELINE_ROOT=%s\n' "$baseline_root" >>"$GITHUB_ENV"
       - name: Restore Swift and tmux caches
         id: swift-cache
-        if: steps.promoted-main.outputs.promoted != 'true'
+        if: steps.promoted-main.outputs.promoted == 'true' || github.event_name != 'pull_request' || steps.impact.outputs.needs_swift_cache == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             app/.build
-          key: detach-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.resolved', 'scripts/build-tmux.sh') }}-${{ github.sha }}
+          key: detach-swift-v2-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Tests/**/*.swift', 'app/Resources/DetachWatchdog-Info.plist', 'app/scripts/make-app.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
           restore-keys: |
-            detach-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.resolved', 'scripts/build-tmux.sh') }}-
-            detach-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-
+            detach-swift-v2-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-
+      - id: swift-warm
+        name: Warm exact promoted-main Swift cache
+        if: steps.promoted-main.outputs.promoted == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
+        run: scripts/quality-cache-warm
       - name: Run authoritative pull-request gate
         if: github.event_name == 'pull_request'
         env:
@@ -71,12 +110,12 @@ jobs:
           DETACH_QUALITY_AUTHORITY: ci-main
         run: scripts/quality-gate --mode repository --keep-going --without-release-budget
       - name: Save Swift and tmux caches
-        if: always() && steps.promoted-main.outputs.promoted != 'true' && steps.swift-cache.outputs.cache-hit != 'true'
+        if: always() && steps.swift-cache.outcome == 'success' && steps.swift-cache.outputs.cache-hit != 'true' && (steps.promoted-main.outputs.promoted != 'true' || steps.swift-warm.outcome == 'success')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             app/.build
-          key: detach-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.resolved', 'scripts/build-tmux.sh') }}-${{ github.sha }}
+          key: detach-swift-v2-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Tests/**/*.swift', 'app/Resources/DetachWatchdog-Info.plist', 'app/scripts/make-app.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
       - name: Publish gate summary
         if: always()
         shell: bash
