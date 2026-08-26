@@ -55,9 +55,10 @@ Journeys cover all main surfaces, Settings, onboarding, and focus. It
 disconnects Stop before it proves that the real control invokes the action.
 Only a visible control completes isolated onboarding.
 
-Coverage validates the normal bundle, puts a coverage-enabled release
-executable only in the stripped copy, and signs it. The executable and profiles
-stay ignored or private and never enter a verified bundle or public artifact.
+Coverage builds the normal bundle and instrumented release binary together in
+isolated paths with split workers. Only a signed private UI copy gets
+it. Neither it nor its profiles enter a verified bundle or public
+artifact.
 If an overlay scroller ignores a page event, the driver reveals the measured
 semantic control, then posts the action to it.
 

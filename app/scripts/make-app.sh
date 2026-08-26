@@ -15,6 +15,7 @@ SPARKLE_PUBLIC_ED_KEY="${DETACH_SPARKLE_PUBLIC_ED_KEY:-}"
 DOWNLOAD_URL="${DETACH_DOWNLOAD_URL:-}"
 SPARKLE_LICENSE_SOURCE="$APP_ROOT/Resources/ThirdParty/Sparkle/LICENSE.txt"
 SPARKLE_LICENSE_SHA256="389a4e4e9a32f059775b13a06e25a591445ba229d2838d26dd3e7c0c45127cfe"
+SWIFT_BUILD_JOBS="${DETACH_SWIFT_BUILD_JOBS:-}"
 APP="$APP_ROOT/build/Detach.app"
 PAYLOAD="$APP/Contents/Resources/DetachCLI"
 LAUNCH_AGENTS="$APP/Contents/Library/LaunchAgents"
@@ -67,6 +68,10 @@ trap cleanup EXIT
   printf 'DETACH_RELEASE_BUILD must be 0 or 1\n' >&2
   exit 1
 }
+if [ -n "$SWIFT_BUILD_JOBS" ] && ! [[ "$SWIFT_BUILD_JOBS" =~ ^[1-9][0-9]*$ ]]; then
+  printf 'DETACH_SWIFT_BUILD_JOBS must be a positive integer\n' >&2
+  exit 1
+fi
 if [ -n "$SPARKLE_FEED_URL" ] || [ -n "$SPARKLE_PUBLIC_ED_KEY" ]; then
   [[ "$SPARKLE_FEED_URL" =~ ^https://[^[:space:]]+$ ]] || {
     printf 'DETACH_SPARKLE_FEED_URL must be a valid HTTPS URL\n' >&2
@@ -212,12 +217,19 @@ build_arch() {
   # binary artifact.
   local scratch="$APP_ROOT/.build"
   local triple="$arch-apple-macosx26.0"
-  swift build --disable-sandbox --disable-automatic-resolution \
-    --package-path "$APP_ROOT" -c release --triple "$triple" \
+  local build_args=(
+    --disable-sandbox
+    --disable-automatic-resolution
+    --package-path "$APP_ROOT"
+    -c release
+    --triple "$triple"
     --scratch-path "$scratch"
-  BUILT_BIN_PATH="$(swift build --disable-sandbox --disable-automatic-resolution \
-    --package-path "$APP_ROOT" -c release --triple "$triple" \
-    --scratch-path "$scratch" --show-bin-path)"
+  )
+  if [ -n "$SWIFT_BUILD_JOBS" ]; then
+    build_args+=(--jobs "$SWIFT_BUILD_JOBS")
+  fi
+  swift build "${build_args[@]}"
+  BUILT_BIN_PATH="$(swift build "${build_args[@]}" --show-bin-path)"
   BUILT_SPARKLE_FRAMEWORK="$(find_sparkle_framework "$scratch" "$BUILT_BIN_PATH")"
 }
 

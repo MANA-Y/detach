@@ -19,7 +19,7 @@ trap cleanup EXIT
 grep -F 'timeout-minutes: 10' "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'DETACH_QUALITY_AUTHORITY: ci-merge' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F 'run: scripts/quality-gate --mode repository --base "$BASE_SHA" --keep-going --without-release-budget' \
+grep -F 'run: scripts/quality-gate --mode impact --base "$BASE_SHA" --keep-going --without-release-budget' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'run: scripts/quality-gate --mode repository --keep-going --without-release-budget' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
@@ -105,6 +105,19 @@ setup_fixture() {
   BASE="$(git -C "$REPO" rev-parse HEAD)"
   ACTION_LOG="$REPO/actions.log"
   RESULT_ROOT="$REPO/results"
+}
+
+commit_ci_merge() {
+  local path="$1" value="$2" feature
+  git -C "$REPO" checkout -qb impact-feature
+  mkdir -p "$(dirname "$REPO/$path")"
+  printf '%s\n' "$value" >"$REPO/$path"
+  git -C "$REPO" add "$path"
+  git -C "$REPO" commit -qm impact-feature
+  feature="$(git -C "$REPO" rev-parse HEAD)"
+  git -C "$REPO" checkout -qb tested-merge "$BASE"
+  git -C "$REPO" merge -q --no-ff --no-edit "$feature"
+  CI_MERGE="$(git -C "$REPO" rev-parse HEAD)"
 }
 
 gate() {
@@ -303,13 +316,41 @@ fi
 grep -F "quality-gate: PASS policy=$POLICY_VERSION authority=release" \
   "$REPO/release.out" >/dev/null
 
+setup_fixture impact-release
+mkdir -p "$REPO/app/Sources/DetachKit"
+printf '%s\n' 'struct ReleaseImpact {}' >"$REPO/app/Sources/DetachKit/ReleaseImpact.swift"
+git -C "$REPO" add .
+git -C "$REPO" commit -qm release-impact
+plan="$(gate --mode release --base "$BASE" --plan)"
+[[ "$plan" = *'stages=static,swift,quality-contracts,app,ui-e2e,release-budget'* ]]
+[[ "$plan" != *'codex'* ]]
+[[ "$plan" != *'release-workflow'* ]]
+
 setup_fixture github-budget
-plan="$(GITHUB_ACTIONS=true DETACH_QUALITY_AUTHORITY=ci-merge \
-  gate --mode repository --without-release-budget --plan)"
+commit_ci_merge .github/workflows/quality-gates.yml '# impact core'
+plan="$(GITHUB_ACTIONS=true GITHUB_SHA="$CI_MERGE" DETACH_QUALITY_AUTHORITY=ci-merge \
+  gate --mode impact --base "$BASE" --without-release-budget --plan)"
 [[ "$plan" = *'stages=static,gate-contract,swift,quality-contracts,app,ui-e2e,codex,claude,distribution,tmux-runtime,release-preflight,publish-preflight,release-workflow' ]]
 [[ "$plan" != *'release-budget'* ]]
 [[ "$plan" = *'authority=ci-merge'* ]]
-if DETACH_QUALITY_AUTHORITY=ci-merge gate --mode repository --plan \
+
+setup_fixture github-docs-impact
+commit_ci_merge README.md 'documentation impact'
+plan="$(GITHUB_ACTIONS=true GITHUB_SHA="$CI_MERGE" DETACH_QUALITY_AUTHORITY=ci-merge \
+  gate --mode impact --base "$BASE" --without-release-budget --plan)"
+[[ "$plan" = *'stages=static specs=documentation capabilities=documentation'* ]]
+[[ "$plan" != *'swift'* ]]
+if GITHUB_ACTIONS=true GITHUB_SHA="$CI_MERGE" DETACH_QUALITY_AUTHORITY=ci-merge \
+    gate --mode impact --base "$CI_MERGE^2" --without-release-budget --plan \
+    >"$REPO/wrong-impact-base.out" 2>&1; then
+  printf 'quality gate accepted a non-first-parent CI impact base\n' >&2
+  exit 1
+fi
+grep -F 'ci-merge base is not the tested merge first parent' \
+  "$REPO/wrong-impact-base.out" >/dev/null
+
+setup_fixture github-spoof
+if DETACH_QUALITY_AUTHORITY=ci-merge gate --mode impact --base "$BASE" --plan \
     >"$REPO/spoof-authority.out" 2>&1; then
   printf 'quality gate accepted spoofed CI merge authority\n' >&2
   exit 1
@@ -515,6 +556,14 @@ gate --mode repository --resume latest >"$REPO/latest-third.out"
 grep -F 'selected latest compatible evidence' "$REPO/latest-third.out" >/dev/null
 grep -F 'reusing gate-contract from matching evidence' "$REPO/latest-third.out" >/dev/null
 
+setup_fixture auto-resume
+printf '%s\n' docs >>"$REPO/README.md"
+gate --mode repository --resume auto >"$REPO/auto-first.out"
+grep -F 'starting a fresh compatible run' "$REPO/auto-first.out" >/dev/null
+gate --mode repository --resume auto >"$REPO/auto-second.out"
+grep -F 'selected latest compatible evidence' "$REPO/auto-second.out" >/dev/null
+grep -F 'reusing static from matching evidence' "$REPO/auto-second.out" >/dev/null
+
 setup_fixture source-commit
 if FAIL_STAGES=swift gate --mode repository >"$REPO/source-first.out" 2>&1; then
   exit 1
@@ -656,9 +705,9 @@ grep -F '<testsuite name="detach-quality-gate" tests="14" failures="1" skipped="
 setup_fixture parallel-lanes
 PARALLEL_ROOT="$REPO/parallel"
 mkdir -p "$PARALLEL_ROOT"
-for parallel_stage in distribution release-workflow; do
-  parallel_peer=distribution
-  [ "$parallel_stage" = distribution ] && parallel_peer=release-workflow
+for parallel_stage in codex claude; do
+  parallel_peer=codex
+  [ "$parallel_stage" = codex ] && parallel_peer=claude
   cat >"$REPO/tests/quality-gate-fixtures/$parallel_stage" <<SH
 #!/bin/bash
 set -eu
@@ -672,8 +721,8 @@ done
 SH
 done
 chmod 0755 \
-  "$REPO/tests/quality-gate-fixtures/distribution" \
-  "$REPO/tests/quality-gate-fixtures/release-workflow"
+  "$REPO/tests/quality-gate-fixtures/codex" \
+  "$REPO/tests/quality-gate-fixtures/claude"
 GATE_PARALLEL_ROOT="$PARALLEL_ROOT" gate --mode repository >"$REPO/parallel.out"
 [ "$(wc -l <"$ACTION_LOG" | tr -d ' ')" = 11 ]
 grep -F 'quality-gate: DIAGNOSTIC PASS' "$REPO/parallel.out" >/dev/null
@@ -708,47 +757,67 @@ set -eu
 [ -f "${GATE_ORDER_ROOT:?}/app" ]
 : >"$GATE_ORDER_ROOT/ui-e2e"
 SH
-for provider_stage in codex claude; do
-  provider_peer=codex
-  [ "$provider_stage" = codex ] && provider_peer=claude
-  cat >"$REPO/tests/quality-gate-fixtures/$provider_stage" <<SH
+cat >"$REPO/tests/quality-gate-fixtures/codex" <<'SH'
 #!/bin/bash
 set -eu
-[ -f "\${GATE_ORDER_ROOT:?}/app" ]
-[ -f "\${GATE_ORDER_ROOT:?}/ui-e2e" ]
-[ -f "\${GATE_ORDER_ROOT:?}/quality-contracts" ]
+[ -f "${GATE_ORDER_ROOT:?}/app" ]
+[ -f "$GATE_ORDER_ROOT/ui-e2e" ]
+[ -f "$GATE_ORDER_ROOT/quality-contracts" ]
+: >"$GATE_ORDER_ROOT/codex-started"
+sleep 3
+: >"$GATE_ORDER_ROOT/codex"
+SH
+cat >"$REPO/tests/quality-gate-fixtures/gate-contract" <<'SH'
+#!/bin/bash
+set -eu
+[ -f "${GATE_ORDER_ROOT:?}/ui-e2e" ]
+[ -f "$GATE_ORDER_ROOT/quality-contracts" ]
+: >"$GATE_ORDER_ROOT/gate-contract-started"
 sleep 1
-: >"\$GATE_ORDER_ROOT/$provider_stage"
-attempt=0
-while [ ! -f "\$GATE_ORDER_ROOT/$provider_peer" ] && [ "\$attempt" -lt 50 ]; do
-  attempt=\$((attempt + 1))
-  sleep 0.1
-done
-[ -f "\$GATE_ORDER_ROOT/$provider_peer" ]
+: >"$GATE_ORDER_ROOT/gate-contract"
 SH
-done
-for contract_stage in tmux-runtime gate-contract; do
-  contract_peer=tmux-runtime
-  [ "$contract_stage" = tmux-runtime ] && contract_peer=gate-contract
-  cat >"$REPO/tests/quality-gate-fixtures/$contract_stage" <<SH
+cat >"$REPO/tests/quality-gate-fixtures/distribution" <<'SH'
 #!/bin/bash
 set -eu
-[ -f "\${GATE_ORDER_ROOT:?}/codex" ]
-[ -f "\${GATE_ORDER_ROOT:?}/claude" ]
-: >"\$GATE_ORDER_ROOT/$contract_stage"
+[ -f "${GATE_ORDER_ROOT:?}/gate-contract" ]
+[ -f "$GATE_ORDER_ROOT/codex-started" ]
+[ ! -f "$GATE_ORDER_ROOT/codex" ]
+: >"$GATE_ORDER_ROOT/integration-after-contract"
+SH
+cat >"$REPO/tests/quality-gate-fixtures/publish-preflight" <<'SH'
+#!/bin/bash
+set -eu
 attempt=0
-while [ ! -f "\$GATE_ORDER_ROOT/$contract_peer" ] && [ "\$attempt" -lt 50 ]; do
-  attempt=\$((attempt + 1))
+while { [ ! -f "${GATE_ORDER_ROOT:?}/gate-contract-started" ] || \
+        [ ! -f "$GATE_ORDER_ROOT/codex-started" ]; } && [ "$attempt" -lt 50 ]; do
+  attempt=$((attempt + 1))
   sleep 0.1
 done
-[ -f "\$GATE_ORDER_ROOT/$contract_peer" ]
+[ -f "$GATE_ORDER_ROOT/gate-contract-started" ]
+[ -f "$GATE_ORDER_ROOT/codex-started" ]
+[ ! -f "$GATE_ORDER_ROOT/gate-contract" ]
+: >"$GATE_ORDER_ROOT/short-preflight-during-contract"
 SH
-done
-for ordered_stage in distribution release-preflight publish-preflight release-workflow; do
+cat >"$REPO/tests/quality-gate-fixtures/release-workflow" <<'SH'
+#!/bin/bash
+set -eu
+[ -f "${GATE_ORDER_ROOT:?}/gate-contract" ]
+: >"$GATE_ORDER_ROOT/release-workflow-started"
+sleep 1
+: >"$GATE_ORDER_ROOT/release-workflow"
+SH
+cat >"$REPO/tests/quality-gate-fixtures/claude" <<'SH'
+#!/bin/bash
+set -eu
+[ -f "${GATE_ORDER_ROOT:?}/release-workflow" ] || [ -f "$GATE_ORDER_ROOT/codex" ]
+: >"$GATE_ORDER_ROOT/third-heavy-waited"
+SH
+for ordered_stage in tmux-runtime release-preflight; do
   cat >"$REPO/tests/quality-gate-fixtures/$ordered_stage" <<'SH'
 #!/bin/bash
 set -eu
-for prerequisite_stage in ui-e2e codex claude tmux-runtime gate-contract; do
+[ -f "${GATE_ORDER_ROOT:?}/quality-contracts" ]
+for prerequisite_stage in ui-e2e; do
   [ -f "${GATE_ORDER_ROOT:?}/$prerequisite_stage" ]
 done
 SH
@@ -768,6 +837,18 @@ chmod 0755 \
   "$REPO/tests/quality-gate-fixtures/release-workflow"
 GATE_ORDER_ROOT="$ORDER_ROOT" gate --mode repository >"$REPO/resource-order.out"
 grep -F 'quality-gate: DIAGNOSTIC PASS' "$REPO/resource-order.out" >/dev/null
+[ -f "$ORDER_ROOT/integration-after-contract" ] || {
+  printf 'bounded scheduler did not open integration after gate-contract\n' >&2
+  exit 1
+}
+[ -f "$ORDER_ROOT/short-preflight-during-contract" ] || {
+  printf 'bounded scheduler did not use the safe preflight lane\n' >&2
+  exit 1
+}
+[ -f "$ORDER_ROOT/third-heavy-waited" ] || {
+  printf 'bounded scheduler admitted a third process-heavy lane\n' >&2
+  exit 1
+}
 
 setup_fixture release-budget-wall
 set_manifest_value "$REPO/tests/release-budget.tsv" wall_seconds_max 1
@@ -812,12 +893,15 @@ grep -F 'stage budget: static regressed: 3s > 2s' "$RESULT_ROOT"/*/static.log >/
 grep -F $'static\tfailed\t3' "$RESULT_ROOT"/*/summary.tsv >/dev/null
 
 setup_fixture github-no-timing-budgets
+commit_ci_merge .github/workflows/quality-gates.yml '# impact core'
 if ! GITHUB_ACTIONS=true DETACH_QUALITY_AUTHORITY=ci-merge \
+    GITHUB_SHA="$CI_MERGE" \
     DETACH_QUALITY_GATE_TEST_STAGE_SECONDS_STATIC=300 \
     DETACH_QUALITY_GATE_TEST_STAGE_SECONDS_SWIFT=300 \
     DETACH_QUALITY_GATE_TEST_STAGE_SECONDS_APP=300 \
     DETACH_QUALITY_GATE_TEST_STAGE_SECONDS_PUBLISH_PREFLIGHT=300 \
-    gate --mode repository --without-release-budget >"$REPO/github-no-budgets.out" 2>&1; then
+    gate --mode impact --base "$BASE" --without-release-budget \
+      >"$REPO/github-no-budgets.out" 2>&1; then
   cat "$REPO/github-no-budgets.out" >&2
   printf 'quality gate enforced reference-machine timing in GitHub Actions\n' >&2
   exit 1

@@ -22,7 +22,12 @@ from quality_care import (
     validate_input_bindings as validate_care_inputs,
     validate_summary as validate_care_summary,
 )
-from quality_metrics import MetricsError, validate_metrics, validate_opportunities
+from quality_metrics import (
+    MetricsError,
+    load_baseline,
+    validate_metrics,
+    validate_opportunities,
+)
 from quality_mutation import MutationError, validate_summary
 from quality_promote import PromotionError, validate_promotion
 from quality_security import SecurityError, validate_summary as validate_security_summary
@@ -406,6 +411,7 @@ def build_data(
     mutation_summary: Optional[Path] = None,
     care_summary: Optional[Path] = None,
     security_summary: Optional[Path] = None,
+    metrics_baseline: Optional[Path] = None,
 ) -> dict[str, Any]:
     manifest = read_manifest(run_dir)
     effective_commit, effective_authority, promotion = effective_identity(
@@ -475,8 +481,16 @@ def build_data(
     trend_walls = [trend["wall_seconds"] for trend in trends]
     slowest = max(stages, key=lambda stage: stage["duration_seconds"], default=None)
     metrics = read_metrics(run_dir, manifest)
+    current_metrics = metrics
+    metrics_origin = "current-run"
+    if metrics is None and metrics_baseline is not None:
+        try:
+            metrics, _, _ = load_baseline(metrics_baseline)
+        except MetricsError as error:
+            raise DashboardError(f"quality metrics baseline is invalid: {error}") from error
+        metrics_origin = "green-main-artifact"
     coverage_opportunities = read_coverage_opportunities(
-        run_dir, manifest, metrics
+        run_dir, manifest, current_metrics
     )
     mutation = read_mutation_summary(mutation_summary, int(manifest["policy"]))
     care = read_care_summary(
@@ -488,7 +502,7 @@ def build_data(
         security_summary, int(manifest["policy"])
     )
     return {
-        "schema": 3,
+        "schema": 4,
         "run": {
             "id": run_dir.name,
             "commit": effective_commit,
@@ -522,6 +536,7 @@ def build_data(
             "run_wall_p50_seconds": percentile(trend_walls, 50),
             "run_wall_p95_seconds": percentile(trend_walls, 95),
             "coverage": metrics if metrics is not None else "not-yet-emitted",
+            "coverage_origin": metrics_origin if metrics is not None else "not-available",
             "coverage_opportunities": (
                 coverage_opportunities
                 if coverage_opportunities is not None
@@ -609,7 +624,8 @@ def render_html(data: dict[str, Any]) -> str:
         changed_coverage = coverage["changed_lines"]["line_coverage"]["percent"]
         coverage_text = (
             f"UI {ui_coverage:.2f}% · business {business_coverage:.2f}% · "
-            f"changed lines {changed_coverage:.2f}%"
+            f"changed lines {changed_coverage:.2f}% · "
+            f"{quality['coverage_origin']} source {coverage['source_commit'][:10]}"
         )
     else:
         coverage_text = str(coverage)
@@ -794,9 +810,10 @@ def generate(arguments: argparse.Namespace) -> int:
     mutation_summary = arguments.mutation_summary.resolve() if arguments.mutation_summary else None
     care_summary = arguments.care_summary.resolve() if arguments.care_summary else None
     security_summary = arguments.security_summary.resolve() if arguments.security_summary else None
+    metrics_baseline = arguments.metrics_baseline.resolve() if arguments.metrics_baseline else None
     data = build_data(
         run_dir, result_root, arguments.run_url, mutation_summary, care_summary,
-        security_summary
+        security_summary, metrics_baseline
     )
     output = arguments.output.resolve()
     if output == Path("/") or output == ROOT:
@@ -844,6 +861,7 @@ def parser() -> argparse.ArgumentParser:
     generate_parser.add_argument("--mutation-summary", type=Path)
     generate_parser.add_argument("--care-summary", type=Path)
     generate_parser.add_argument("--security-summary", type=Path)
+    generate_parser.add_argument("--metrics-baseline", type=Path)
     generate_parser.set_defaults(function=generate)
     serve_parser = commands.add_parser("serve", help="serve a generated dashboard for a bounded time")
     serve_parser.add_argument("--directory", type=Path, default=DEFAULT_OUTPUT)

@@ -11,8 +11,9 @@
   automatic test-identity, aggregate, critical-source, and changed-line
   metrics. This fast local diagnostic is unit-only. An authoritative gate adds
   the passed packaged-app profiles without another Swift test run. Hosted CI
-  compares the combined result with the last green `main` artifact. The local
-  command deletes only the active SwiftPM build path's prior profile, so stale
+  compares the combined result with the newest green `main` artifact that
+  contains measured metrics. The local command deletes only the active SwiftPM
+  build path's prior profile, so stale
   build evidence cannot satisfy the command.
 - `scripts/test smoke` — builds a fresh app, validates and runs the isolated
   packaged-app Accessibility flow, then verifies the bundled runtime. It needs
@@ -20,12 +21,15 @@
   app and tmux socket. Use `scripts/test --plan smoke` to inspect the steps.
 - `scripts/test full` — every automated repository check as a local diagnostic;
   it delegates exactly to `scripts/quality-gate --mode repository`. It does not
-  claim merge readiness. Pull-request CI runs the same functional matrix once
-  on the exact change and is merge authority.
+  claim merge readiness. Pull-request CI runs the exact impact-selected matrix
+  once on the tested merge commit and is merge authority.
 
 - `scripts/quality-gate` — the policy-versioned, impact-aware local diagnostic
   entry point. It selects checks from the diff and fails safe to the repository
   gate for unknown impact. See `docs/quality-gates.md`.
+- `scripts/quality-gate --mode impact --base <ref>` — the committed-diff mode
+  used by pull-request CI. Merge authority requires `<ref>` to be the tested
+  merge first parent and rejects a dirty checkout.
 - A normal change keeps `gate-contract` focused on direct self-contracts.
   `--mode repository` and an explicit `--stage gate-contract` run the full
   orchestrator contract set.
@@ -61,9 +65,10 @@
 - `scripts/quality-policy generate --check` checks both generated policy JSON
   and the readable current-spec traceability table.
 - `scripts/quality-promote` is the hosted post-merge path. It downloads the
-  exact successful pull-request artifact and proves tree and parent equality.
-  It does not run locally or change the tested evidence. A failed proof makes
-  the workflow run the full main repository gate.
+  exact successful pull-request artifact, classifies its impact again, and
+  proves tree and parent equality. It does not run locally or change the tested
+  evidence. A failed proof makes the workflow run the full main repository
+  gate.
 - `scripts/quality-dashboard generate` creates
   `app/build/quality-dashboard/{index.html,data.json}` from the newest schema-4
   evidence. `scripts/quality-dashboard serve --seconds 300` serves it only on
@@ -80,21 +85,24 @@
   deadline. This workflow does not run on pull requests. A successful run
   updates the GitHub Pages dashboard with its score.
 - `scripts/quality-gate --mode repository` — every automated repository check.
-  Local use is diagnostic. Pull-request CI uses the same entry point once with
+  Local use is diagnostic. Pull-request CI uses impact mode once with
   `ci-merge` authority and `--without-release-budget`, disabling local
   reference-machine wall and stage timing enforcement while retaining every
-  functional stage and the static timing-budget ratchet. A normal release enforces
-  the budgets; only the
-  owner-confirmed `DETACH_RELEASE_IGNORE_TIMING=1 scripts/release-version X.Y.Z`
+  selected functional stage and the static timing-budget ratchet. A normal
+  release enforces the budgets. Only the owner-confirmed
+  `DETACH_RELEASE_IGNORE_TIMING=1 scripts/release-version X.Y.Z`
   path may omit them for one intentionally busy-machine release, with the
   waiver recorded in private evidence. `--stage` is diagnostic only and is not
   proof that a change is ready. The current policy keeps SwiftPM work
   exclusive, then runs the isolated Codex and Claude suites concurrently
   against the verified bundled tmux and state helper. It rejects reference-Mac
   wall or stage regressions and rejects attempts to lower quality floors or
-  raise time budgets relative to their merge-base values. Resume inherits
-  timing and parent provenance. It preserves bounded failure diagnostics and
-  classifies known execution-environment denials without weakening FAIL.
+  raise time budgets relative to their merge-base values. A quality-core or
+  unknown change selects the full repository plan. `--resume auto` starts
+  fresh when no compatible run exists and is the release default. Resume
+  inherits timing and parent provenance. It preserves bounded failure
+  diagnostics and classifies known execution-environment denials without
+  weakening FAIL.
 
 - `DETACH_TEST_TMUX_BIN="$PWD/app/build/Detach.app/Contents/Resources/DetachCLI/tmux" tests/run.sh`
   — hermetic Codex integration with a fake provider, private tmux
@@ -186,7 +194,8 @@ specs, and the documentation workflow. It does not replace the selected gate.
 
 `scripts/release-version X.Y.Z` is the only normal release entry point. It
 requires a clean synchronized `main`, reads literal release settings from the
-ignored owner-only `.env.release`, runs the complete suite before changing Git,
+ignored owner-only `.env.release`, runs the impact-selected suite from the last
+published tag before changing Git,
 requires the tracked root `BUILD` to match the latest published manifest,
 increments it together with `VERSION` in one release commit, and creates one
 annotated tag. The invocation authorizes its automated commit, tag, and

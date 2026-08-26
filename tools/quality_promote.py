@@ -230,7 +230,9 @@ def artifact_name(executable: str, repository: str, run_id: int, attempt: int) -
     return expected
 
 
-def artifact_inventory(run_dir: Path, manifest: dict[str, str]) -> dict[str, str]:
+def artifact_inventory(
+    run_dir: Path, manifest: dict[str, str], *, require_metrics: bool
+) -> dict[str, str]:
     inventory = safe_file(run_dir / "artifacts.tsv", "artifact inventory")
     if sha256(inventory) != manifest.get("artifacts_sha256"):
         raise PromotionError("artifact inventory digest does not match the manifest")
@@ -252,32 +254,41 @@ def artifact_inventory(run_dir: Path, manifest: dict[str, str]) -> dict[str, str
         if sha256(artifact) != fields[2]:
             raise PromotionError(f"evidence artifact digest does not match: {fields[1]}")
         values[fields[1]] = fields[2]
-    for required in (
-        "coverage-opportunities.json",
-        "quality-metrics.json",
-        "scenarios.jsonl",
-        "scenarios.junit.xml",
-    ):
+    required_artifacts = ["scenarios.jsonl", "scenarios.junit.xml"]
+    if require_metrics:
+        required_artifacts.extend(
+            ("coverage-opportunities.json", "quality-metrics.json")
+        )
+    for required in required_artifacts:
         if required not in values:
             raise PromotionError(f"required evidence artifact is missing: {required}")
+    if not require_metrics and any(
+        name in values
+        for name in ("coverage-opportunities.json", "quality-metrics.json")
+    ):
+        raise PromotionError("unselected quality metrics are present in impact evidence")
     return values
 
 
-def validate_summary(run_dir: Path, manifest: dict[str, str], policy: Policy) -> None:
+def validate_summary(
+    run_dir: Path,
+    manifest: dict[str, str],
+    policy: Policy,
+    expected_stages: list[str],
+) -> None:
     summary = safe_file(run_dir / "summary.tsv", "quality summary")
     if sha256(summary) != manifest.get("summary_sha256"):
         raise PromotionError("quality summary digest does not match the manifest")
     lines = summary.read_text(encoding="utf-8").splitlines()
     if not lines or lines[0] != SUMMARY_HEADER:
         raise PromotionError("quality summary schema is invalid")
-    expected_stages = [stage.name for stage in policy.stages if stage.name != "release-budget"]
     seen: list[str] = []
     for line in lines[1:]:
         fields = line.split("\t")
         if (
             len(fields) != 8
             or fields[0] != str(policy.version)
-            or fields[1] != "repository"
+            or fields[1] != "impact"
             or fields[3] != "passed"
             or not fields[4].isdigit()
             or not DIGEST.fullmatch(fields[6])
@@ -289,27 +300,65 @@ def validate_summary(run_dir: Path, manifest: dict[str, str], policy: Policy) ->
             raise PromotionError(f"stage log digest does not match: {fields[2]}")
         seen.append(fields[2])
     if seen != expected_stages:
-        raise PromotionError("quality summary is not the complete repository plan")
+        raise PromotionError("quality summary does not match the exact impact plan")
+
+
+def changed_paths(executable: str, base_commit: str, head_commit: str) -> list[str]:
+    raw = command(
+        executable,
+        [
+            "diff",
+            "--name-status",
+            "-z",
+            "--find-renames",
+            f"{base_commit}...{head_commit}",
+        ],
+    )
+    fields = raw.split("\0")
+    if fields and fields[-1] == "":
+        fields.pop()
+    paths: list[str] = []
+    index = 0
+    while index < len(fields):
+        status = fields[index]
+        index += 1
+        if not status or index >= len(fields):
+            raise PromotionError("tested merge diff is malformed")
+        path = fields[index]
+        index += 1
+        if status[0] in ("R", "C"):
+            if index >= len(fields):
+                raise PromotionError("tested merge rename diff is malformed")
+            paths.extend((path, fields[index]))
+            index += 1
+        else:
+            paths.append(path)
+    return paths
 
 
 def validate_evidence(
-    run_dir: Path, policy: Policy, base_commit: str
+    run_dir: Path,
+    policy: Policy,
+    base_commit: str,
+    expected_impact: dict[str, object],
 ) -> tuple[dict[str, str], str]:
     manifest_path = safe_file(run_dir / "manifest.tsv", "quality manifest")
     manifest = read_tsv(manifest_path, "quality manifest")
     expected = {
         "schema": "4",
         "policy": str(policy.version),
-        "mode": "repository",
+        "mode": "impact",
         "authority": "ci-merge",
         "result": "passed",
         "base_commit": base_commit,
         "stages": ",".join(
-            stage.name for stage in policy.stages if stage.name != "release-budget"
+            stage
+            for stage in expected_impact["stages"]
+            if stage != "release-budget"
         ),
-        "specs": ",".join(policy.specs),
-        "capabilities": ",".join(policy.capabilities),
-        "journeys": ",".join(policy.journeys),
+        "specs": ",".join(expected_impact["specs"]),
+        "capabilities": ",".join(expected_impact["capabilities"]),
+        "journeys": ",".join(expected_impact["journeys"]),
     }
     for key, value in expected.items():
         if manifest.get(key) != value:
@@ -321,8 +370,14 @@ def validate_evidence(
         evidence = safe_file(run_dir / f"{name}.tsv", f"{name} evidence")
         if sha256(evidence) != manifest.get(f"{name}_sha256"):
             raise PromotionError(f"{name} evidence digest does not match the manifest")
-    validate_summary(run_dir, manifest, policy)
-    artifact_inventory(run_dir, manifest)
+    expected_stages = [
+        stage for stage in expected_impact["stages"] if stage != "release-budget"
+    ]
+    validate_summary(run_dir, manifest, policy, expected_stages)
+    require_metrics = "quality-contracts" in expected_stages
+    artifact_inventory(run_dir, manifest, require_metrics=require_metrics)
+    if not require_metrics:
+        return manifest, sha256(manifest_path)
     from quality_metrics import read_json, validate_metrics, validate_opportunities
 
     metrics = validate_metrics(
@@ -488,7 +543,11 @@ def promote(
         ):
             raise PromotionError("downloaded evidence run directory is unsafe")
         policy = Policy(POLICY_FILE)
-        manifest, manifest_digest = validate_evidence(run_dir, policy, parents[0])
+        paths = changed_paths(git_executable, parents[0], main_commit)
+        expected_impact = policy.impact(paths).document()
+        manifest, manifest_digest = validate_evidence(
+            run_dir, policy, parents[0], expected_impact
+        )
         tested_commit = manifest["source_commit"]
         tested_tree, tested_parents = github_commit(
             gh_executable, repository, tested_commit

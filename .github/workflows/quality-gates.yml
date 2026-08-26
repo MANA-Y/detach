@@ -64,7 +64,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           DETACH_QUALITY_AUTHORITY: ci-merge
-        run: scripts/quality-gate --mode repository --base "$BASE_SHA" --keep-going --without-release-budget
+        run: scripts/quality-gate --mode impact --base "$BASE_SHA" --keep-going --without-release-budget
       - name: Run main repository gate
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.promoted-main.outputs.promoted != 'true')
         env:
@@ -132,6 +132,13 @@ jobs:
         with:
           name: quality-gate-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: app/build/quality-gates
+      - id: metrics-baseline
+        name: Restore latest measured quality baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          root="$(scripts/quality-baseline)"
+          printf 'root=%s\n' "$root" >>"$GITHUB_OUTPUT"
       - id: mutation-evidence
         name: Restore latest mutation score when available
         env:
@@ -171,6 +178,7 @@ jobs:
             --result-root app/build/quality-gates \
             --output app/build/quality-dashboard \
             --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --metrics-baseline "${{ steps.metrics-baseline.outputs.root }}" \
             "${mutation_args[@]}" \
             "${care_args[@]}" \
             "${security_args[@]}"

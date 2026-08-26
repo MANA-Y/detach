@@ -65,9 +65,18 @@ change real power state, upload assets, or claim publication.
   timing enforcement. Every functional, artifact, signing, power, lid, and
   publication gate remains mandatory, and the waiver is recorded in private
   gate and workflow evidence.
+- The pre-release quality gate classifies the complete diff from the last
+  published tag to synchronized `main`. It runs that dependency-closed plan on
+  the release Mac and applies the reference-machine budgets. An empty or
+  unknown diff selects the complete release plan. This selection does not omit
+  later signing, notarization, hardware, artifact, or publication gates.
+- A resumed release automatically reuses digest-bound passed stages from the
+  newest compatible local run. It starts fresh when no compatible run exists.
+  It inherits a failed wall budget, so a shorter retry cannot hide a regression.
 - Before the pre-release gate, the orchestrator downloads the evidence from the
-  last green `main` run. Test identities and measured coverage must not regress
-  from that artifact. Missing or invalid baseline evidence stops the release.
+  newest green `main` run that contains measured quality metrics. Test
+  identities and measured coverage must not regress from that artifact.
+  Missing or invalid baseline evidence stops the release.
 - Resume state is private under `app/build/`. Resume is allowed only when
   source, durable stage evidence, and existing asset digests still match.
 - A resume after the artifact stage requires only credentials for the remaining

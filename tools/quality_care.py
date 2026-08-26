@@ -155,61 +155,8 @@ def load_corpus(path: Path) -> list[dict[str, Any]]:
     return cases
 
 
-def in_policy_order(values: set[str], order: list[str]) -> list[str]:
-    return [value for value in order if value in values]
-
-
 def impact(policy: Policy, paths: list[str]) -> dict[str, Any]:
-    classifications = [policy.classify(path) for path in paths]
-    unknown = any(classification.status == "unknown" for classification in classifications)
-    if unknown:
-        return {
-            "status": "unknown",
-            "stages": [stage.name for stage in policy.stages],
-            "specs": list(policy.specs),
-            "capabilities": list(policy.capabilities),
-            "journeys": list(policy.journeys),
-            "release_gates": ["lid"],
-            "unknown": True,
-        }
-    stages = {
-        stage
-        for classification in classifications
-        for stage in classification.stages.split(",")
-    }
-    changed = True
-    while changed:
-        changed = False
-        for prerequisite, dependent in policy.dependencies:
-            if prerequisite in stages and dependent not in stages:
-                stages.add(dependent)
-                changed = True
-    spec_paths = {classification.spec for classification in classifications}
-    capabilities = {
-        capability
-        for classification in classifications
-        for capability in classification.capabilities.split(",")
-    }
-    journeys = {
-        journey
-        for classification in classifications
-        for journey in classification.journeys.split(",")
-    }
-    gates = {
-        gate
-        for classification in classifications
-        for gate in classification.release_gates.split(",")
-        if gate != "-"
-    }
-    return {
-        "status": "known",
-        "stages": [stage.name for stage in policy.stages if stage.name in stages],
-        "specs": [identifier for identifier, (path, _) in policy.specs.items() if path in spec_paths],
-        "capabilities": in_policy_order(capabilities, list(policy.capabilities)),
-        "journeys": in_policy_order(journeys, list(policy.journeys)),
-        "release_gates": in_policy_order(gates, ["lid"]),
-        "unknown": False,
-    }
+    return policy.impact(paths).document()
 
 
 def ignored(paths: list[str]) -> dict[str, bool]:

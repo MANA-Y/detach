@@ -99,26 +99,31 @@ def opportunities_document() -> dict[str, object]:
     }
 
 
-def create_evidence(root: Path) -> Path:
+def create_evidence(root: Path, paths: list[str] | None = None) -> Path:
+    paths = paths or ["tools/quality_gate.py"]
+    impact = POLICY.impact(paths)
     run_dir = root / "20260812T120000Z-1"
     run_dir.mkdir(parents=True)
     summary_lines = [
         "policy\tmode\tstage\tstatus\tduration_seconds\tlog\tlog_sha256\torigin_run"
     ]
-    stages = [stage.name for stage in POLICY.stages if stage.name != "release-budget"]
+    stages = [stage for stage in impact.stages if stage != "release-budget"]
     for stage in stages:
         log = run_dir / f"{stage}.log"
         log.write_text(f"{stage} passed\n", encoding="utf-8")
         summary_lines.append(
-            f"{POLICY.version}\trepository\t{stage}\tpassed\t1\t{stage}.log\t"
+            f"{POLICY.version}\timpact\t{stage}\tpassed\t1\t{stage}.log\t"
             f"{digest(log)}\t-"
         )
     summary = run_dir / "summary.tsv"
     summary.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
     environment = run_dir / "environment.tsv"
     environment.write_text("schema\t1\narchitecture\ttest\n", encoding="utf-8")
-    write_json(run_dir / "quality-metrics.json", metrics_document())
-    write_json(run_dir / "coverage-opportunities.json", opportunities_document())
+    metric_names: tuple[str, ...] = ()
+    if "quality-contracts" in stages:
+        write_json(run_dir / "quality-metrics.json", metrics_document())
+        write_json(run_dir / "coverage-opportunities.json", opportunities_document())
+        metric_names = ("coverage-opportunities.json", "quality-metrics.json")
     (run_dir / "scenarios.jsonl").write_text("{}\n", encoding="utf-8")
     (run_dir / "scenarios.junit.xml").write_text(
         '<testsuite name="quality" tests="0"/>\n', encoding="utf-8"
@@ -128,12 +133,7 @@ def create_evidence(root: Path) -> Path:
         "schema\t1\n"
         + "".join(
             f"file\t{name}\t{digest(run_dir / name)}\n"
-            for name in (
-                "coverage-opportunities.json",
-                "quality-metrics.json",
-                "scenarios.jsonl",
-                "scenarios.junit.xml",
-            )
+            for name in (*metric_names, "scenarios.jsonl", "scenarios.junit.xml")
         ),
         encoding="utf-8",
     )
@@ -141,16 +141,16 @@ def create_evidence(root: Path) -> Path:
     manifest.write_text(
         "schema\t4\n"
         f"policy\t{POLICY.version}\n"
-        "mode\trepository\n"
+        "mode\timpact\n"
         "authority\tci-merge\n"
         f"source_commit\t{TESTED}\n"
         f"base_commit\t{BASE}\n"
         f"input_fingerprint\t{'1' * 64}\n"
         f"fingerprint\t{'2' * 64}\n"
         f"stages\t{','.join(stages)}\n"
-        f"specs\t{','.join(POLICY.specs)}\n"
-        f"capabilities\t{','.join(POLICY.capabilities)}\n"
-        f"journeys\t{','.join(POLICY.journeys)}\n"
+        f"specs\t{','.join(impact.specs)}\n"
+        f"capabilities\t{','.join(impact.capabilities)}\n"
+        f"journeys\t{','.join(impact.journeys)}\n"
         "started_at\t2026-08-12T12:00:00Z\n"
         "finished_at\t2026-08-12T12:03:00Z\n"
         "duration_seconds\t180\n"
@@ -171,7 +171,12 @@ def fake_tools(root: Path) -> tuple[Path, Path]:
     fake_git.write_text(
         f"""#!/usr/bin/env python3
 import os
+import sys
 mode = os.environ.get("FAKE_PROMOTE_MODE", "success")
+if len(sys.argv) > 1 and sys.argv[1] == "diff":
+    path = "README.md" if mode == "docs-impact" else "tools/quality_gate.py"
+    sys.stdout.write("M\\0" + path + "\\0")
+    raise SystemExit(0)
 parents = "{BASE} {HEAD}" if mode != "one-parent" else "{BASE}"
 print("{MAIN}")
 print("{TREE}")
@@ -329,6 +334,17 @@ def main() -> None:
             raise AssertionError("promotion evidence is not deterministic")
         if (run_dir / "promotion.md").read_bytes() != (second_run / "promotion.md").read_bytes():
             raise AssertionError("promotion summary is not deterministic")
+
+        docs_evidence = create_evidence(root / "docs-source", ["README.md"])
+        docs_output = root / "docs-impact"
+        invoke(fake_gh, fake_git, docs_evidence, docs_output, mode="docs-impact")
+        docs_run = next(path.parent for path in docs_output.glob("*/manifest.tsv"))
+        if (docs_run / "quality-metrics.json").exists():
+            raise AssertionError("documentation impact fabricated quality metrics")
+        if validate_promotion(
+            docs_run, read_tsv(docs_run / "manifest.tsv", "docs manifest")
+        ) is None:
+            raise AssertionError("documentation impact was not promoted")
 
         eventual = root / "eventual-pr"
         invoke(fake_gh, fake_git, evidence, eventual, mode="eventual-pr")

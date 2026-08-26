@@ -81,6 +81,28 @@ class Classification:
         )
 
 
+@dataclass(frozen=True)
+class Impact:
+    status: str
+    stages: tuple[str, ...]
+    specs: tuple[str, ...]
+    capabilities: tuple[str, ...]
+    journeys: tuple[str, ...]
+    release_gates: tuple[str, ...]
+    unknown: bool
+
+    def document(self) -> dict[str, object]:
+        return {
+            "status": self.status,
+            "stages": list(self.stages),
+            "specs": list(self.specs),
+            "capabilities": list(self.capabilities),
+            "journeys": list(self.journeys),
+            "release_gates": list(self.release_gates),
+            "unknown": self.unknown,
+        }
+
+
 class Policy:
     def __init__(self, path: Path) -> None:
         if not path.is_file() or path.is_symlink():
@@ -552,6 +574,63 @@ class Policy:
             "known", route.test_domain, route.release_domain, route.spec, stages,
             gates, unknown, route.pattern, route.priority, capabilities,
             ",".join(selected_journeys)
+        )
+
+    def impact(self, paths: Iterable[str]) -> Impact:
+        classifications = [self.classify(path) for path in paths]
+        if not classifications or any(
+            classification.status == "unknown" for classification in classifications
+        ):
+            return Impact(
+                "unknown",
+                tuple(stage.name for stage in self.stages),
+                tuple(self.specs),
+                tuple(self.capabilities),
+                tuple(self.journeys),
+                ("lid",),
+                True,
+            )
+        stages = {
+            stage
+            for classification in classifications
+            for stage in classification.stages.split(",")
+        }
+        changed = True
+        while changed:
+            changed = False
+            for prerequisite, dependent in self.dependencies:
+                if prerequisite in stages and dependent not in stages:
+                    stages.add(dependent)
+                    changed = True
+        spec_paths = {classification.spec for classification in classifications}
+        capabilities = {
+            capability
+            for classification in classifications
+            for capability in classification.capabilities.split(",")
+        }
+        journeys = {
+            journey
+            for classification in classifications
+            for journey in classification.journeys.split(",")
+        }
+        release_gates = {
+            gate
+            for classification in classifications
+            for gate in classification.release_gates.split(",")
+            if gate != "-"
+        }
+        return Impact(
+            "known",
+            tuple(stage.name for stage in self.stages if stage.name in stages),
+            tuple(
+                identifier
+                for identifier, (path, _) in self.specs.items()
+                if path in spec_paths
+            ),
+            tuple(value for value in self.capabilities if value in capabilities),
+            tuple(value for value in self.journeys if value in journeys),
+            tuple(value for value in ("lid",) if value in release_gates),
+            False,
         )
 
     def coverage_exclusion(self, path: str) -> str | None:
