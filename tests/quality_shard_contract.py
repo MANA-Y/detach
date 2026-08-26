@@ -63,6 +63,7 @@ class QualityShardContract(unittest.TestCase):
             "release-workflow",
         ]
         shards = shard_plan({"stages": stages})
+        self.assertEqual(len(shards), 6)
         flattened = [
             stage
             for shard in shards
@@ -74,6 +75,11 @@ class QualityShardContract(unittest.TestCase):
         self.assertEqual(build["stages"], "swift,quality-contracts,app,ui-e2e")
         self.assertTrue(build["needs_cache"])
         self.assertTrue(build["needs_metrics"])
+        contracts = shard_for({"stages": stages}, "contracts-and-runtime")
+        self.assertEqual(
+            contracts["stages"], "gate-contract,tmux-runtime,release-preflight"
+        )
+        self.assertTrue(contracts["needs_app"])
 
     def test_unowned_or_malformed_plan_fails_closed(self) -> None:
         with self.assertRaisesRegex(ShardError, "no shard owns"):

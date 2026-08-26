@@ -1146,6 +1146,7 @@ class QualityGate:
             "DETACH_BUILD_ARCHS",
             "DETACH_CODESIGN_IDENTITY",
             "DETACH_RELEASE_BUILD",
+            "DETACH_QUALITY_GATE_RESULT_ROOT",
             "DETACH_SPARKLE_VERSION",
             "DETACH_SPARKLE_FEED_URL",
             "DETACH_SPARKLE_PUBLIC_ED_KEY",

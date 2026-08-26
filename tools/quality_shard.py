@@ -29,15 +29,15 @@ ROOT = Path(__file__).resolve().parent.parent
 BINDING = "binding.tsv"
 SHARD_GROUPS = (
     ("static", ("static",), 0),
-    ("gate-contract", ("gate-contract",), 1),
+    (
+        "contracts-and-runtime",
+        ("gate-contract", "tmux-runtime", "release-preflight"),
+        2,
+    ),
     ("build-and-coverage", ("swift", "quality-contracts", "app", "ui-e2e"), 2),
     ("codex", ("codex",), 2),
-    ("claude", ("claude",), 2),
-    ("distribution", ("distribution",), 2),
-    ("tmux-runtime", ("tmux-runtime",), 2),
-    ("release-preflight", ("release-preflight",), 1),
-    ("publish-preflight", ("publish-preflight",), 1),
-    ("release-workflow", ("release-workflow",), 1),
+    ("claude-and-publish", ("claude", "publish-preflight"), 2),
+    ("distribution-and-release", ("distribution", "release-workflow"), 2),
 )
 
 
@@ -127,7 +127,7 @@ def shard_plan(plan: dict[str, object]) -> list[dict[str, object]]:
             raise ShardError(f"planned stage has more than one shard: {sorted(overlap)[0]}")
         owned.update(stages)
         remaining.difference_update(stages)
-        needs_app = bool({"codex", "claude"} & set(stages))
+        needs_app = bool({"codex", "claude", "tmux-runtime"} & set(stages))
         needs_cache = needs_app or bool(
             {"swift", "app", "ui-e2e", "tmux-runtime"} & set(stages)
         )

@@ -42,7 +42,15 @@ grep -F 'if: matrix.needs_metrics' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'if: matrix.needs_cache' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F 'key: detach-swift-v2-' \
+grep -F 'key: detach-swift-v3-' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'run: scripts/quality-cache-warm --reuse-exact-products' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'run: scripts/quality-cache-warm --record-product-inputs' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F "steps.main-products.outcome == 'success'" \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'DETACH_QUALITY_APP_SCRATCH: 1' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'run: scripts/quality-cache-warm' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
@@ -118,7 +126,7 @@ prepare_template() {
   printf '%s\n' actions.log results aggregate tampered-aggregate '*.out' /presentations/ \
     >"$TEMPLATE_REPO/.gitignore"
   for stage in static gate-contract swift quality-contracts app ui-e2e codex claude distribution tmux-runtime release-preflight publish-preflight release-workflow; do
-    printf '#!/bin/bash\nset -eu\nexpected_cache="${GATE_EXPECTED_MODULE_CACHE:?}/%s"\n[ -z "${DETACH_RELEASE_TIMING_OVERRIDE:-}" ] || { printf "release timing override leaked into stage\\n" >&2; exit 1; }\n[ -z "${DETACH_CONFIRM_RELEASE:-}" ] || { printf "release confirmation leaked into stage\\n" >&2; exit 1; }\n[ "${CLANG_MODULE_CACHE_PATH:-}" = "$expected_cache" ] || { printf "unexpected Clang module cache: %%s\\n" "${CLANG_MODULE_CACHE_PATH:-missing}" >&2; exit 1; }\n[ "${SWIFTPM_MODULECACHE_OVERRIDE:-}" = "$expected_cache" ] || { printf "unexpected SwiftPM module cache: %%s\\n" "${SWIFTPM_MODULECACHE_OVERRIDE:-missing}" >&2; exit 1; }\nprintf "%%s\\n" "%s" >>"${GATE_ACTION_LOG:?}"\nsleep "${STAGE_SLEEP:-0}"\ncase " ${FAIL_STAGES:-} " in *" %s "*) exit 23 ;; esac\n' "$stage" "$stage" "$stage" \
+    printf '#!/bin/bash\nset -eu\nexpected_cache="${GATE_EXPECTED_MODULE_CACHE:?}/%s"\n[ -z "${DETACH_RELEASE_TIMING_OVERRIDE:-}" ] || { printf "release timing override leaked into stage\\n" >&2; exit 1; }\n[ -z "${DETACH_CONFIRM_RELEASE:-}" ] || { printf "release confirmation leaked into stage\\n" >&2; exit 1; }\n[ -z "${DETACH_QUALITY_GATE_RESULT_ROOT:-}" ] || { printf "quality result root leaked into stage\\n" >&2; exit 1; }\n[ "${CLANG_MODULE_CACHE_PATH:-}" = "$expected_cache" ] || { printf "unexpected Clang module cache: %%s\\n" "${CLANG_MODULE_CACHE_PATH:-missing}" >&2; exit 1; }\n[ "${SWIFTPM_MODULECACHE_OVERRIDE:-}" = "$expected_cache" ] || { printf "unexpected SwiftPM module cache: %%s\\n" "${SWIFTPM_MODULECACHE_OVERRIDE:-missing}" >&2; exit 1; }\nprintf "%%s\\n" "%s" >>"${GATE_ACTION_LOG:?}"\nsleep "${STAGE_SLEEP:-0}"\ncase " ${FAIL_STAGES:-} " in *" %s "*) exit 23 ;; esac\n' "$stage" "$stage" "$stage" \
       >"$TEMPLATE_REPO/tests/quality-gate-fixtures/$stage"
     chmod 0755 "$TEMPLATE_REPO/tests/quality-gate-fixtures/$stage"
   done
@@ -400,8 +408,8 @@ fi
 if [ "$CONTRACT_SHARD" = all ] || [ "$CONTRACT_SHARD" = distributed ]; then
 setup_fixture distributed
 commit_ci_merge .github/workflows/quality-gates.yml '# distributed impact'
-for shard in static gate-contract build-and-coverage codex claude distribution \
-    tmux-runtime release-preflight publish-preflight release-workflow; do
+for shard in static contracts-and-runtime build-and-coverage codex \
+    claude-and-publish distribution-and-release; do
   quality_shard run --base "$BASE" --shard "$shard" \
     --result-root "$RESULT_ROOT/$shard" >/dev/null
 done

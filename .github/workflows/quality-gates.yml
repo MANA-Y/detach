@@ -97,14 +97,19 @@ jobs:
         with:
           path: |
             app/.build
-          key: detach-swift-v2-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Tests/**/*.swift', 'app/Resources/DetachWatchdog-Info.plist', 'app/scripts/make-app.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
+          key: detach-swift-v3-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Tests/**/*.swift', 'app/Resources/DetachWatchdog-Info.plist', 'app/scripts/make-app.sh', 'scripts/build-tmux.sh', 'tools/quality_cache_warm.py', 'VERSION', 'BUILD') }}
           restore-keys: |
-            detach-swift-v2-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-
+            detach-swift-v3-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-
+      - name: Reuse exact cached Swift products
+        if: matrix.needs_cache && steps.swift-cache.outputs.cache-hit == 'true'
+        run: scripts/quality-cache-warm --reuse-exact-products
       - name: Materialize exact Swift dependencies
         if: matrix.needs_cache && steps.swift-cache.outcome == 'success'
         run: scripts/quality-cache-warm --dependencies-only
       - name: Prepare packaged provider runtime
         if: matrix.needs_app
+        env:
+          DETACH_QUALITY_APP_SCRATCH: 1
         run: app/scripts/make-app.sh
       - name: Run exact quality shard
         env:
@@ -192,9 +197,12 @@ jobs:
         with:
           path: |
             app/.build
-          key: detach-swift-v2-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Tests/**/*.swift', 'app/Resources/DetachWatchdog-Info.plist', 'app/scripts/make-app.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
+          key: detach-swift-v3-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Tests/**/*.swift', 'app/Resources/DetachWatchdog-Info.plist', 'app/scripts/make-app.sh', 'scripts/build-tmux.sh', 'tools/quality_cache_warm.py', 'VERSION', 'BUILD') }}
           restore-keys: |
-            detach-swift-v2-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-
+            detach-swift-v3-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-
+      - name: Reuse exact cached Swift products
+        if: github.event_name != 'pull_request' && steps.swift-cache.outputs.cache-hit == 'true'
+        run: scripts/quality-cache-warm --reuse-exact-products
       - id: swift-warm
         name: Warm exact promoted-main Swift cache
         if: steps.promoted-main.outputs.promoted == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
@@ -203,18 +211,23 @@ jobs:
         name: Materialize exact Swift dependencies
         if: github.event_name != 'pull_request' && steps.swift-cache.outcome == 'success' && steps.promoted-main.outputs.promoted != 'true'
         run: scripts/quality-cache-warm --dependencies-only
-      - name: Run main repository gate
+      - id: main-gate
+        name: Run main repository gate
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.promoted-main.outputs.promoted != 'true')
         env:
           DETACH_QUALITY_AUTHORITY: ci-main
         run: scripts/quality-gate --mode repository --keep-going --without-release-budget
+      - id: main-products
+        name: Record completed main Swift products
+        if: github.event_name != 'pull_request' && steps.swift-cache.outputs.cache-hit != 'true' && steps.promoted-main.outputs.promoted != 'true' && steps.main-gate.outcome == 'success'
+        run: scripts/quality-cache-warm --record-product-inputs
       - name: Save Swift and tmux caches
-        if: always() && github.event_name != 'pull_request' && steps.swift-cache.outcome == 'success' && steps.swift-cache.outputs.cache-hit != 'true' && ((steps.promoted-main.outputs.promoted == 'true' && steps.swift-warm.outcome == 'success') || (steps.promoted-main.outputs.promoted != 'true' && steps.swift-dependencies.outcome == 'success'))
+        if: always() && github.event_name != 'pull_request' && steps.swift-cache.outcome == 'success' && steps.swift-cache.outputs.cache-hit != 'true' && ((steps.promoted-main.outputs.promoted == 'true' && steps.swift-warm.outcome == 'success') || (steps.promoted-main.outputs.promoted != 'true' && steps.main-products.outcome == 'success'))
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             app/.build
-          key: detach-swift-v2-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Tests/**/*.swift', 'app/Resources/DetachWatchdog-Info.plist', 'app/scripts/make-app.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
+          key: detach-swift-v3-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Tests/**/*.swift', 'app/Resources/DetachWatchdog-Info.plist', 'app/scripts/make-app.sh', 'scripts/build-tmux.sh', 'tools/quality_cache_warm.py', 'VERSION', 'BUILD') }}
       - name: Publish gate summary
         if: always()
         shell: bash
