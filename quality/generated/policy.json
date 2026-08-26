@@ -659,7 +659,7 @@
     "mutation_timeout_seconds": 240,
     "pr_feedback_seconds": 600
   },
-  "policy": 48,
+  "policy": 49,
   "release_domains": [
     {
       "gates": "-",
@@ -905,6 +905,13 @@
     },
     {
       "pattern": "tools/quality_cache_warm.py",
+      "priority": 1100,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "quality-core"
+    },
+    {
+      "pattern": "tools/quality_products.py",
       "priority": 1100,
       "release_domain": "safe",
       "spec": "docs/specs/documentation.md",
@@ -2239,6 +2246,7 @@
         "tools/quality_metrics.py",
         "tools/quality_mutation.py",
         "tools/quality_policy.py",
+        "tools/quality_products.py",
         "tools/quality_promote.py",
         "tools/quality_scenarios.py",
         "tools/quality_security.py",

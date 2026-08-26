@@ -12,19 +12,40 @@ cleanup() {
 trap cleanup EXIT
 
 swift_scratch="${DETACH_SWIFT_TEST_SCRATCH:-}"
-build_path_args=(swift build --show-bin-path)
-test_list_args=(swift test list --skip-build --disable-sandbox)
-if [ -n "$swift_scratch" ]; then
-  [ "$swift_scratch" = "$APP_ROOT/.build/quality-swift-tests" ] || {
-    printf 'quality contracts: Swift scratch path is not the quality path\n' >&2
+exact_test_binary="${DETACH_SWIFT_TEST_BINARY:-}"
+exact_test_profile="${DETACH_SWIFT_TEST_PROFILE:-}"
+if { [ -n "$exact_test_binary" ] && [ -z "$exact_test_profile" ]; } || \
+   { [ -z "$exact_test_binary" ] && [ -n "$exact_test_profile" ]; }; then
+  printf 'quality contracts: exact Swift binary and profile must occur together\n' >&2
+  exit 2
+fi
+if [ -n "$exact_test_binary" ]; then
+  expected_binary="$APP_ROOT/.build/quality-swift-tests/arm64-apple-macosx/debug/DetachAppPackageTests.xctest/Contents/MacOS/DetachAppPackageTests"
+  case "$exact_test_profile" in "$ROOT"/app/build/quality-shards/*/*/exact-swift.profdata|"$ROOT"/app/build/quality-gates/*/exact-swift.profdata) ;; *)
+    printf 'quality contracts: exact Swift profile path is not a quality evidence path\n' >&2
+    exit 2
+  esac
+  [ "$exact_test_binary" = "$expected_binary" ] || {
+    printf 'quality contracts: exact Swift binary path is not the quality product\n' >&2
     exit 2
   }
-  build_path_args+=(--disable-automatic-resolution --cache-path "$APP_ROOT/.build" --scratch-path "$swift_scratch")
-  test_list_args+=(--disable-automatic-resolution --cache-path "$APP_ROOT/.build" --scratch-path "$swift_scratch")
+  test_binary="$exact_test_binary"
+  profdata="$exact_test_profile"
+else
+  build_path_args=(swift build --show-bin-path)
+  test_list_args=(swift test list --skip-build --disable-sandbox)
+  if [ -n "$swift_scratch" ]; then
+    [ "$swift_scratch" = "$APP_ROOT/.build/quality-swift-tests" ] || {
+      printf 'quality contracts: Swift scratch path is not the quality path\n' >&2
+      exit 2
+    }
+    build_path_args+=(--disable-automatic-resolution --cache-path "$APP_ROOT/.build" --scratch-path "$swift_scratch")
+    test_list_args+=(--disable-automatic-resolution --cache-path "$APP_ROOT/.build" --scratch-path "$swift_scratch")
+  fi
+  build_path="$(cd -P "$APP_ROOT" && "${build_path_args[@]}")"
+  test_binary="$build_path/DetachAppPackageTests.xctest/Contents/MacOS/DetachAppPackageTests"
+  profdata="$build_path/codecov/default.profdata"
 fi
-build_path="$(cd -P "$APP_ROOT" && "${build_path_args[@]}")"
-test_binary="$build_path/DetachAppPackageTests.xctest/Contents/MacOS/DetachAppPackageTests"
-profdata="$build_path/codecov/default.profdata"
 [ -f "$test_binary" ] && [ ! -L "$test_binary" ] && \
   [ -f "$profdata" ] && [ ! -L "$profdata" ] || {
   printf 'quality contracts: run the coverage-enabled Swift stage first\n' >&2
@@ -38,6 +59,10 @@ if [ -n "${DETACH_SWIFT_TEST_LOG:-}" ]; then
   }
   tests="$DETACH_SWIFT_TEST_LOG"
 else
+  [ -z "$exact_test_binary" ] || {
+    printf 'quality contracts: exact Swift evidence requires its test log\n' >&2
+    exit 2
+  }
   tests="$TMP_ROOT/tests.txt"
   (
     cd -P "$APP_ROOT"

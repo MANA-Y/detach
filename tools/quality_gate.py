@@ -77,6 +77,16 @@ GATE_COMPATIBLE_INTEGRATION_STAGES = {
 }
 UI_COVERAGE_SCRATCH = "quality-ui-release"
 SWIFT_TEST_SCRATCH = "quality-swift-tests"
+QUALITY_TEST_BUNDLE = Path(
+    "app/.build/quality-swift-tests/arm64-apple-macosx/debug/"
+    "DetachAppPackageTests.xctest"
+)
+QUALITY_TEST_BINARY = (
+    QUALITY_TEST_BUNDLE / "Contents/MacOS/DetachAppPackageTests"
+)
+QUALITY_UI_BINARY = Path(
+    "app/.build/quality-ui-release/arm64-apple-macosx/release/DetachApp"
+)
 
 
 class GateError(Exception):
@@ -1138,6 +1148,7 @@ class QualityGate:
     def stage_environment(self, stage: str) -> dict[str, str]:
         environment = os.environ.copy()
         exact_app = environment.pop("DETACH_QUALITY_EXACT_APP", "")
+        exact_products = environment.pop("DETACH_QUALITY_EXACT_PRODUCTS", "")
         for name in (
             "DETACH_RELEASE_TIMING_OVERRIDE",
             "DETACH_CONFIRM_RELEASE",
@@ -1180,6 +1191,8 @@ class QualityGate:
         )
         if stage == "app" and exact_app:
             environment["DETACH_QUALITY_EXACT_APP"] = exact_app
+        if stage in ("swift", "app", "ui-e2e", "quality-contracts") and exact_products:
+            environment["DETACH_QUALITY_EXACT_PRODUCTS"] = exact_products
         if not self.test_direct:
             environment["DETACH_RELEASE_TESTS_DETACHED"] = "1"
         return environment
@@ -1793,6 +1806,70 @@ def child_run(arguments: list[str], *, cwd: Path = ROOT, env: dict[str, str] | N
     return process.returncode
 
 
+def exact_products_enabled() -> bool:
+    value = os.environ.get("DETACH_QUALITY_EXACT_PRODUCTS", "")
+    if value not in ("", "1"):
+        raise GateError("DETACH_QUALITY_EXACT_PRODUCTS must be 1")
+    if value and (
+        os.environ.get("GITHUB_ACTIONS") != "true"
+        or os.environ.get("DETACH_QUALITY_GATE_AUTHORITY")
+        not in ("ci-shard", "ci-main")
+    ):
+        raise GateError("exact product reuse requires hosted CI authority")
+    return value == "1"
+
+
+def exact_swift_profile(run_dir: Path) -> Path:
+    return run_dir / "exact-swift.profdata"
+
+
+def run_exact_swift_stage(root: Path, run_dir: Path) -> int:
+    bundle = root / QUALITY_TEST_BUNDLE
+    binary = root / QUALITY_TEST_BINARY
+    if (
+        not bundle.is_dir()
+        or bundle.is_symlink()
+        or not binary.is_file()
+        or binary.is_symlink()
+        or not os.access(binary, os.X_OK)
+    ):
+        print("quality-gate: exact Swift test product is missing or unsafe", file=sys.stderr)
+        return 2
+    raw_root = run_dir / "exact-swift-profiles"
+    if raw_root.exists():
+        if not raw_root.is_dir() or raw_root.is_symlink():
+            print("quality-gate: exact Swift profile root is unsafe", file=sys.stderr)
+            return 2
+        shutil.rmtree(raw_root)
+    raw_root.mkdir(mode=0o700)
+    environment = os.environ.copy()
+    environment["LLVM_PROFILE_FILE"] = str(raw_root / "%p-%m.profraw")
+    status = child_run(["xcrun", "xctest", str(bundle)], cwd=root, env=environment)
+    if status:
+        return status
+    profiles = sorted(
+        path for path in raw_root.glob("*.profraw")
+        if path.is_file() and not path.is_symlink()
+    )
+    if not profiles:
+        print("quality-gate: exact Swift tests emitted no coverage profile", file=sys.stderr)
+        return 2
+    profile = exact_swift_profile(run_dir)
+    profile.unlink(missing_ok=True)
+    return child_run(
+        [
+            "xcrun",
+            "llvm-profdata",
+            "merge",
+            "-sparse",
+            *[str(path) for path in profiles],
+            "-o",
+            str(profile),
+        ],
+        cwd=root,
+    )
+
+
 def run_static_stage(root: Path, run_dir: Path, mode: str, resolved_base: str) -> int:
     static_file = run_dir / "static-files.z"
     try:
@@ -2000,6 +2077,12 @@ def gate_contract_definitions(
             "Quality cache warm contracts passed",
         ),
         (
+            "quality-products.log",
+            [sys.executable, str(root / "tests/quality_products_contract.py")],
+            {},
+            "Quality executable product contracts passed",
+        ),
+        (
             "quality-shard.log",
             [sys.executable, str(root / "tests/quality_shard_contract.py")],
             {},
@@ -2126,7 +2209,9 @@ def tmux_preflight(tmux: Path) -> int:
         shutil.rmtree(preflight)
 
 
-def ui_coverage_binary(root: Path) -> Path:
+def ui_coverage_binary(root: Path, *, exact_products: bool = False) -> Path:
+    if exact_products:
+        return root / QUALITY_UI_BINARY
     return (
         root / "app/.build" / UI_COVERAGE_SCRATCH
         / "arm64-apple-macosx/release/DetachApp"
@@ -2159,10 +2244,11 @@ def run_app_stage(root: Path) -> int:
         return 2
     if exact_app and (
         os.environ.get("GITHUB_ACTIONS") != "true"
-        or os.environ.get("DETACH_QUALITY_GATE_AUTHORITY") != "ci-shard"
+        or os.environ.get("DETACH_QUALITY_GATE_AUTHORITY")
+        not in ("ci-shard", "ci-main")
     ):
         print(
-            "quality-gate: exact app reuse requires hosted shard authority",
+            "quality-gate: exact app reuse requires hosted CI authority",
             file=sys.stderr,
         )
         return 2
@@ -2171,6 +2257,13 @@ def run_app_stage(root: Path) -> int:
     )
     selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
     if "quality-contracts" not in selected:
+        return child_run(normal_command)
+    try:
+        exact_products = exact_products_enabled()
+    except GateError as error:
+        print(f"quality-gate: {error}", file=sys.stderr)
+        return 2
+    if exact_products:
         return child_run(normal_command)
 
     parallel_swift = "swift" in selected and (os.cpu_count() or 0) >= 3
@@ -2276,6 +2369,8 @@ def run_stage_worker(stage: str) -> int:
             root, include_orchestrators=include_orchestrators
         )
     if stage == "swift":
+        if exact_products_enabled():
+            return run_exact_swift_stage(root, run_dir)
         app = root / "app"
         scratch = app / ".build" / SWIFT_TEST_SCRATCH
         (app / ".build/quality-codecov").mkdir(parents=True, exist_ok=True)
@@ -2312,6 +2407,7 @@ def run_stage_worker(stage: str) -> int:
         )
     if stage == "quality-contracts":
         selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
+        exact_products = exact_products_enabled()
         environment = os.environ.copy()
         environment.update(
             {
@@ -2324,7 +2420,14 @@ def run_stage_worker(stage: str) -> int:
                 "DETACH_QUALITY_AUTHORITY": authority,
             }
         )
-        if "swift" in selected:
+        if exact_products:
+            environment.update(
+                {
+                    "DETACH_SWIFT_TEST_BINARY": str(root / QUALITY_TEST_BINARY),
+                    "DETACH_SWIFT_TEST_PROFILE": str(exact_swift_profile(run_dir)),
+                }
+            )
+        elif "swift" in selected:
             environment["DETACH_SWIFT_TEST_SCRATCH"] = str(
                 root / "app/.build" / SWIFT_TEST_SCRATCH
             )
@@ -2335,7 +2438,7 @@ def run_stage_worker(stage: str) -> int:
             environment.update(
                 {
                     "DETACH_UI_COVERAGE_BINARY": str(
-                        ui_coverage_binary(root)
+                        ui_coverage_binary(root, exact_products=exact_products)
                     ),
                     "DETACH_UI_COVERAGE_PROFILE_DIR": str(profile_directory),
                 }
@@ -2353,6 +2456,7 @@ def run_stage_worker(stage: str) -> int:
     if stage == "app":
         return run_app_stage(root)
     if stage == "ui-e2e":
+        exact_products = exact_products_enabled()
         status = child_run([str(root / "tests/ui-e2e-contract.sh")])
         if status:
             return status
@@ -2361,7 +2465,9 @@ def run_stage_worker(stage: str) -> int:
         selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
         coverage_dir = root / "app/build/quality-ui-coverage" / run_dir.name
         if "quality-contracts" in selected:
-            coverage_binary = ui_coverage_binary(root)
+            coverage_binary = ui_coverage_binary(
+                root, exact_products=exact_products
+            )
             if not coverage_binary.is_file() or coverage_binary.is_symlink():
                 print(
                     "quality-gate: app stage emitted no safe coverage executable",

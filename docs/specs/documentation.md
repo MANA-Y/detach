@@ -74,15 +74,15 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   `quality-gates` job recomputes the plan and accepts only the shard set
   and valid digests. Ambiguity fails closed.
 - CI keeps a ten-minute timing ratchet with no reference-Mac limit.
-- The gate-contract runner admits three heavy shards on eight CPUs and two on
-  fewer CPUs. Light contracts stay concurrent. Time budgets do not hide
-  oversubscription.
+- Gate contracts admit three heavy shards on eight CPUs and two on
+  fewer CPUs. Light contracts stay concurrent. Budgets expose overload.
 - Swift tests and both release builds use separate caches and split three or
   more CPUs. Smaller hosts run them in order. UI waits for the app; metrics
   wait for Swift and UI. Later work uses two heavy lanes and one integration
   lane. Distribution waits for gate-contract.
 - Exact keys bind code, resources, scripts, version, and toolchain. `main` warms
-  them. CI verifies the restored test app. Warming is not evidence.
+  the app and executable products. CI verifies each hit; a miss
+  rebuilds. Warming is not evidence.
 - CI uses the newest green `main` artifact with measured metrics. A later run
   without metrics does not replace it. Test identities, aggregate coverage,
   and critical-source coverage cannot decrease. Changed Swift lines need 90
