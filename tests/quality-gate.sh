@@ -42,7 +42,9 @@ grep -F 'if: matrix.needs_metrics' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'if: matrix.needs_cache' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F 'key: detach-app-v1-' \
+grep -F 'key: detach-app-v2-' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'app/.build/tmux-runtime/arm64/product' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F "'app/scripts/verify-app.sh'" \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
