@@ -167,8 +167,18 @@ struct SidebarView: View {
                 }
 #endif
 // quality-coverage:end ui-e2e-instrumentation
+                .padding(.trailing, 12)
             }
         }
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+        .background {
+            if AppSettings.uiE2E != nil && section == .finished {
+                UIE2EGeometryProbe(identifier: "finished-section-header")
+            }
+        }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
     }
 
     @ViewBuilder

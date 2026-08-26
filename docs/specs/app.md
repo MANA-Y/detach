@@ -92,8 +92,8 @@ thin capsule and the tmux blend. Status uses a filled circle through one shared
 sidebar/detail color function. Power words use a neutral surface and semantic
 color.
 
-**Finished** bulk Delete selects only rows with typed Delete, asks once,
-continues after failures, and does not remove provider transcripts.
+**Finished** bulk Delete uses typed Delete, asks once, tolerates failures, and
+keeps provider transcripts. Select/Done has 12-point scroll clearance.
 
 Every app CLI invocation runs in a fresh process group with concurrent bounded
 stdout/stderr draining. Its deadline sends TERM and then KILL to the complete
