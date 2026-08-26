@@ -355,11 +355,12 @@ enum UIE2ETestDriver {
                 resultIdentifier: "finished-select-all-button")
             selectAll = try await element(identifier: "finished-select-all-button")
             try await click(selectAll, name: "select all finished sessions")
-            let bulkDeleteButton = try await element(identifier: "finished-delete-button")
+            var bulkDeleteButton = try await element(identifier: "finished-delete-button")
             try await waitUntil("enabled bulk delete button") {
                 find(identifier: "finished-delete-button")
                     .map(isEnabled) == true
             }
+            bulkDeleteButton = try await element(identifier: "finished-delete-button")
             try requireSemanticControl(bulkDeleteButton, name: "bulk delete action")
             let confirmDelete = try await clickUntilSheetButton(
                 bulkDeleteButton, name: "bulk delete action", label: "Delete")
