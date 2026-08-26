@@ -659,7 +659,7 @@
     "mutation_timeout_seconds": 240,
     "pr_feedback_seconds": 600
   },
-  "policy": 47,
+  "policy": 48,
   "release_domains": [
     {
       "gates": "-",

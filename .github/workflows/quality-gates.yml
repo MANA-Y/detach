@@ -113,9 +113,11 @@ jobs:
       - name: Materialize exact Swift dependencies
         if: steps.swift-cache.outcome == 'success'
         run: scripts/quality-cache-warm --dependencies-only
-      - name: Verify exact packaged test app
+      - name: Verify and bind exact packaged test app
         if: matrix.needs_app && steps.app-cache.outputs.cache-hit == 'true'
-        run: app/scripts/verify-app.sh
+        run: |
+          app/scripts/verify-app.sh
+          printf 'DETACH_QUALITY_EXACT_APP=1\n' >>"$GITHUB_ENV"
       - name: Prepare packaged provider runtime
         if: matrix.needs_app && steps.app-cache.outputs.cache-hit != 'true'
         env:
