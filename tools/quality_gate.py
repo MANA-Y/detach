@@ -99,6 +99,7 @@ class Options:
     without_release_budget: bool
     list_stages: bool
     stage: str
+    shard: str
 
 
 @dataclass
@@ -248,6 +249,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--without-release-budget", action="store_true")
     result.add_argument("--list-stages", action="store_true")
     result.add_argument("--stage", default="")
+    result.add_argument("--shard", default="")
     return result
 
 
@@ -264,6 +266,7 @@ def parse_options(arguments: list[str]) -> Options:
         without_release_budget=values.without_release_budget,
         list_stages=values.list_stages,
         stage=values.stage,
+        shard=values.shard,
     )
 
 
@@ -336,14 +339,18 @@ class QualityGate:
         if self.authority == "local-diagnostic":
             if self.options.mode == "release":
                 raise GateError("release mode requires release authority")
-        elif self.authority in ("ci-merge", "ci-main"):
+        elif self.authority in ("ci-merge", "ci-main", "ci-shard"):
             if os.environ.get("GITHUB_ACTIONS") != "true":
                 raise GateError(f"{self.authority} authority is restricted to GitHub Actions")
-            required_mode = "impact" if self.authority == "ci-merge" else "repository"
+            required_mode = (
+                "impact" if self.authority in ("ci-merge", "ci-shard") else "repository"
+            )
             if self.options.mode != required_mode:
                 raise GateError(f"{self.authority} authority requires {required_mode} mode")
             if self.options.stage:
                 raise GateError(f"{self.authority} authority cannot run one diagnostic stage")
+            if (self.authority == "ci-shard") != bool(self.options.shard):
+                raise GateError("ci-shard authority and --shard must be used together")
         elif self.authority == "release":
             valid_hosted = (
                 os.environ.get("GITHUB_ACTIONS") == "true"
@@ -398,9 +405,13 @@ class QualityGate:
         if self.options.output_format not in ("text", "json"):
             raise GateError(f"invalid format: {self.options.output_format}")
         if self.options.stage and (
-            self.options.mode != "change" or self.options.base
+            self.options.mode != "change" or self.options.base or self.options.shard
         ):
             raise GateError("--stage cannot be combined with another selection")
+        if self.options.shard and self.options.mode != "impact":
+            raise GateError("--shard requires impact mode")
+        if self.options.shard and self.authority != "ci-shard":
+            raise GateError("--shard requires ci-shard authority")
         if self.options.output_format != "text" and not self.options.plan:
             raise GateError("--format json requires --plan")
         if self.options.explain and not (
@@ -408,13 +419,14 @@ class QualityGate:
         ):
             raise GateError("--explain requires a text plan")
         if self.options.resume and (
-            self.options.plan or self.options.stage
+            self.options.plan or self.options.stage or self.options.shard
         ):
-            raise GateError("--resume cannot be combined with --plan or --stage")
+            raise GateError("--resume cannot be combined with --plan, --stage, or --shard")
         if self.options.list_stages and any(
             (
                 self.options.plan,
                 bool(self.options.stage),
+                bool(self.options.shard),
                 bool(self.options.base),
                 self.options.mode != "change",
                 self.options.keep_going,
@@ -453,16 +465,18 @@ class QualityGate:
         return entries
 
     def validate_authoritative_impact(self) -> None:
-        if self.authority != "ci-merge":
+        if self.authority not in ("ci-merge", "ci-shard"):
             return
         github_sha = os.environ.get("GITHUB_SHA", "")
         if github_sha != self.source_commit:
-            raise GateError("ci-merge source does not match GITHUB_SHA")
+            raise GateError(f"{self.authority} source does not match GITHUB_SHA")
         parents = git_text(["show", "-s", "--format=%P", "HEAD"]).split()
         if len(parents) != 2 or parents[0] != self.resolved_base:
-            raise GateError("ci-merge base is not the tested merge first parent")
+            raise GateError(
+                f"{self.authority} base is not the tested merge first parent"
+            )
         if git_bytes(["diff", "--binary", "HEAD"]) or untracked_paths():
-            raise GateError("ci-merge impact checkout must be clean")
+            raise GateError(f"{self.authority} impact checkout must be clean")
 
     def select_all_impacts(self) -> None:
         self.specs = list(self.policy.specs)
@@ -554,6 +568,19 @@ class QualityGate:
         self.selected = [stage for stage in self.all_stages if stage in self.selected]
         if self.options.without_release_budget:
             self.selected = [stage for stage in self.selected if stage != "release-budget"]
+        if self.options.shard:
+            requested = self.options.shard.split(",")
+            if (
+                any(not value or value not in self.all_stages for value in requested)
+                or len(requested) != len(set(requested))
+            ):
+                raise GateError("--shard must contain unique known stages")
+            unplanned = [stage for stage in requested if stage not in self.selected]
+            if unplanned:
+                raise GateError(
+                    f"shard contains an unplanned stage: {unplanned[0]}"
+                )
+            self.selected = [stage for stage in self.all_stages if stage in requested]
         self.effective_mode = "diagnostic" if self.options.stage else self.options.mode
         self.compute_fingerprints()
 
@@ -691,7 +718,11 @@ class QualityGate:
 
     def artifact_inventory(self) -> None:
         files: list[Path] = []
-        for name in ("quality-metrics.json", "coverage-opportunities.json"):
+        for name in (
+            "quality-metrics.json",
+            "coverage-opportunities.json",
+            "shards.tsv",
+        ):
             evidence = self.run_dir / name
             if evidence.exists():
                 files.append(evidence)
@@ -1773,6 +1804,7 @@ def run_static_stage(root: Path, run_dir: Path, mode: str, resolved_base: str) -
         "bin/detach",
         "bin/detach-core",
         "scripts/quality-gate",
+        "scripts/quality-shard",
         "scripts/quality-scenarios",
         "scripts/quality-policy",
         "scripts/quality-metrics",
@@ -1830,6 +1862,12 @@ def gate_contract_definitions(
             [str(root / "tests/quality-gate.sh")],
             {"DETACH_QUALITY_GATE_CONTRACT_SHARD": "failures"},
             "Quality gate failure tests passed",
+        ),
+        (
+            "orchestrator-distributed.log",
+            [str(root / "tests/quality-gate.sh")],
+            {"DETACH_QUALITY_GATE_CONTRACT_SHARD": "distributed"},
+            "Quality gate distributed evidence tests passed",
         ),
         (
             "orchestrator-evidence-resume-a.log",
@@ -1956,6 +1994,12 @@ def gate_contract_definitions(
             [sys.executable, str(root / "tests/quality_cache_warm_contract.py")],
             {},
             "Quality cache warm contracts passed",
+        ),
+        (
+            "quality-shard.log",
+            [sys.executable, str(root / "tests/quality_shard_contract.py")],
+            {},
+            "Quality shard contracts passed",
         ),
     ]
     if include_orchestrators:

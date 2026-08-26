@@ -19,30 +19,28 @@ trap cleanup EXIT
 grep -F 'timeout-minutes: 10' "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'DETACH_QUALITY_AUTHORITY: ci-merge' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F 'run: scripts/quality-gate --mode impact --base "$BASE_SHA" --keep-going --without-release-budget' \
-  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'run: scripts/quality-gate --mode repository --keep-going --without-release-budget' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F 'name: Validate and plan exact pull-request impact' \
+grep -F 'name: Validate and partition exact pull-request impact' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F 'scripts/quality-gate --mode impact --base "$BASE_SHA" --plan' \
+grep -F 'scripts/quality-shard plan --base "$BASE_SHA"' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F 'name: Run fail-fast static contracts' \
+grep -F 'name: Run level-zero fail-fast contracts' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F 'run: scripts/quality-gate --stage static' \
+grep -F 'run: scripts/quality-shard run --base "$BASE_SHA" --shard static' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F 'DETACH_QUALITY_GATE_RESULT_ROOT: ${{ runner.temp }}/quality-fail-fast' \
+grep -F 'name: Aggregate authoritative pull-request evidence' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 fail_fast_step="$(sed -n \
-  '/name: Run fail-fast static contracts/,/run: scripts\/quality-gate --stage static/p' \
+  '/name: Run level-zero fail-fast contracts/,/result-root app\/build\/quality-shards\/static/p' \
   "$ROOT/.github/workflows/quality-gates.yml")"
 if printf '%s\n' "$fail_fast_step" | grep -F 'DETACH_QUALITY_AUTHORITY' >/dev/null; then
-  printf 'quality workflow gave merge authority to diagnostic fail-fast\n' >&2
+  printf 'quality workflow gave merge authority directly to a shard\n' >&2
   exit 1
 fi
-grep -F "steps.impact.outputs.needs_metrics == 'true'" \
+grep -F 'if: matrix.needs_metrics' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F "steps.impact.outputs.needs_swift_cache == 'true'" \
+grep -F 'if: matrix.needs_cache' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'key: detach-swift-v2-' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
@@ -91,12 +89,14 @@ prepare_template() {
   mkdir -p "$TEMPLATE_REPO/scripts" "$TEMPLATE_REPO/tests/quality-gate-fixtures" \
     "$TEMPLATE_REPO/app/build" "$TEMPLATE_REPO/quality/generated" "$TEMPLATE_REPO/tools"
   install -m 0755 "$ROOT/scripts/quality-gate" "$TEMPLATE_REPO/scripts/quality-gate"
+  install -m 0755 "$ROOT/scripts/quality-shard" "$TEMPLATE_REPO/scripts/quality-shard"
   install -m 0755 "$ROOT/scripts/quality-policy" "$TEMPLATE_REPO/scripts/quality-policy"
   install -m 0755 "$ROOT/scripts/quality-metrics" "$TEMPLATE_REPO/scripts/quality-metrics"
   install -m 0755 "$ROOT/scripts/quality-baseline" "$TEMPLATE_REPO/scripts/quality-baseline"
   install -m 0755 "$ROOT/scripts/quality-dashboard" "$TEMPLATE_REPO/scripts/quality-dashboard"
   install -m 0755 "$ROOT/scripts/release-impact" "$TEMPLATE_REPO/scripts/release-impact"
   install -m 0644 "$ROOT/tools/quality_gate.py" "$TEMPLATE_REPO/tools/quality_gate.py"
+  install -m 0644 "$ROOT/tools/quality_shard.py" "$TEMPLATE_REPO/tools/quality_shard.py"
   install -m 0644 "$ROOT/tools/quality_scenarios.py" "$TEMPLATE_REPO/tools/quality_scenarios.py"
   install -m 0644 "$ROOT/tools/quality_policy.py" "$TEMPLATE_REPO/tools/quality_policy.py"
   install -m 0644 "$ROOT/tools/quality_metrics.py" "$TEMPLATE_REPO/tools/quality_metrics.py"
@@ -115,7 +115,8 @@ prepare_template() {
   printf '#!/bin/bash\nexit 0\n' >"$TEMPLATE_REPO/tests/test-suite-contract.sh"
   chmod 0755 "$TEMPLATE_REPO/tests/test-suite-contract.sh"
   printf '%s\n' baseline >"$TEMPLATE_REPO/README.md"
-  printf '%s\n' actions.log results '*.out' /presentations/ >"$TEMPLATE_REPO/.gitignore"
+  printf '%s\n' actions.log results aggregate tampered-aggregate '*.out' /presentations/ \
+    >"$TEMPLATE_REPO/.gitignore"
   for stage in static gate-contract swift quality-contracts app ui-e2e codex claude distribution tmux-runtime release-preflight publish-preflight release-workflow; do
     printf '#!/bin/bash\nset -eu\nexpected_cache="${GATE_EXPECTED_MODULE_CACHE:?}/%s"\n[ -z "${DETACH_RELEASE_TIMING_OVERRIDE:-}" ] || { printf "release timing override leaked into stage\\n" >&2; exit 1; }\n[ -z "${DETACH_CONFIRM_RELEASE:-}" ] || { printf "release confirmation leaked into stage\\n" >&2; exit 1; }\n[ "${CLANG_MODULE_CACHE_PATH:-}" = "$expected_cache" ] || { printf "unexpected Clang module cache: %%s\\n" "${CLANG_MODULE_CACHE_PATH:-missing}" >&2; exit 1; }\n[ "${SWIFTPM_MODULECACHE_OVERRIDE:-}" = "$expected_cache" ] || { printf "unexpected SwiftPM module cache: %%s\\n" "${SWIFTPM_MODULECACHE_OVERRIDE:-missing}" >&2; exit 1; }\nprintf "%%s\\n" "%s" >>"${GATE_ACTION_LOG:?}"\nsleep "${STAGE_SLEEP:-0}"\ncase " ${FAIL_STAGES:-} " in *" %s "*) exit 23 ;; esac\n' "$stage" "$stage" "$stage" \
       >"$TEMPLATE_REPO/tests/quality-gate-fixtures/$stage"
@@ -183,6 +184,19 @@ production_plan() {
   )
 }
 
+quality_shard() {
+  (
+    cd -P "$REPO"
+    GITHUB_ACTIONS=true \
+      GITHUB_SHA="$CI_MERGE" \
+      GATE_ACTION_LOG="$ACTION_LOG" \
+      GATE_EXPECTED_MODULE_CACHE="$REPO/app/.build/module-cache" \
+      DETACH_QUALITY_GATE_TEST_MODE=1 \
+      DETACH_QUALITY_GATE_TEST_DIRECT=1 \
+      "$REPO/scripts/quality-shard" "$@"
+  )
+}
+
 set_manifest_value() {
   local file="$1" key="$2" value="$3" temporary
   temporary="$file.tmp"
@@ -199,7 +213,7 @@ refresh_summary_digest() {
 
 CONTRACT_SHARD="${DETACH_QUALITY_GATE_CONTRACT_SHARD:-all}"
 case "$CONTRACT_SHARD" in
-  all|selection|execution|failures|evidence|evidence-resume|evidence-resume-a|evidence-resume-b|evidence-runtime|evidence-runtime-a|evidence-runtime-b) ;;
+  all|selection|execution|failures|distributed|evidence|evidence-resume|evidence-resume-a|evidence-resume-b|evidence-runtime|evidence-runtime-a|evidence-runtime-b) ;;
   *) printf 'invalid quality-gate contract shard\n' >&2; exit 2 ;;
 esac
 
@@ -368,7 +382,48 @@ plan="$(GITHUB_ACTIONS=true GITHUB_SHA="$CI_MERGE" DETACH_QUALITY_AUTHORITY=ci-m
 [[ "$plan" = *'stages=static,gate-contract,swift,quality-contracts,app,ui-e2e,codex,claude,distribution,tmux-runtime,release-preflight,publish-preflight,release-workflow' ]]
 [[ "$plan" != *'release-budget'* ]]
 [[ "$plan" = *'authority=ci-merge'* ]]
+plan="$(GITHUB_ACTIONS=true GITHUB_SHA="$CI_MERGE" DETACH_QUALITY_AUTHORITY=ci-shard \
+  gate --mode impact --base "$BASE" --shard static,gate-contract \
+    --without-release-budget --plan)"
+[[ "$plan" = *'authority=ci-shard'* ]]
+[[ "$plan" = *'stages=static,gate-contract'* ]]
+if GITHUB_ACTIONS=true GITHUB_SHA="$CI_MERGE" DETACH_QUALITY_AUTHORITY=ci-shard \
+    gate --mode impact --base "$BASE" --shard release-budget \
+      --without-release-budget --plan >"$REPO/unplanned-shard.out" 2>&1; then
+  printf 'quality gate accepted an unplanned shard stage\n' >&2
+  exit 1
+fi
+grep -F 'shard contains an unplanned stage: release-budget' \
+  "$REPO/unplanned-shard.out" >/dev/null
+fi
 
+if [ "$CONTRACT_SHARD" = all ] || [ "$CONTRACT_SHARD" = distributed ]; then
+setup_fixture distributed
+commit_ci_merge .github/workflows/quality-gates.yml '# distributed impact'
+for shard in static gate-contract build-and-coverage codex claude distribution \
+    tmux-runtime release-preflight publish-preflight release-workflow; do
+  quality_shard run --base "$BASE" --shard "$shard" \
+    --result-root "$RESULT_ROOT/$shard" >/dev/null
+done
+quality_shard aggregate --base "$BASE" --input-root "$RESULT_ROOT" \
+  --result-root "$REPO/aggregate" >"$REPO/shard-aggregate.out"
+grep -F 'quality-shard: PASS evidence=' "$REPO/shard-aggregate.out" >/dev/null
+grep -F $'authority\tci-merge' "$REPO/aggregate"/*/manifest.tsv >/dev/null
+grep -F $'file\tshards.tsv\t' "$REPO/aggregate"/*/artifacts.tsv >/dev/null
+awk -F '\t' 'NR > 1 && $8 != "-" {exit 1}' \
+  "$REPO/aggregate"/*/summary.tsv
+printf 'tampered\n' >>"$RESULT_ROOT/static"/*/static.log
+if quality_shard aggregate --base "$BASE" --input-root "$RESULT_ROOT" \
+    --result-root "$REPO/tampered-aggregate" \
+    >"$REPO/tampered-shard.out" 2>&1; then
+  printf 'quality shard aggregation accepted a tampered log\n' >&2
+  exit 1
+fi
+grep -F 'summary log digest does not match: static' \
+  "$REPO/tampered-shard.out" >/dev/null
+fi
+
+if [ "$CONTRACT_SHARD" = all ] || [ "$CONTRACT_SHARD" = selection ]; then
 setup_fixture github-docs-impact
 commit_ci_merge README.md 'documentation impact'
 plan="$(GITHUB_ACTIONS=true GITHUB_SHA="$CI_MERGE" DETACH_QUALITY_AUTHORITY=ci-merge \
@@ -1041,6 +1096,7 @@ case "$CONTRACT_SHARD" in
   selection) printf 'Quality gate selection tests passed\n' ;;
   execution) printf 'Quality gate execution tests passed\n' ;;
   failures) printf 'Quality gate failure tests passed\n' ;;
+  distributed) printf 'Quality gate distributed evidence tests passed\n' ;;
   evidence) printf 'Quality gate evidence tests passed\n' ;;
   evidence-resume) printf 'Quality gate resume evidence tests passed\n' ;;
   evidence-resume-a) printf 'Quality gate resume provenance tests passed\n' ;;

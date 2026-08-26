@@ -1038,7 +1038,7 @@ def parser() -> argparse.ArgumentParser:
     evaluate_parser.add_argument("--baseline-root", default="")
     evaluate_parser.add_argument(
         "--authority",
-        choices=("local-diagnostic", "ci-merge", "ci-main", "release"),
+        choices=("local-diagnostic", "ci-shard", "ci-merge", "ci-main", "release"),
         default="local-diagnostic",
     )
     evaluate_parser.add_argument("--test-changed-lines", default="", help=argparse.SUPPRESS)
