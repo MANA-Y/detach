@@ -80,6 +80,10 @@ class QualityShardContract(unittest.TestCase):
             contracts["stages"], "gate-contract,tmux-runtime,release-preflight"
         )
         self.assertTrue(contracts["needs_app"])
+        self.assertFalse(contracts["needs_cache"])
+        codex = shard_for({"stages": stages}, "codex")
+        self.assertTrue(codex["needs_app"])
+        self.assertFalse(codex["needs_cache"])
 
     def test_unowned_or_malformed_plan_fails_closed(self) -> None:
         with self.assertRaisesRegex(ShardError, "no shard owns"):

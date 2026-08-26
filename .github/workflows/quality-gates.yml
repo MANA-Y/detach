@@ -90,9 +90,16 @@ jobs:
         run: |
           baseline_root="$(scripts/quality-baseline)"
           printf 'DETACH_QUALITY_BASELINE_ROOT=%s\n' "$baseline_root" >>"$GITHUB_ENV"
+      - name: Restore exact packaged test app
+        id: app-cache
+        if: matrix.needs_app
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: app/build/Detach.app
+          key: detach-app-v1-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Resources/**/*', 'app/scripts/make-app.sh', 'app/scripts/bundle-modes.sh', 'app/scripts/verify-app.sh', 'bin/detach', 'bin/detach-core', 'scripts/install.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
       - name: Restore exact Swift and tmux inputs
         id: swift-cache
-        if: matrix.needs_cache
+        if: matrix.needs_cache || (matrix.needs_app && steps.app-cache.outputs.cache-hit != 'true')
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -101,13 +108,16 @@ jobs:
           restore-keys: |
             detach-swift-v3-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-
       - name: Reuse exact cached Swift products
-        if: matrix.needs_cache && steps.swift-cache.outputs.cache-hit == 'true'
+        if: steps.swift-cache.outputs.cache-hit == 'true'
         run: scripts/quality-cache-warm --reuse-exact-products
       - name: Materialize exact Swift dependencies
-        if: matrix.needs_cache && steps.swift-cache.outcome == 'success'
+        if: steps.swift-cache.outcome == 'success'
         run: scripts/quality-cache-warm --dependencies-only
+      - name: Verify exact packaged test app
+        if: matrix.needs_app && steps.app-cache.outputs.cache-hit == 'true'
+        run: app/scripts/verify-app.sh
       - name: Prepare packaged provider runtime
-        if: matrix.needs_app
+        if: matrix.needs_app && steps.app-cache.outputs.cache-hit != 'true'
         env:
           DETACH_QUALITY_APP_SCRATCH: 1
         run: app/scripts/make-app.sh
@@ -190,6 +200,13 @@ jobs:
         run: |
           baseline_root="$(scripts/quality-baseline)"
           printf 'DETACH_QUALITY_BASELINE_ROOT=%s\n' "$baseline_root" >>"$GITHUB_ENV"
+      - name: Restore exact packaged test app
+        id: app-cache
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: app/build/Detach.app
+          key: detach-app-v1-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Resources/**/*', 'app/scripts/make-app.sh', 'app/scripts/bundle-modes.sh', 'app/scripts/verify-app.sh', 'bin/detach', 'bin/detach-core', 'scripts/install.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
       - name: Restore Swift and tmux caches
         id: swift-cache
         if: github.event_name != 'pull_request'
@@ -207,6 +224,12 @@ jobs:
         name: Warm exact promoted-main Swift cache
         if: steps.promoted-main.outputs.promoted == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
         run: scripts/quality-cache-warm
+      - id: app-warm
+        name: Prepare exact promoted-main test app
+        if: steps.promoted-main.outputs.promoted == 'true' && steps.swift-cache.outputs.cache-hit == 'true' && steps.app-cache.outputs.cache-hit != 'true'
+        env:
+          DETACH_QUALITY_APP_SCRATCH: 1
+        run: app/scripts/make-app.sh
       - id: swift-dependencies
         name: Materialize exact Swift dependencies
         if: github.event_name != 'pull_request' && steps.swift-cache.outcome == 'success' && steps.promoted-main.outputs.promoted != 'true'
@@ -228,6 +251,12 @@ jobs:
           path: |
             app/.build
           key: detach-swift-v3-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Tests/**/*.swift', 'app/Resources/DetachWatchdog-Info.plist', 'app/scripts/make-app.sh', 'scripts/build-tmux.sh', 'tools/quality_cache_warm.py', 'VERSION', 'BUILD') }}
+      - name: Save exact packaged test app
+        if: always() && github.event_name != 'pull_request' && steps.app-cache.outcome == 'success' && steps.app-cache.outputs.cache-hit != 'true' && ((steps.promoted-main.outputs.promoted == 'true' && (steps.swift-warm.outcome == 'success' || steps.app-warm.outcome == 'success')) || (steps.promoted-main.outputs.promoted != 'true' && steps.main-products.outcome == 'success'))
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: app/build/Detach.app
+          key: detach-app-v1-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Resources/**/*', 'app/scripts/make-app.sh', 'app/scripts/bundle-modes.sh', 'app/scripts/verify-app.sh', 'bin/detach', 'bin/detach-core', 'scripts/install.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
       - name: Publish gate summary
         if: always()
         shell: bash
