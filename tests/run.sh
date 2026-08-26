@@ -1387,15 +1387,7 @@ printf 'foreign sentinel\n' >"$DETACH_CODEX_STATE_ROOT/sessions/$SESSION/sentine
 foreign_pane="$(tmux -L "$SOCKET" new-session -d -P -F '#{pane_id}' -s "$SESSION" -n foreign)"
 tmux -L "$SOCKET" set-option -q -w -t "$foreign_pane" remain-on-exit on
 tmux -L "$SOCKET" send-keys -t "$foreign_pane" 'exit' Enter
-attempts=0
-while [ "$(tmux -L "$SOCKET" display-message -p -t "$foreign_pane" '#{pane_dead}')" != "1" ]; do
-  attempts=$((attempts + 1))
-  [ "$attempts" -lt 40 ] || {
-    printf 'unmanaged test pane did not exit\n' >&2
-    exit 1
-  }
-  sleep 0.05
-done
+wait_for_pane_dead "$foreign_pane"
 collision_json="$(run_codex list --json | grep -F "\"session_name\":\"$SESSION\"")"
 [ "$(printf '%s' "$collision_json" | "$STATE_HELPER" meta get /dev/stdin effective_status)" = "collision" ]
 [ -z "$(printf '%s' "$collision_json" | "$STATE_HELPER" meta get /dev/stdin session_color)" ]
