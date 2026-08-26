@@ -29,10 +29,17 @@ grep -F 'scripts/quality-gate --mode impact --base "$BASE_SHA" --plan' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'name: Run fail-fast static contracts' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F 'run: scripts/quality-gate --mode impact --base "$BASE_SHA" --stage static --without-release-budget' \
+grep -F 'run: scripts/quality-gate --stage static' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'DETACH_QUALITY_GATE_RESULT_ROOT: ${{ runner.temp }}/quality-fail-fast' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+fail_fast_step="$(sed -n \
+  '/name: Run fail-fast static contracts/,/run: scripts\/quality-gate --stage static/p' \
+  "$ROOT/.github/workflows/quality-gates.yml")"
+if printf '%s\n' "$fail_fast_step" | grep -F 'DETACH_QUALITY_AUTHORITY' >/dev/null; then
+  printf 'quality workflow gave merge authority to diagnostic fail-fast\n' >&2
+  exit 1
+fi
 grep -F "steps.impact.outputs.needs_metrics == 'true'" \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F "steps.impact.outputs.needs_swift_cache == 'true'" \

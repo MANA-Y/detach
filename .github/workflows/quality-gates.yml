@@ -58,10 +58,8 @@ jobs:
       - name: Run fail-fast static contracts
         if: github.event_name == 'pull_request'
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           DETACH_QUALITY_GATE_RESULT_ROOT: ${{ runner.temp }}/quality-fail-fast
-          DETACH_QUALITY_AUTHORITY: ci-merge
-        run: scripts/quality-gate --mode impact --base "$BASE_SHA" --stage static --without-release-budget
+        run: scripts/quality-gate --stage static
       - id: promoted-main
         name: Promote exact pull-request evidence
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
