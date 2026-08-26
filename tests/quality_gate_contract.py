@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -18,8 +19,12 @@ from quality_gate import (  # noqa: E402
     GateError,
     QualityGate,
     gate_contract_definitions,
+    gate_orchestrator_limit,
     include_gate_orchestrators,
     parse_name_status,
+    run_app_stage,
+    split_swift_build_jobs,
+    ui_coverage_binary,
 )
 from quality_policy import POLICY_FILE, Policy  # noqa: E402
 
@@ -77,12 +82,57 @@ class QualityGateContract(unittest.TestCase):
         self.assertTrue(include_gate_orchestrators("repository", ""))
         self.assertTrue(include_gate_orchestrators("change", "gate-contract"))
 
+    def test_gate_orchestrator_capacity_tracks_available_processors(self) -> None:
+        self.assertEqual(gate_orchestrator_limit(10), 3)
+        self.assertEqual(gate_orchestrator_limit(8), 3)
+        self.assertEqual(gate_orchestrator_limit(4), 2)
+
     def test_public_shell_entry_point_is_thin(self) -> None:
         wrapper = (ROOT / "scripts/quality-gate").read_text(encoding="utf-8")
         self.assertLessEqual(len(wrapper.splitlines()), 12)
         self.assertIn('exec python3 "$ROOT/tools/quality_gate.py" "$@"', wrapper)
         self.assertNotIn("jq ", wrapper)
         self.assertNotIn("awk ", wrapper)
+
+    def test_app_builds_normal_bundle_and_release_coverage_in_parallel(self) -> None:
+        events: list[str] = []
+
+        class FakeProcess:
+            def __init__(self, command, *, cwd, env):
+                self.command = command
+                self.cwd = cwd
+                self.env = env
+                events.append("coverage-started")
+
+            def wait(self):
+                events.append("coverage-finished")
+                return 0
+
+        def fake_child_run(command, *, cwd=ROOT, env=None):
+            self.assertEqual(events, ["coverage-started"])
+            self.assertEqual(command, [str(ROOT / "app/scripts/make-app.sh")])
+            self.assertEqual(env["DETACH_SWIFT_BUILD_JOBS"], "5")
+            events.append("normal-finished")
+            return 0
+
+        with patch.dict(
+            "os.environ",
+            {"DETACH_QUALITY_GATE_SELECTED_STAGES": "app,quality-contracts"},
+            clear=False,
+        ), patch("quality_gate.os.cpu_count", return_value=10), patch(
+            "quality_gate.subprocess.Popen", FakeProcess
+        ), patch("quality_gate.child_run", fake_child_run):
+            self.assertEqual(run_app_stage(ROOT), 0)
+
+        self.assertEqual(
+            events,
+            ["coverage-started", "normal-finished", "coverage-finished"],
+        )
+        self.assertEqual(split_swift_build_jobs(10), (5, 5))
+        self.assertEqual(
+            ui_coverage_binary(ROOT),
+            ROOT / "app/.build/quality-ui-release/arm64-apple-macosx/release/DetachApp",
+        )
 
 
 def main() -> int:

@@ -30,6 +30,7 @@ It lists current specification ownership and verification links.
 - `docs/quality-gates.md`
 - `docs/testing.md`
 - `quality/*`
+- `quality/policy.tsv`
 - `scripts/*`
 - `scripts/quality-baseline`
 - `scripts/quality-care`

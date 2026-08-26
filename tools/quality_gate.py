@@ -57,20 +57,25 @@ EXECUTION_PREREQUISITES = {
     "claude": ("app",),
     "tmux-runtime": ("app",),
 }
-PROVIDER_WAVE = (
+POST_UI_STAGES = (
+    "gate-contract",
     "codex",
     "claude",
-)
-CONTRACT_WAVE = (
-    "tmux-runtime",
-    "gate-contract",
-)
-RELEASE_WAVE = (
     "distribution",
+    "tmux-runtime",
     "release-preflight",
     "publish-preflight",
     "release-workflow",
 )
+PROCESS_HEAVY_LIMIT = 2
+INTEGRATION_LANE_LIMIT = 1
+PROCESS_HEAVY_STAGES = {"gate-contract", "codex", "claude", "release-workflow"}
+GATE_COMPATIBLE_INTEGRATION_STAGES = {
+    "tmux-runtime",
+    "release-preflight",
+    "publish-preflight",
+}
+UI_COVERAGE_SCRATCH = "quality-ui-release"
 
 
 class GateError(Exception):
@@ -287,6 +292,7 @@ class QualityGate:
         self.effective_mode = ""
         self.resume_dir: Path | None = None
         self.resume_requested_latest = self.options.resume == "latest"
+        self.resume_requested_auto = self.options.resume == "auto"
         result_root = os.environ.get(
             "DETACH_QUALITY_GATE_RESULT_ROOT", str(ROOT / "app/build/quality-gates")
         )
@@ -317,7 +323,7 @@ class QualityGate:
             raise GateError("real static fixture mode is test-only")
         if self.test_direct and not self.test_mode:
             raise GateError("direct fixture mode is test-only")
-        if self.options.mode not in ("change", "repository", "release"):
+        if self.options.mode not in ("change", "impact", "repository", "release"):
             raise GateError(f"invalid mode: {self.options.mode}")
         requested = os.environ.get("DETACH_QUALITY_AUTHORITY", "")
         if not requested:
@@ -332,8 +338,9 @@ class QualityGate:
         elif self.authority in ("ci-merge", "ci-main"):
             if os.environ.get("GITHUB_ACTIONS") != "true":
                 raise GateError(f"{self.authority} authority is restricted to GitHub Actions")
-            if self.options.mode != "repository":
-                raise GateError(f"{self.authority} authority requires repository mode")
+            required_mode = "impact" if self.authority == "ci-merge" else "repository"
+            if self.options.mode != required_mode:
+                raise GateError(f"{self.authority} authority requires {required_mode} mode")
             if self.options.stage:
                 raise GateError(f"{self.authority} authority cannot run one diagnostic stage")
         elif self.authority == "release":
@@ -417,7 +424,9 @@ class QualityGate:
         ):
             raise GateError("--list-stages cannot be combined with another option")
 
-    def changed_entries(self) -> list[tuple[str, str, str | None]]:
+    def changed_entries(
+        self, *, include_worktree: bool = True
+    ) -> list[tuple[str, str, str | None]]:
         entries: list[tuple[str, str, str | None]] = []
         if self.resolved_base:
             entries.extend(
@@ -433,13 +442,26 @@ class QualityGate:
                     )
                 )
             )
-        entries.extend(
-            parse_name_status(
-                git_bytes(["diff", "--name-status", "-z", "--find-renames", "HEAD"])
+        if include_worktree:
+            entries.extend(
+                parse_name_status(
+                    git_bytes(["diff", "--name-status", "-z", "--find-renames", "HEAD"])
+                )
             )
-        )
-        entries.extend(("A", path, None) for path in untracked_paths())
+            entries.extend(("A", path, None) for path in untracked_paths())
         return entries
+
+    def validate_authoritative_impact(self) -> None:
+        if self.authority != "ci-merge":
+            return
+        github_sha = os.environ.get("GITHUB_SHA", "")
+        if github_sha != self.source_commit:
+            raise GateError("ci-merge source does not match GITHUB_SHA")
+        parents = git_text(["show", "-s", "--format=%P", "HEAD"]).split()
+        if len(parents) != 2 or parents[0] != self.resolved_base:
+            raise GateError("ci-merge base is not the tested merge first parent")
+        if git_bytes(["diff", "--binary", "HEAD"]) or untracked_paths():
+            raise GateError("ci-merge impact checkout must be clean")
 
     def select_all_impacts(self) -> None:
         self.specs = list(self.policy.specs)
@@ -488,17 +510,23 @@ class QualityGate:
             self.resolved_base = git_text(
                 ["rev-parse", "--verify", f"{self.options.base}^{{commit}}"]
             )
+        if self.options.mode == "impact" and not self.resolved_base:
+            raise GateError("impact mode requires --base")
+        self.validate_authoritative_impact()
         if self.options.stage:
             if self.options.stage not in self.all_stages:
                 raise GateError(f"unknown stage: {self.options.stage}")
             self.selected = [self.options.stage]
         elif self.options.mode == "repository":
             self.select_all()
-        elif self.options.mode == "release":
+        elif self.options.mode == "release" and not self.resolved_base:
             self.selected = list(self.release_stages)
             self.select_all_impacts()
         else:
-            for status, path, new_path in self.changed_entries():
+            include_worktree = self.options.mode == "change"
+            for status, path, new_path in self.changed_entries(
+                include_worktree=include_worktree
+            ):
                 if new_path is not None:
                     self.select_path(path, f"{status} old")
                     self.select_path(new_path, f"{status} new")
@@ -519,6 +547,9 @@ class QualityGate:
                     if prerequisite in self.selected and dependent not in self.selected:
                         self.add_stage(dependent, f"mandatory {prerequisite} prerequisite")
                         changed = True
+        if self.options.mode == "release":
+            self.selected = [stage for stage in self.selected if stage in self.release_stages]
+            self.add_stage("release-budget", "mandatory release timing postflight")
         self.selected = [stage for stage in self.all_stages if stage in self.selected]
         if self.options.without_release_budget:
             self.selected = [stage for stage in self.selected if stage != "release-budget"]
@@ -845,9 +876,18 @@ class QualityGate:
     def validate_resume(self) -> None:
         if not self.options.resume:
             return
-        self.resume_dir = (
-            self.latest_resume() if self.resume_requested_latest else Path(self.options.resume)
-        )
+        if self.resume_requested_auto:
+            try:
+                self.resume_dir = self.latest_resume()
+            except GateError as error:
+                print(f"quality-gate: {error}; starting a fresh compatible run")
+                return
+        else:
+            self.resume_dir = (
+                self.latest_resume()
+                if self.resume_requested_latest
+                else Path(self.options.resume)
+            )
         resume = self.resume_dir
         if not resume.is_dir() or resume.is_symlink():
             raise GateError("resume path must be a non-symlink run directory")
@@ -1240,6 +1280,58 @@ class QualityGate:
             if stage in self.results:
                 self.report(stage)
 
+    def run_post_ui_stages(self) -> None:
+        pending = [stage for stage in POST_UI_STAGES if stage in self.selected]
+        budgets = self.budget_values()
+
+        def expected_seconds(stage: str) -> int:
+            value = budgets.get(f"stage_{stage.replace('-', '_')}_seconds_max")
+            if value is None or not POSITIVE_INTEGER.fullmatch(value):
+                raise GateError(f"release stage budget must rank scheduled stage: {stage}")
+            return int(value)
+
+        pending.sort(key=lambda stage: (-expected_seconds(stage), self.all_stages.index(stage)))
+        while pending or any(stage in self.active for stage in POST_UI_STAGES):
+            while pending:
+                active_heavy = sum(
+                    stage in self.active for stage in PROCESS_HEAVY_STAGES
+                )
+                active_integration = sum(
+                    stage in self.active
+                    for stage in POST_UI_STAGES
+                    if stage not in PROCESS_HEAVY_STAGES
+                )
+                candidate = next(
+                    (
+                        stage for stage in pending
+                        if (
+                            active_heavy < PROCESS_HEAVY_LIMIT
+                            if stage in PROCESS_HEAVY_STAGES
+                            else (
+                                active_integration < INTEGRATION_LANE_LIMIT
+                                and (
+                                    "gate-contract" not in self.active
+                                    or stage in GATE_COMPATIBLE_INTEGRATION_STAGES
+                                )
+                            )
+                        )
+                    ),
+                    None,
+                )
+                if candidate is None:
+                    break
+                pending.remove(candidate)
+                stage = candidate
+                self.launch(stage)
+                if stage in self.results:
+                    self.report(stage)
+            self.poll_active()
+            for stage in POST_UI_STAGES:
+                if stage in self.results:
+                    self.report(stage)
+            if pending or any(stage in self.active for stage in POST_UI_STAGES):
+                time.sleep(0.05)
+
     def budget_values(self) -> dict[str, str | None]:
         if not self.release_budget.is_file() or self.release_budget.is_symlink():
             raise GateError("release budget is missing or unsafe")
@@ -1606,15 +1698,7 @@ class QualityGate:
             self.wait_for(("ui-e2e",))
             self.launch("quality-contracts")
             self.wait_for(("quality-contracts",))
-            for stage in PROVIDER_WAVE:
-                self.launch(stage)
-            self.wait_for(PROVIDER_WAVE)
-            for stage in CONTRACT_WAVE:
-                self.launch(stage)
-            self.wait_for(CONTRACT_WAVE)
-            for stage in RELEASE_WAVE:
-                self.launch(stage)
-            self.wait_for(RELEASE_WAVE)
+            self.run_post_ui_stages()
             for stage in self.selected:
                 if stage != "release-budget":
                     self.wait_for((stage,))
@@ -1867,12 +1951,17 @@ def gate_contract_definitions(
     ]
 
 
+def gate_orchestrator_limit(logical_cpus: int | None = None) -> int:
+    available = logical_cpus if logical_cpus is not None else os.cpu_count()
+    return 3 if (available or 0) >= 8 else 2
+
+
 def include_gate_orchestrators(mode: str, diagnostic_stage: str) -> bool:
     return mode != "change" or bool(diagnostic_stage)
 
 
 def run_gate_contract_stage(root: Path, *, include_orchestrators: bool) -> int:
-    orchestrator_limit = 2
+    orchestrator_limit = gate_orchestrator_limit()
     contracts = gate_contract_definitions(
         root, include_orchestrators=include_orchestrators
     )
@@ -1973,6 +2062,67 @@ def tmux_preflight(tmux: Path) -> int:
         shutil.rmtree(preflight)
 
 
+def ui_coverage_binary(root: Path) -> Path:
+    return (
+        root / "app/.build" / UI_COVERAGE_SCRATCH
+        / "arm64-apple-macosx/release/DetachApp"
+    )
+
+
+def split_swift_build_jobs(logical_cpus: int | None = None) -> tuple[int, int]:
+    available = logical_cpus if logical_cpus is not None else os.cpu_count()
+    total = max(2, available or 2)
+    normal = (total + 1) // 2
+    return normal, total - normal
+
+
+def run_app_stage(root: Path) -> int:
+    make_app = [str(root / "app/scripts/make-app.sh")]
+    selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
+    if "quality-contracts" not in selected:
+        return child_run(make_app)
+
+    normal_jobs, coverage_jobs = split_swift_build_jobs()
+    normal_environment = os.environ.copy()
+    normal_environment["DETACH_SWIFT_BUILD_JOBS"] = str(normal_jobs)
+    coverage_environment = os.environ.copy()
+    coverage_environment.pop("DETACH_APP_BUILD_MARKER_FILE", None)
+    coverage_module_cache = root / "app/.build/quality-ui-module-cache"
+    coverage_environment.update(
+        {
+            "CLANG_MODULE_CACHE_PATH": str(coverage_module_cache),
+            "SWIFTPM_MODULECACHE_OVERRIDE": str(coverage_module_cache),
+        }
+    )
+    coverage_command = [
+        "swift",
+        "build",
+        "--enable-code-coverage",
+        "--disable-sandbox",
+        "--disable-automatic-resolution",
+        "--cache-path",
+        str(root / "app/.build"),
+        "-c",
+        "release",
+        "--triple",
+        "arm64-apple-macosx26.0",
+        "--scratch-path",
+        str(root / "app/.build" / UI_COVERAGE_SCRATCH),
+        "--product",
+        "DetachApp",
+        "--jobs",
+        str(coverage_jobs),
+    ]
+    coverage_process = subprocess.Popen(
+        coverage_command,
+        cwd=root / "app",
+        env=coverage_environment,
+    )
+    normal_status = child_run(make_app, env=normal_environment)
+    coverage_status = coverage_process.wait()
+    return normal_status or coverage_status
+
+
 def run_stage_worker(stage: str) -> int:
     root = Path(os.environ.get("DETACH_QUALITY_GATE_ROOT", ROOT))
     run_dir = Path(os.environ["DETACH_QUALITY_GATE_RUN_DIR"])
@@ -2070,7 +2220,7 @@ def run_stage_worker(stage: str) -> int:
             environment.update(
                 {
                     "DETACH_UI_COVERAGE_BINARY": str(
-                        root / "app/.build/arm64-apple-macosx/release/DetachApp"
+                        ui_coverage_binary(root)
                     ),
                     "DETACH_UI_COVERAGE_PROFILE_DIR": str(profile_directory),
                 }
@@ -2086,30 +2236,7 @@ def run_stage_worker(stage: str) -> int:
             shutil.rmtree(profile_directory, ignore_errors=True)
         return status
     if stage == "app":
-        status = child_run([str(root / "app/scripts/make-app.sh")])
-        if status:
-            return status
-        selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
-        if "quality-contracts" not in selected:
-            return 0
-        return child_run(
-            [
-                "swift",
-                "build",
-                "--enable-code-coverage",
-                "--disable-sandbox",
-                "--disable-automatic-resolution",
-                "-c",
-                "release",
-                "--triple",
-                "arm64-apple-macosx26.0",
-                "--scratch-path",
-                ".build",
-                "--product",
-                "DetachApp",
-            ],
-            cwd=root / "app",
-        )
+        return run_app_stage(root)
     if stage == "ui-e2e":
         status = child_run([str(root / "tests/ui-e2e-contract.sh")])
         if status:
@@ -2119,9 +2246,7 @@ def run_stage_worker(stage: str) -> int:
         selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
         coverage_dir = root / "app/build/quality-ui-coverage" / run_dir.name
         if "quality-contracts" in selected:
-            coverage_binary = (
-                root / "app/.build/arm64-apple-macosx/release/DetachApp"
-            )
+            coverage_binary = ui_coverage_binary(root)
             if not coverage_binary.is_file() or coverage_binary.is_symlink():
                 print(
                     "quality-gate: app stage emitted no safe coverage executable",

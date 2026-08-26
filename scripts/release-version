@@ -505,8 +505,8 @@ file_line() {
 }
 
 run_full_tests() {
-  local baseline_root=""
-  note 'running the complete pre-release test suite before Git changes'
+  local impact_base="$1" baseline_root=""
+  note "running the impact-selected pre-release test suite from $impact_base"
   if [ "$TEST_MODE" != 1 ]; then
     baseline_root="$(DETACH_QUALITY_REPOSITORY="$REPOSITORY" \
       "$ROOT/scripts/quality-baseline")"
@@ -517,14 +517,17 @@ run_full_tests() {
       'Ignoring reference-machine timing budgets for this release'
     note 'owner waived reference-machine timing budgets for this release only'
     DETACH_RELEASE_TIMING_OVERRIDE="$REPOSITORY@$TAG" \
-      "$ROOT/scripts/quality-gate" --mode release --without-release-budget
+      "$ROOT/scripts/quality-gate" --mode release --base "$impact_base" \
+        --without-release-budget --resume auto
   else
-    "$ROOT/scripts/quality-gate" --mode release
+    "$ROOT/scripts/quality-gate" --mode release --base "$impact_base" \
+      --resume auto
   fi
 }
 
 initialize_workflow() {
   local current_version current_build published_manifest published_version published_build
+  local published_tag
   local target_release_status remote_main remote_tag configured_build
 
   verify_main_branch
@@ -557,8 +560,13 @@ initialize_workflow() {
   download_latest_manifest "$published_manifest"
   published_version="$(manifest_value "$published_manifest" version)"
   published_build="$(manifest_value "$published_manifest" build)"
+  published_tag="$(manifest_value "$published_manifest" tag)"
   valid_semver "$published_version" || die 'published release manifest has invalid SemVer'
   [[ "$published_build" =~ ^[1-9][0-9]*$ ]] || die 'published release manifest has invalid build'
+  [ "$published_tag" = "v$published_version" ] || \
+    die 'published release manifest tag does not match its version'
+  git -C "$ROOT" rev-parse --verify "$published_tag^{commit}" >/dev/null || \
+    die 'published release tag is missing locally'
   semver_greater_than "$VERSION" "$published_version" || \
     die "target version must be greater than published version ($published_version)"
   [ "$current_build" = "$published_build" ] || \
@@ -569,7 +577,7 @@ initialize_workflow() {
     die "release build must exceed published build $published_build"
   BUILD="$configured_build"
 
-  run_full_tests
+  run_full_tests "$published_tag"
   verify_clean_worktree
   fetch_origin
   remote_main="$(git -C "$ROOT" rev-parse --verify refs/remotes/origin/main)"

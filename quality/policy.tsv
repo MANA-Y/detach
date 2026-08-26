@@ -1,5 +1,5 @@
 schema	1
-policy	43
+policy	44
 spec	documentation	docs/specs/documentation.md	Agent context, specifications, and quality automation stay synchronized.
 spec	runtime	docs/specs/runtime.md	Runtime state and session operations preserve exact ownership.
 spec	power	docs/specs/power.md	Power protection fails safe across both required layers.
@@ -28,6 +28,7 @@ stage	130	release-workflow	900	false
 stage	140	release-budget	1	true
 dependency	app	ui-e2e
 test-domain	policy	static,gate-contract	quality-system
+test-domain	quality-core	*	*
 test-domain	docs	static	documentation
 test-domain	state-runtime	static,swift,quality-contracts,app,codex,claude,distribution,tmux-runtime,release-budget	session-lifecycle
 test-domain	power	static,swift,quality-contracts,app,distribution,tmux-runtime,release-budget	power-protection
@@ -71,18 +72,19 @@ coverage-region	ui	app/Sources/DetachApp/RootView.swift	ui-e2e-instrumentation	S
 coverage-region	ui	app/Sources/DetachApp/SessionDetailView.swift	ui-e2e-instrumentation	SC-UI-SESSION-STOP,SC-UI-SESSION-DELETE	The packaged journey covers action geometry and its negative control.
 coverage-region	ui	app/Sources/DetachApp/SettingsView.swift	ui-e2e-instrumentation	SC-UI-SETTINGS	The packaged Settings journey covers its semantic control.
 coverage-region	ui	app/Sources/DetachApp/SidebarView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-SESSION-DETAIL,SC-UI-SESSION-DELETE,SC-UI-FAILURE	Packaged journeys cover sidebar control geometry, bulk Delete, and failure status.
+route	1100	quality/policy.tsv	quality-core	safe	docs/specs/documentation.md
 route	1000	quality/*	policy	safe	docs/specs/documentation.md
-route	1000	.github/workflows/quality-gates.yml	policy	safe	docs/specs/documentation.md
+route	1100	.github/workflows/quality-gates.yml	quality-core	safe	docs/specs/documentation.md
 route	1000	.github/workflows/security.yml	policy	safe	docs/specs/documentation.md
 route	1000	.github/dependabot.yml	policy	safe	docs/specs/documentation.md
 route	1000	docs/quality-gates.md	policy	safe	docs/specs/documentation.md
 route	1000	docs/testing.md	policy	safe	docs/specs/documentation.md
-route	1000	scripts/quality-gate	policy	safe	docs/specs/documentation.md
-route	1000	tools/quality_gate.py	policy	safe	docs/specs/documentation.md
+route	1100	scripts/quality-gate	quality-core	safe	docs/specs/documentation.md
+route	1100	tools/quality_gate.py	quality-core	safe	docs/specs/documentation.md
 route	1000	scripts/quality-scenarios	policy	safe	docs/specs/documentation.md
 route	1000	tools/quality_scenarios.py	policy	safe	docs/specs/documentation.md
-route	1000	scripts/quality-policy	policy	safe	docs/specs/documentation.md
-route	1000	tools/quality_policy.py	policy	safe	docs/specs/documentation.md
+route	1100	scripts/quality-policy	quality-core	safe	docs/specs/documentation.md
+route	1100	tools/quality_policy.py	quality-core	safe	docs/specs/documentation.md
 route	1000	scripts/quality-metrics	policy	safe	docs/specs/documentation.md
 route	1000	tools/quality_metrics.py	policy	safe	docs/specs/documentation.md
 route	1000	scripts/quality-baseline	policy	safe	docs/specs/documentation.md

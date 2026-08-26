@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 from typing import Any, NoReturn
@@ -55,14 +56,16 @@ def document(raw: str, label: str) -> dict[str, Any]:
     return value
 
 
-def successful_run(value: dict[str, Any]) -> int:
+def successful_runs(value: dict[str, Any]) -> list[int]:
     runs = value.get("workflow_runs")
     if not isinstance(runs, list) or not runs:
         raise BaselineError("no successful main quality run is available")
-    first = runs[0]
-    if not isinstance(first, dict) or not isinstance(first.get("id"), int) or first["id"] <= 0:
-        raise BaselineError("successful main quality run id is invalid")
-    return first["id"]
+    identifiers: list[int] = []
+    for run in runs:
+        if not isinstance(run, dict) or not isinstance(run.get("id"), int) or run["id"] <= 0:
+            raise BaselineError("successful main quality run id is invalid")
+        identifiers.append(run["id"])
+    return identifiers
 
 
 def evidence_artifact(value: dict[str, Any], run_id: int) -> str:
@@ -94,40 +97,54 @@ def restore(
     if output_root.exists() and (not output_root.is_dir() or output_root.is_symlink()):
         raise BaselineError("baseline output is unsafe")
     output_root.mkdir(parents=True, exist_ok=True)
-    run_id = successful_run(document(
+    run_ids = successful_runs(document(
         gh(
             executable,
             [
                 "api",
                 f"repos/{repository}/actions/workflows/quality-gates.yml/runs"
-                "?branch=main&status=success&event=push&per_page=1",
+                "?branch=main&status=success&event=push&per_page=20",
             ],
         ),
         "workflow run",
     ))
-    artifact = evidence_artifact(document(
-        gh(executable, ["api", f"repos/{repository}/actions/runs/{run_id}/artifacts"]),
-        "artifact",
-    ), run_id)
-    destination = output_root / str(run_id)
-    if destination.exists():
-        raise BaselineError(f"baseline destination already exists: {destination}")
-    destination.mkdir()
-    gh(
-        executable,
-        [
-            "run", "download", str(run_id), "--repo", repository, "--name", artifact,
-            "--dir", str(destination),
-        ],
-    )
-    manifests = [
-        path for path in destination.glob("*/manifest.tsv")
-        if path.is_file() and not path.is_symlink()
-    ]
-    if len(manifests) != 1:
-        raise BaselineError("downloaded evidence has no unique quality manifest")
-    print(destination)
-    return destination
+    for run_id in run_ids:
+        destination = output_root / str(run_id)
+        if destination.exists():
+            if not destination.is_dir() or destination.is_symlink():
+                raise BaselineError(f"baseline destination is unsafe: {destination}")
+        else:
+            artifact = evidence_artifact(document(
+                gh(
+                    executable,
+                    ["api", f"repos/{repository}/actions/runs/{run_id}/artifacts"],
+                ),
+                "artifact",
+            ), run_id)
+            destination.mkdir()
+            try:
+                gh(
+                    executable,
+                    [
+                        "run", "download", str(run_id), "--repo", repository,
+                        "--name", artifact, "--dir", str(destination),
+                    ],
+                )
+            except Exception:
+                shutil.rmtree(destination, ignore_errors=True)
+                raise
+        manifests = [
+            path for path in destination.glob("*/manifest.tsv")
+            if path.is_file() and not path.is_symlink()
+        ]
+        if len(manifests) != 1:
+            raise BaselineError("downloaded evidence has no unique quality manifest")
+        run_dir = manifests[0].parent
+        metrics = run_dir / "quality-metrics.json"
+        if metrics.is_file() and not metrics.is_symlink():
+            print(destination)
+            return destination
+    raise BaselineError("no successful main quality run has quality metrics")
 
 
 def parser() -> argparse.ArgumentParser:

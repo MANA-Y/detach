@@ -32,9 +32,10 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   process behavior is the subject. Stdlib Python owns quality planning,
   scheduling, policy, evidence, comparison, mutation, and dashboard logic.
   Each Python tool has deterministic contract tests.
-- Fast local diagnostics close the edit loop. They never claim merge readiness.
-  Hosted pull-request CI runs the full repository gate on the exact change and
-  is the sole ordinary merge-readiness authority.
+- Local diagnostics close the edit loop. They never claim merge readiness.
+  Hosted pull-request CI is the
+  sole authority. It runs the tested merge's policy-selected impact plan.
+  Unknown and quality-core changes select the full plan.
 - `scripts/test critical`, `unit`, `coverage`, `smoke`, and `full` are the
   stable human entry points for the high-risk logic loop, complete Swift loop,
   measured coverage loop, freshly packaged product smoke, and exhaustive local
@@ -56,39 +57,40 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   restore old policy. An unsupported evidence schema is outside the telemetry
   sample. Current-schema telemetry can span earlier policy identifiers without
   dashboard-only fields. Malformed evidence remains an attention signal.
-- `quality/evals.json` keeps current expected outcomes for historical changes,
-  escaped defects, policy mutations, and scope violations. Its stable graders
-  compare selected stages, specifications, capabilities, user journeys,
-  release gates, and ignored private paths. A policy change must update an
-  expectation only when the intended observable outcome changes.
+- `quality/evals.json` keeps expected outcomes for historical changes, escaped
+  defects, policy mutations, and scope violations. Its graders compare stages,
+  specs, capabilities, journeys, release gates, and ignored paths. Change an
+  expectation only when the intended outcome changes.
 - Instrumented user scenarios emit addressable begin and pass events. Gate
   evidence records their requirement and journey links, duration, result, and
   bounded rerun command. A passed stage with missing scenario events fails.
 - A local timing-budget failure creates performance work. Warm-cache or
   variance reruns cannot turn it into readiness; an unchanged rerun is allowed
   only for an evidenced unrelated external transient whose cause is recorded.
-- Pull-request CI runs every functional check once and the timing-policy
-  ratchets. It does not enforce reference-machine wall or per-stage timing
-  ceilings. The workflow has a ten-minute overall deadline.
-- The gate-contract runner admits at most two process-heavy orchestrator shards
-  at one time. Lightweight contracts stay concurrent. The runner does not
-  increase a timing budget to hide process oversubscription.
-- The repository gate runs the Codex and Claude lanes together. It starts the
-  runtime and gate-contract lanes only after both provider lanes drain. Thus,
-  no more than two process-heavy top-level lanes compete on one macOS runner.
-- CI gets quality metrics from the last green `main` artifact. Test identities,
-  aggregate coverage, and critical-source coverage cannot decrease. Changed
-  executable Swift lines need at least 90 percent coverage. A person does not
-  edit or raise coverage floors. Coverage exclusions exist only in the quality
-  policy. Each exclusion links to automated scenario evidence and applies to
-  both aggregate and changed-line metrics. A critical source cannot be
-  excluded. A test-only region in a product source has a policy-owned name,
-  checked source markers, and automated scenario evidence. The region is
-  omitted only from changed-line metrics, not aggregate coverage.
+- Pull-request CI runs each selected check once. Only the tested merge first
+  parent is a valid impact base. CI keeps timing ratchets but not reference-Mac
+  ceilings. Its overall deadline is ten minutes.
+- The gate-contract runner admits three process-heavy orchestrator shards on a
+  host with at least eight logical CPUs, and two on a smaller host. Lightweight
+  contracts stay concurrent. The runner does not increase a timing budget to
+  hide process oversubscription.
+- After exclusive SwiftPM and UI phases, a priority queue starts ready work.
+  At most two top-level process-heavy lanes compete. One separate integration
+  and preflight lane can run with them. Short preflight and runtime checks can
+  use it during gate-contract. Distribution waits for gate-contract. A
+  completed stage opens its slot without a fixed wave barrier.
+- CI uses the newest green `main` artifact with measured metrics. A later run
+  without metrics does not replace it. Test identities, aggregate coverage,
+  and critical-source coverage cannot decrease. Changed Swift lines need 90
+  percent coverage. A person cannot raise floors. Policy-owned exclusions need
+  scenario evidence and cannot cover critical sources. Named test-only regions
+  stay in aggregate coverage but not changed-line metrics.
 - Authoritative UI coverage combines instrumented Swift tests with
-  packaged-app journeys. The app stage verifies the normal bundle, then builds
-  an instrumented release executable for the stripped private copy. The
-  metric stage merges profiles after UI without another test run.
+  packaged-app journeys. The app stage builds the normal bundle and an
+  instrumented release executable in isolated SwiftPM paths at the same time.
+  It splits the available workers between them and verifies the normal bundle.
+  Only the stripped private copy gets the instrumented executable. The metric
+  stage merges profiles after UI without another test run.
 - `coverage-opportunities.json` is a separate digest-bound advisory artifact.
   It ranks uncovered UI sources from policy routes, release impact,
   requirements, and journeys. Its next milestone is the five-point boundary
@@ -124,11 +126,9 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   main-branch Security run can deploy its passed or failed CodeQL result over
   the last green main evidence. A healthy care run closes the prior scoped
   attention issue.
-- An ordinary merged pull request does not repeat the full functional matrix
-  on `main`. The main workflow promotes the successful pull-request artifact
-  only when the tested merge and final merge have the same tree and ordered
-  parents. Promotion keeps both commit identities and every original digest.
-  Missing or ambiguous proof falls back to a full `ci-main` repository gate.
+- `main` promotes a successful pull-request artifact only when its stages equal
+  a fresh impact plan and both merges have the same tree and ordered parents.
+  Promotion keeps identities and digests. Ambiguity runs a full `ci-main` gate.
 - The active GitHub ruleset for `main` has no bypass actors. It requires a pull
   request, a current strict GitHub Actions `quality-gates` job, merge commits,
   and no approving review. It rejects deletion and non-fast-forward updates.

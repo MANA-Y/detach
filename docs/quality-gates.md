@@ -8,8 +8,9 @@ generates `quality/generated/policy.json` and
 state. Git stores its history. Generated data must match the source.
 
 `scripts/quality-gate` applies the policy. Local runs are diagnostics. Hosted
-pull request CI runs every functional stage on the current merge commit and is
-the only ordinary merge authority. Unknown paths select the full plan.
+pull request CI runs the exact policy-selected impact plan on the current merge
+commit and is the only ordinary merge authority. Unknown paths and changes to
+the core planner, policy, or quality workflow select the full plan.
 For a normal local change, `gate-contract` runs direct self-contracts only.
 `--mode repository` runs the full orchestrator shards. An explicit local
 `--stage gate-contract` also runs all shards for diagnosis.
@@ -24,10 +25,17 @@ For a normal local change, `gate-contract` runs direct self-contracts only.
   resolved merge base.
 - `scripts/quality-gate --mode repository` runs every automated repository
   check. A local run remains diagnostic.
-- `scripts/quality-gate --mode release` runs the complete pre-release plan. It
-  omits only the recursive `scripts/release-version` test.
+- `scripts/quality-gate --mode impact --base <ref>` runs the committed
+  dependency-closed impact plan. Hosted merge authority requires this mode, a
+  clean checkout, and the tested merge first parent as `<ref>`.
+- `scripts/quality-gate --mode release --base <tag>` runs the release stages
+  selected by the accumulated diff from `<tag>`. It omits the recursive
+  `scripts/release-version` test. Release mode without a base fails safe to the
+  complete release plan.
 - `scripts/quality-gate --resume <run-dir>` reuses compatible passed stages.
   `--resume latest` selects the newest compatible local run.
+  `--resume auto` starts fresh when no compatible run exists. Releases use
+  this mode so an interrupted attempt does not repeat passed stages.
 - `scripts/quality-gate --stage <name>` reruns one diagnostic stage. It is not
   readiness evidence.
 - `scripts/quality-scenarios rerun SC-ID` runs the owning diagnostic stage for
@@ -129,23 +137,27 @@ SLO is less than ten minutes.
 
 Static validation runs before the parallel self-contract workers. This keeps
 its two-second local signal free of scheduler contention. Coverage compilation
-and the app build then get exclusive SwiftPM access. The app stage verifies the
-normal bundle before it builds a coverage-enabled release executable for the
-private UI copy. The short packaged UI lane runs after the verified app and
-before the CPU-intensive
-provider, runtime, and gate-contract lanes. This prevents WindowServer event
-delivery from competing with those workers. Provider lanes then run in
-parallel. After they drain, the runtime and gate-contract lanes run in
-parallel. This admits at most two process-heavy top-level lanes. Independent
-distribution and release lanes overlap after both groups drain.
+and the app build then get exclusive SwiftPM access. The app stage uses
+isolated build paths and splits the available workers to build the normal
+bundle and coverage-enabled release executable at the same time. It verifies
+the normal bundle. Only the private UI copy gets the instrumented executable.
+The short packaged UI lane runs after the verified app and before the
+CPU-intensive provider, runtime, and gate-contract lanes. This prevents
+WindowServer event delivery from competing with those workers. After the UI and metric phases,
+the scheduler starts ready process-heavy stages in descending policy timing
+order. It admits at most two process-heavy top-level lanes. One separate lane
+runs short runtime and release preflights during gate-contract. Distribution
+uses that lane only after gate-contract ends. A free slot starts the next ready
+stage without a fixed wave barrier.
 
 Quality analysis runs after the UI lane. It merges the completed Swift profile
 with all passed packaged-app profiles. It reads the existing Swift log and does
 not run a test twice.
 
-The gate-contract stage keeps lightweight contracts concurrent. It admits at
-most two process-heavy orchestrator shards at one time. This limit prevents
-process oversubscription without increasing the stage budget.
+The gate-contract stage keeps lightweight contracts concurrent. It admits
+three process-heavy orchestrator shards on a host with at least eight logical
+CPUs, and two on a smaller host. This limit prevents process oversubscription
+without increasing the stage budget.
 
 Swift and Clang caches stay under `app/.build`. The packaged UI test uses a
 stripped process-private app, fake CLI, and private state. Provider tests use
@@ -173,14 +185,18 @@ unknown path selects every functional stage and every release impact.
 | Release or publication | app, preflights, workflow contracts, and dependencies |
 | Unknown path | full repository plan |
 
-Hosted pull request CI does not trust the local selection as merge evidence. It
-runs the full functional plan exactly once on the merge commit.
+Hosted pull request CI does not trust a caller-supplied stage list. It requires
+the clean tested merge commit, classifies the exact base-to-merge diff, applies
+dependency closure, and records the result. Main promotion classifies the same
+diff again. Unknown paths and quality-core changes select the full plan.
 
 ## Automatic quality facts
 
-CI downloads the exact evidence from the last successful `main` run before it
-starts. An authoritative run accepts only a digest-bound
-`quality-metrics.json` from `ci-main`. It never reads a manual floor file.
+CI inspects recent successful `main` runs and downloads the newest exact
+evidence that contains quality metrics. A narrow run can omit metrics only when
+its impact does not select `quality-contracts`. An authoritative metric run
+accepts only a digest-bound `quality-metrics.json` from `ci-main`. It never
+reads a manual floor file.
 
 The metric artifact records exact UI and business test identities, aggregate
 line coverage, critical-source coverage, and changed executable Swift lines.

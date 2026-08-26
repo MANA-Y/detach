@@ -12,16 +12,65 @@
         "status": "known",
         "stages": [
           "static",
-          "gate-contract"
+          "gate-contract",
+          "swift",
+          "quality-contracts",
+          "app",
+          "ui-e2e",
+          "codex",
+          "claude",
+          "distribution",
+          "tmux-runtime",
+          "release-preflight",
+          "publish-preflight",
+          "release-workflow",
+          "release-budget"
         ],
         "specs": [
           "documentation"
         ],
         "capabilities": [
-          "quality-system"
+          "quality-system",
+          "documentation",
+          "session-lifecycle",
+          "power-protection",
+          "app-experience",
+          "onboarding",
+          "settings",
+          "update",
+          "diagnostics",
+          "installation",
+          "publication"
         ],
         "journeys": [
-          "J-QUALITY-CHANGE"
+          "J-QUALITY-CHANGE",
+          "J-DOCS-CONSISTENCY",
+          "J-SESSION-CREATE",
+          "J-SESSION-PERSIST",
+          "J-SESSION-RECOVER",
+          "J-SESSION-STOP",
+          "J-SESSION-DELETE",
+          "J-POWER-ENABLE",
+          "J-POWER-LOW-BATTERY",
+          "J-POWER-HELPER-LEASE",
+          "J-POWER-CLOSED-LID",
+          "J-APP-DASHBOARD",
+          "J-APP-DETAIL",
+          "J-APP-EMPTY",
+          "J-APP-FAILURE",
+          "J-APP-FOCUS",
+          "J-APP-NEW-SESSION",
+          "J-ONBOARD-FIRST-RUN",
+          "J-ONBOARD-PROVIDER",
+          "J-ONBOARD-APPROVAL",
+          "J-SETTINGS-CHANGE",
+          "J-UPDATE-CHECK",
+          "J-UPDATE-APPLY",
+          "J-DOCTOR-REPORT",
+          "J-INSTALL-CLEAN",
+          "J-INSTALL-REPAIR",
+          "J-INSTALL-UNINSTALL",
+          "J-PUBLISH-ARTIFACTS"
         ],
         "release_gates": [],
         "unknown": false

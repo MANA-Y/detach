@@ -8,6 +8,7 @@ RESULT_ROOT="$TMP_ROOT/results"
 RUN_DIR="$RESULT_ROOT/20260811T100000Z-1"
 OUTPUT="$TMP_ROOT/dashboard"
 PROMOTED_OUTPUT="$TMP_ROOT/promoted-dashboard"
+FALLBACK_OUTPUT="$TMP_ROOT/fallback-dashboard"
 MUTATION_SUMMARY="$TMP_ROOT/mutation-summary.json"
 CARE_SUMMARY="$TMP_ROOT/care-summary.json"
 SECURITY_SUMMARY="$TMP_ROOT/security-summary.json"
@@ -266,7 +267,7 @@ import json
 import sys
 with open(sys.argv[1], encoding="utf-8") as source:
     data = json.load(source)
-assert data["schema"] == 3
+assert data["schema"] == 4
 assert data["run"]["authority"] == "ci-merge"
 assert data["run"]["result"] == "passed"
 assert [spec["id"] for spec in data["specifications"]] == ["app"]
@@ -317,6 +318,30 @@ except DashboardError:
     pass
 else:
     raise AssertionError("dashboard accepted incomplete merge evidence")
+PY
+
+METRICS_BASELINE="$TMP_ROOT/metrics-baseline"
+NO_METRICS_ROOT="$TMP_ROOT/no-metrics-results"
+mkdir -p "$METRICS_BASELINE" "$NO_METRICS_ROOT"
+cp -R "$RUN_DIR" "$METRICS_BASELINE/"
+awk -F '\t' -v OFS='\t' '$1 == "authority" {$2="ci-main"} {print}' \
+  "$METRICS_BASELINE/$(basename "$RUN_DIR")/manifest.tsv" \
+  >"$TMP_ROOT/baseline-manifest.tsv"
+mv "$TMP_ROOT/baseline-manifest.tsv" \
+  "$METRICS_BASELINE/$(basename "$RUN_DIR")/manifest.tsv"
+cp -R "$RUN_DIR" "$NO_METRICS_ROOT/"
+rm "$NO_METRICS_ROOT/$(basename "$RUN_DIR")/quality-metrics.json" \
+  "$NO_METRICS_ROOT/$(basename "$RUN_DIR")/coverage-opportunities.json"
+"$ROOT/scripts/quality-dashboard" generate --result-root "$NO_METRICS_ROOT" \
+  --output "$FALLBACK_OUTPUT" --metrics-baseline "$METRICS_BASELINE" >/dev/null
+python3 - "$FALLBACK_OUTPUT/data.json" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    data = json.load(source)
+assert data["quality"]["coverage"]["suites"]["business"]["line_coverage"]["percent"] == 95.0
+assert data["quality"]["coverage_origin"] == "green-main-artifact"
+assert data["quality"]["coverage_opportunities"] == "not-yet-emitted"
 PY
 
 manifest_digest="$(shasum -a 256 "$RUN_DIR/manifest.tsv" | awk '{print $1}')"
