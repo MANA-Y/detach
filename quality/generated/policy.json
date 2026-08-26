@@ -659,7 +659,7 @@
     "mutation_timeout_seconds": 240,
     "pr_feedback_seconds": 600
   },
-  "policy": 44,
+  "policy": 45,
   "release_domains": [
     {
       "gates": "-",
@@ -877,6 +877,20 @@
     },
     {
       "pattern": "tools/quality_gate.py",
+      "priority": 1100,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "quality-core"
+    },
+    {
+      "pattern": "scripts/quality-cache-warm",
+      "priority": 1100,
+      "release_domain": "safe",
+      "spec": "docs/specs/documentation.md",
+      "test_domain": "quality-core"
+    },
+    {
+      "pattern": "tools/quality_cache_warm.py",
       "priority": 1100,
       "release_domain": "safe",
       "spec": "docs/specs/documentation.md",
@@ -2178,6 +2192,7 @@
         "quality/policy.tsv",
         "scripts/*",
         "scripts/quality-baseline",
+        "scripts/quality-cache-warm",
         "scripts/quality-care",
         "scripts/quality-dashboard",
         "scripts/quality-gate",
@@ -2200,6 +2215,7 @@
         "tests/shell-safety*",
         "tests/test-suite-contract.sh",
         "tools/quality_baseline.py",
+        "tools/quality_cache_warm.py",
         "tools/quality_care.py",
         "tools/quality_dashboard.py",
         "tools/quality_gate.py",

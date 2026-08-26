@@ -76,6 +76,7 @@ GATE_COMPATIBLE_INTEGRATION_STAGES = {
     "publish-preflight",
 }
 UI_COVERAGE_SCRATCH = "quality-ui-release"
+SWIFT_TEST_SCRATCH = "quality-swift-tests"
 
 
 class GateError(Exception):
@@ -1120,7 +1121,7 @@ class QualityGate:
             "DETACH_DOWNLOAD_URL",
         ):
             environment.pop(name, None)
-        module_cache = ROOT / "app/.build/module-cache"
+        module_cache = ROOT / "app/.build/module-cache" / stage
         module_cache.mkdir(parents=True, exist_ok=True)
         environment.update(
             {
@@ -1690,10 +1691,19 @@ class QualityGate:
         try:
             self.launch("static")
             self.wait_for(("static",))
+            parallel_swift_app = (
+                "swift" in self.selected
+                and "app" in self.selected
+                and (os.cpu_count() or 0) >= 3
+            )
             self.launch("swift")
-            self.wait_for(("swift",))
-            self.launch("app")
-            self.wait_for(("app",))
+            if parallel_swift_app:
+                self.launch("app")
+                self.wait_for(("swift", "app"))
+            else:
+                self.wait_for(("swift",))
+                self.launch("app")
+                self.wait_for(("app",))
             self.launch("ui-e2e")
             self.wait_for(("ui-e2e",))
             self.launch("quality-contracts")
@@ -1941,6 +1951,12 @@ def gate_contract_definitions(
             {},
             "Quality dashboard contracts passed",
         ),
+        (
+            "quality-cache-warm.log",
+            [sys.executable, str(root / "tests/quality_cache_warm_contract.py")],
+            {},
+            "Quality cache warm contracts passed",
+        ),
     ]
     if include_orchestrators:
         return contracts
@@ -2076,15 +2092,31 @@ def split_swift_build_jobs(logical_cpus: int | None = None) -> tuple[int, int]:
     return normal, total - normal
 
 
+def split_quality_pipeline_jobs(
+    logical_cpus: int | None = None,
+) -> tuple[int, int, int]:
+    available = logical_cpus if logical_cpus is not None else os.cpu_count()
+    total = max(3, available or 3)
+    swift = (total + 2) // 3
+    remaining = total - swift
+    normal = (remaining + 1) // 2
+    return swift, normal, remaining - normal
+
+
 def run_app_stage(root: Path) -> int:
     make_app = [str(root / "app/scripts/make-app.sh")]
     selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
     if "quality-contracts" not in selected:
         return child_run(make_app)
 
-    normal_jobs, coverage_jobs = split_swift_build_jobs()
+    parallel_swift = "swift" in selected and (os.cpu_count() or 0) >= 3
+    if parallel_swift:
+        _, normal_jobs, coverage_jobs = split_quality_pipeline_jobs()
+    else:
+        normal_jobs, coverage_jobs = split_swift_build_jobs()
     normal_environment = os.environ.copy()
     normal_environment["DETACH_SWIFT_BUILD_JOBS"] = str(normal_jobs)
+    normal_environment["DETACH_QUALITY_APP_SCRATCH"] = "1"
     coverage_environment = os.environ.copy()
     coverage_environment.pop("DETACH_APP_BUILD_MARKER_FILE", None)
     coverage_module_cache = root / "app/.build/quality-ui-module-cache"
@@ -2181,8 +2213,14 @@ def run_stage_worker(stage: str) -> int:
         )
     if stage == "swift":
         app = root / "app"
+        scratch = app / ".build" / SWIFT_TEST_SCRATCH
         (app / ".build/quality-codecov").mkdir(parents=True, exist_ok=True)
-        result = run(["swift", "build", "--show-bin-path"], cwd=app, text=True, check=False)
+        build_path_command = [
+            "swift", "build", "--show-bin-path", "--disable-automatic-resolution",
+            "--cache-path", str(app / ".build"),
+            "--scratch-path", str(scratch)
+        ]
+        result = run(build_path_command, cwd=app, text=True, check=False)
         assert isinstance(result.stdout, str)
         if result.returncode != 0:
             sys.stdout.write(result.stdout)
@@ -2194,12 +2232,22 @@ def run_stage_worker(stage: str) -> int:
         environment["LLVM_PROFILE_FILE"] = str(
             app / ".build/quality-codecov/%p-%m.profraw"
         )
+        command = [
+            "swift", "test", "--enable-code-coverage", "--disable-sandbox",
+            "--disable-automatic-resolution",
+            "--cache-path", str(app / ".build"), "--scratch-path", str(scratch),
+        ]
+        selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
+        if "app" in selected and (os.cpu_count() or 0) >= 3:
+            swift_jobs, _, _ = split_quality_pipeline_jobs()
+            command.extend(("--jobs", str(swift_jobs)))
         return child_run(
-            ["swift", "test", "--enable-code-coverage", "--disable-sandbox"],
+            command,
             cwd=app,
             env=environment,
         )
     if stage == "quality-contracts":
+        selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
         environment = os.environ.copy()
         environment.update(
             {
@@ -2212,7 +2260,10 @@ def run_stage_worker(stage: str) -> int:
                 "DETACH_QUALITY_AUTHORITY": authority,
             }
         )
-        selected = os.environ.get("DETACH_QUALITY_GATE_SELECTED_STAGES", "").split(",")
+        if "swift" in selected:
+            environment["DETACH_SWIFT_TEST_SCRATCH"] = str(
+                root / "app/.build" / SWIFT_TEST_SCRATCH
+            )
         if "ui-e2e" in selected:
             profile_directory = (
                 root / "app/build/quality-ui-coverage" / run_dir.name

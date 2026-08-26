@@ -39,6 +39,13 @@
   its policy, exact source/base commits, input fingerprint, and stage coverage
   still match. `--keep-going` improves diagnosis but never turns a failed or
   blocked stage into readiness evidence.
+- Pull-request CI validates that machine plan and runs static contracts before
+  optional metrics and Swift cache downloads. The final gate recomputes both,
+  so the early pass is fail-fast diagnosis and not readiness evidence.
+- `scripts/quality-cache-warm` builds the three isolated Swift products for a
+  missing promoted-`main` cache key. It emits no gate evidence and never
+  replaces a selected stage. `--dependencies-only` materializes the shared
+  cache once before parallel builds.
 - `scripts/quality-scenarios rerun SC-ID` runs the owning diagnostic stage for
   an instrumented scenario, or its direct policy command otherwise. The stage
   process deadline bounds both forms. The helper has 30 seconds for evidence
@@ -93,8 +100,10 @@
   `DETACH_RELEASE_IGNORE_TIMING=1 scripts/release-version X.Y.Z`
   path may omit them for one intentionally busy-machine release, with the
   waiver recorded in private evidence. `--stage` is diagnostic only and is not
-  proof that a change is ready. The current policy keeps SwiftPM work
-  exclusive, then runs the isolated Codex and Claude suites concurrently
+  proof that a change is ready. On hosts with at least three CPUs, the current
+  policy splits workers across isolated Swift tests, normal app, and
+  instrumented app builds. Smaller hosts run Swift and app work in sequence.
+  It then runs the isolated Codex and Claude suites concurrently
   against the verified bundled tmux and state helper. It rejects reference-Mac
   wall or stage regressions and rejects attempts to lower quality floors or
   raise time budgets relative to their merge-base values. A quality-core or

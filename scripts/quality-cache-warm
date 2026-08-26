@@ -1,0 +1,6 @@
+#!/bin/bash
+
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
+exec python3 "$ROOT/tools/quality_cache_warm.py" "$@"

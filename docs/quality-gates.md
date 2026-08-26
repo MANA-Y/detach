@@ -135,12 +135,16 @@ Every executable stage has a policy-owned process deadline. The GitHub workflow
 has a ten-minute deadline and cancels superseded work. The pull request feedback
 SLO is less than ten minutes.
 
-Static validation runs before the parallel self-contract workers. This keeps
-its two-second local signal free of scheduler contention. Coverage compilation
-and the app build then get exclusive SwiftPM access. The app stage uses
-isolated build paths and splits the available workers to build the normal
-bundle and coverage-enabled release executable at the same time. It verifies
-the normal bundle. Only the private UI copy gets the instrumented executable.
+Pull-request CI validates its exact impact plan and runs static contracts before
+it downloads optional metrics or Swift data. The authoritative gate recomputes
+both results. This fail-fast pass is diagnostic only.
+
+Swift tests, the normal app, and the instrumented app use isolated scratch and
+module-cache paths. CI materializes their shared dependency cache once before
+parallel builds. A host with at least three CPUs splits workers and builds all
+three at the same time. Smaller hosts run Swift and app work in sequence.
+The normal bundle is verified. Only the private UI copy gets the instrumented
+executable.
 The short packaged UI lane runs after the verified app and before the
 CPU-intensive provider, runtime, and gate-contract lanes. This prevents
 WindowServer event delivery from competing with those workers. After the UI and metric phases,
@@ -159,7 +163,10 @@ three process-heavy orchestrator shards on a host with at least eight logical
 CPUs, and two on a smaller host. This limit prevents process oversubscription
 without increasing the stage budget.
 
-Swift and Clang caches stay under `app/.build`. The packaged UI test uses a
+Swift and Clang caches stay under `app/.build`. Their hosted key covers the
+compiler, package, sources, tests, build scripts, and version metadata. A
+promoted `main` run can warm a missing key but emits no gate evidence. The
+packaged UI test uses a
 stripped process-private app, fake CLI, and private state. Provider tests use
 private state and socket roots plus the newly bundled `tmux` and
 `detach-state`. Tests do not use installed product state or ambient helpers.

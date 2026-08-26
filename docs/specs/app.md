@@ -55,10 +55,9 @@ Journeys cover all main surfaces, Settings, onboarding, and focus. It
 disconnects Stop before it proves that the real control invokes the action.
 Only a visible control completes isolated onboarding.
 
-Coverage builds the normal bundle and instrumented release binary together in
-isolated paths with split workers. Only a signed private UI copy gets
-it. Neither it nor its profiles enter a verified bundle or public
-artifact.
+Coverage builds the normal bundle, instrumented binary, and Swift tests in
+isolated paths. UI waits for the bundle. Metrics wait for UI and Swift tests.
+Only the copy gets it. The binary and profiles stay out of public artifacts.
 If an overlay scroller ignores a page event, the driver reveals the measured
 semantic control, then posts the action to it.
 

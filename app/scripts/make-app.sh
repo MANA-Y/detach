@@ -16,6 +16,7 @@ DOWNLOAD_URL="${DETACH_DOWNLOAD_URL:-}"
 SPARKLE_LICENSE_SOURCE="$APP_ROOT/Resources/ThirdParty/Sparkle/LICENSE.txt"
 SPARKLE_LICENSE_SHA256="389a4e4e9a32f059775b13a06e25a591445ba229d2838d26dd3e7c0c45127cfe"
 SWIFT_BUILD_JOBS="${DETACH_SWIFT_BUILD_JOBS:-}"
+QUALITY_APP_SCRATCH="${DETACH_QUALITY_APP_SCRATCH:-0}"
 APP="$APP_ROOT/build/Detach.app"
 PAYLOAD="$APP/Contents/Resources/DetachCLI"
 LAUNCH_AGENTS="$APP/Contents/Library/LaunchAgents"
@@ -72,6 +73,10 @@ if [ -n "$SWIFT_BUILD_JOBS" ] && ! [[ "$SWIFT_BUILD_JOBS" =~ ^[1-9][0-9]*$ ]]; t
   printf 'DETACH_SWIFT_BUILD_JOBS must be a positive integer\n' >&2
   exit 1
 fi
+[[ "$QUALITY_APP_SCRATCH" = 0 || "$QUALITY_APP_SCRATCH" = 1 ]] || {
+  printf 'DETACH_QUALITY_APP_SCRATCH must be 0 or 1\n' >&2
+  exit 1
+}
 if [ -n "$SPARKLE_FEED_URL" ] || [ -n "$SPARKLE_PUBLIC_ED_KEY" ]; then
   [[ "$SPARKLE_FEED_URL" =~ ^https://[^[:space:]]+$ ]] || {
     printf 'DETACH_SPARKLE_FEED_URL must be a valid HTTPS URL\n' >&2
@@ -216,6 +221,9 @@ build_arch() {
   # Sharing one scratch directory also shares the pinned Sparkle checkout and
   # binary artifact.
   local scratch="$APP_ROOT/.build"
+  if [ "$QUALITY_APP_SCRATCH" = 1 ]; then
+    scratch="$APP_ROOT/.build/quality-app-release"
+  fi
   local triple="$arch-apple-macosx26.0"
   local build_args=(
     --disable-sandbox
@@ -225,6 +233,9 @@ build_arch() {
     --triple "$triple"
     --scratch-path "$scratch"
   )
+  if [ "$QUALITY_APP_SCRATCH" = 1 ]; then
+    build_args+=(--cache-path "$APP_ROOT/.build")
+  fi
   if [ -n "$SWIFT_BUILD_JOBS" ]; then
     build_args+=(--jobs "$SWIFT_BUILD_JOBS")
   fi

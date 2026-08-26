@@ -11,7 +11,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-build_path="$(cd -P "$APP_ROOT" && swift build --show-bin-path)"
+swift_scratch="${DETACH_SWIFT_TEST_SCRATCH:-}"
+build_path_args=(swift build --show-bin-path)
+test_list_args=(swift test list --skip-build --disable-sandbox)
+if [ -n "$swift_scratch" ]; then
+  [ "$swift_scratch" = "$APP_ROOT/.build/quality-swift-tests" ] || {
+    printf 'quality contracts: Swift scratch path is not the quality path\n' >&2
+    exit 2
+  }
+  build_path_args+=(--disable-automatic-resolution --cache-path "$APP_ROOT/.build" --scratch-path "$swift_scratch")
+  test_list_args+=(--disable-automatic-resolution --cache-path "$APP_ROOT/.build" --scratch-path "$swift_scratch")
+fi
+build_path="$(cd -P "$APP_ROOT" && "${build_path_args[@]}")"
 test_binary="$build_path/DetachAppPackageTests.xctest/Contents/MacOS/DetachAppPackageTests"
 profdata="$build_path/codecov/default.profdata"
 [ -f "$test_binary" ] && [ ! -L "$test_binary" ] && \
@@ -32,7 +43,7 @@ else
     cd -P "$APP_ROOT"
     mkdir -p .build/quality-codecov
     LLVM_PROFILE_FILE="$APP_ROOT/.build/quality-codecov/list-%p-%m.profraw" \
-      swift test list --skip-build --disable-sandbox
+      "${test_list_args[@]}"
   ) >"$tests"
 fi
 
