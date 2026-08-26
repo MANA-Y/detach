@@ -201,6 +201,56 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertTrue(cli.calls.contains(["codex", "delete", "--force", "detach-codex-p-1"]))
     }
 
+    func testBulkFinishedDeleteContinuesAfterFailureAndRefreshesOnce() async throws {
+        let cli = FakeCLI()
+        let firstLine = line.replacingOccurrences(
+            of: #""effective_status":"running""#,
+            with: #""effective_status":"completed""#)
+        let secondLine = firstLine
+            .replacingOccurrences(of: "codex", with: "claude")
+            .replacingOccurrences(of: "detach-claude-p-1", with: "detach-claude-p-2")
+            .replacingOccurrences(of: #""name":"p-1""#, with: #""name":"p-2""#)
+        cli.responses["list --json"] = ok(firstLine + "\n" + secondLine)
+        cli.responses["claude delete --force detach-claude-p-2"] = .success(CLIResult(
+            exitCode: 17, stdout: "", stderr: "still busy", timedOut: false))
+        let store = SessionStore(cli: cli)
+        await store.refresh()
+
+        let failures = await store.deleteFinished(
+            store.sessions + [try XCTUnwrap(store.sessions.first)])
+
+        XCTAssertEqual(failures, [SessionDeletionFailure(
+            sessionName: "detach-claude-p-2",
+            displayTitle: "p",
+            message: "still busy")])
+        XCTAssertEqual(
+            cli.calls.filter { $0 == ["codex", "delete", "--force", "detach-codex-p-1"] }.count,
+            1)
+        XCTAssertEqual(
+            cli.calls.filter { $0 == ["claude", "delete", "--force", "detach-claude-p-2"] }.count,
+            1)
+        XCTAssertEqual(cli.calls.filter { $0 == ["list", "--json"] }.count, 2)
+    }
+
+    func testBulkFinishedDeleteRechecksCurrentTypedPermission() async {
+        let cli = FakeCLI()
+        cli.responses["list --json"] = ok(line)
+        let store = SessionStore(cli: cli)
+        await store.refresh()
+        var staleFinishedSelection = store.sessions[0]
+        staleFinishedSelection.effectiveStatus = .completed
+
+        let failures = await store.deleteFinished([staleFinishedSelection])
+
+        XCTAssertEqual(failures.count, 1)
+        XCTAssertEqual(
+            failures.first?.message,
+            L10n.string("Session is not eligible for deletion from Finished."))
+        XCTAssertFalse(cli.calls.contains {
+            $0.contains("delete")
+        })
+    }
+
     func testFailedMutationReturnsStderr() async {
         let cli = FakeCLI()
         cli.responses["list --json"] = ok(line)

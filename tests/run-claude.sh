@@ -266,6 +266,27 @@ done
 [ "$("$SCRIPT" claude __allocate_session_color "$color_cwd")" = "$preferred_color" ]
 rm -rf "$codex_color_sessions" "$claude_color_sessions"
 
+# A full finished history must not exhaust colors for current tasks. Allocation
+# remains shared across providers, so simultaneous Codex and Claude tasks get
+# different hues even when all eight colors occur in retained history.
+color_index=0
+for color in "${palette[@]}"; do
+  color_dir="$codex_color_sessions/finished-$color_index"
+  mkdir -p "$color_dir"
+  "$STATE_HELPER" meta create "$color_dir/meta.json" \
+    --integer schema 1 --string session_name "finished-$color_index" \
+    --string status completed --string session_color "$color"
+  color_index=$((color_index + 1))
+done
+current_claude_color="$("$SCRIPT" claude __allocate_session_color "$color_cwd")"
+mkdir -p "$claude_color_sessions/current-claude"
+"$STATE_HELPER" meta create "$claude_color_sessions/current-claude/meta.json" \
+  --integer schema 1 --string session_name current-claude --string status running \
+  --string session_color "$current_claude_color"
+current_codex_color="$("$SCRIPT" codex __allocate_session_color "$color_cwd")"
+[ "$current_codex_color" != "$current_claude_color" ]
+rm -rf "$codex_color_sessions" "$claude_color_sessions"
+
 human_label='Rev (ai)'
 human_digest="$(printf '%s' "$human_label" | shasum -a 256 | \
   awk '{print substr($1, 1, 12)}')"

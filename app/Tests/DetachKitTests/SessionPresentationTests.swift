@@ -79,6 +79,19 @@ final class SessionPresentationTests: XCTestCase {
         XCTAssertEqual(make(.collision).availableActions, [])
     }
 
+    func testFinishedBulkDeleteUsesTypedDeletePermission() {
+        XCTAssertTrue(make(.completed).canDeleteFromFinishedList)
+        XCTAssertTrue(make(.failed).canDeleteFromFinishedList)
+        XCTAssertTrue(make(.interrupted).canDeleteFromFinishedList)
+        XCTAssertTrue(make(.stopped).canDeleteFromFinishedList)
+        XCTAssertFalse(make(.running).canDeleteFromFinishedList)
+        XCTAssertFalse(make(.recoverable).canDeleteFromFinishedList)
+
+        var blocked = make(.completed)
+        blocked.healthActions = []
+        XCTAssertFalse(blocked.canDeleteFromFinishedList)
+    }
+
     func testTypedHealthActionsOverrideLegacyStatusHeuristics() throws {
         let line = #"{"schema":1,"provider":"codex","session_name":"detach-codex-orphan","name":"orphan","effective_status":"hung","health_reason":"runtime_process_without_tmux","health_actions":[],"reconcile_action":"none","ownership_proven":false,"cleanup_eligible":false}"#
         let session = try XCTUnwrap(SessionListParser.parse(line).sessions.first)

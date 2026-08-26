@@ -236,22 +236,41 @@ enum UIE2ETestDriver {
             checks.append("sidebar-selects-completed-session")
             trace("completed session selected")
 
+            let selectionMode = try await element(
+                identifier: "finished-selection-mode-button")
+            try requireSemanticControl(
+                selectionMode, name: "finished selection mode")
+            _ = try await clickUntilElement(
+                selectionMode,
+                name: "finished selection mode",
+                resultIdentifier: "finished-select-all-button")
+            let selectAll = try await element(identifier: "finished-select-all-button")
+            try requireSemanticControl(selectAll, name: "select all finished sessions")
+            try await click(selectAll, name: "select all finished sessions")
+            let bulkDeleteButton = try await element(identifier: "finished-delete-button")
+            try await waitUntil("enabled bulk delete button") {
+                find(identifier: "finished-delete-button")
+                    .map(isEnabled) == true
+            }
+            try requireSemanticControl(bulkDeleteButton, name: "bulk delete action")
             let confirmDelete = try await clickUntilSheetButton(
-                deleteButton, name: "delete action", label: "Delete")
+                bulkDeleteButton, name: "bulk delete action", label: "Delete")
             try requireSemanticControl(confirmDelete, name: "delete confirmation")
             try await clickUntil(
                 confirmDelete,
                 name: "delete confirmation",
-                outcome: "fake CLI records delete action") {
+                outcome: "fake CLI records both delete actions") {
                 let actions = try? String(
                     contentsOf: configuration.root
                         .appendingPathComponent("fake/actions.log"),
                     encoding: .utf8)
                 return actions?.contains(
                     "claude delete --force \(completedID)") == true
+                    && actions?.contains(
+                        "codex delete --force detach-codex-ui-stopped") == true
             }
-            checks.append("safe-delete-reaches-fake-cli")
-            trace("delete reached fake CLI")
+            checks.append("bulk-delete-reaches-fake-cli")
+            trace("bulk delete reached fake CLI")
             let deleteObservedAt = Date()
             try await waitUntil("post-delete session refresh") {
                 store.lastUpdated.map { $0 >= deleteObservedAt } == true

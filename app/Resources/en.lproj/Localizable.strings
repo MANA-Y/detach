@@ -24,6 +24,7 @@
 "Internal error: %@ must run in Terminal" = "Internal error: %@ must run in Terminal";
 "detach exited with status %d" = "detach exited with status %d";
 "Could not run detach: %@" = "Could not run detach: %@";
+"Session is not eligible for deletion from Finished." = "Session is not eligible for deletion from Finished.";
 "Unsupported detach doctor schema: %d" = "Unsupported detach doctor schema: %d";
 "CLI installation timed out" = "CLI installation timed out";
 "CLI installer exited with status %d" = "CLI installer exited with status %d";
@@ -95,12 +96,17 @@
 "Copy session UUID" = "Copy session UUID";
 "Could Not Complete Setup" = "Could Not Complete Setup";
 "Could not open Terminal" = "Could not open Terminal";
+"Could not delete some sessions" = "Could not delete some sessions";
 "Could not remove components: %@" = "Could not remove components: %@";
 "Could not request notification permission: %@" = "Could not request notification permission: %@";
 "Could not show notification: %@" = "Could not show notification: %@";
 "Created" = "Created";
 "Delete" = "Delete";
+"Delete %d" = "Delete %d";
+"Delete selected sessions (%d)?" = "Delete selected sessions (%d)?";
 "Delete session “%@”?" = "Delete session “%@”?";
+"Deselect %@ from deletion" = "Deselect %@ from deletion";
+"Done" = "Done";
 "Detach Background Service" = "Detach Background Service";
 "Detach background service" = "Detach background service";
 "Detach cannot update from this app location. Move Detach to /Applications. The active CLI did not change. Then try again." = "Detach cannot update from this app location. Move Detach to /Applications. The active CLI did not change. Then try again.";
@@ -173,6 +179,10 @@
 "Retry Setup" = "Retry Setup";
 "Running from a DMG or temporary copy is unreliable." = "Running from a DMG or temporary copy is unreliable.";
 "Select a session" = "Select a session";
+"Select" = "Select";
+"Select all" = "Select all";
+"Select %@ for deletion" = "Select %@ for deletion";
+"Clear selection" = "Clear selection";
 "Session can be recovered" = "Session can be recovered";
 "Session completed" = "Session completed";
 "Session failed" = "Session failed";
@@ -192,7 +202,8 @@
 "The background service is starting or needs attention" = "The background service is starting or needs attention";
 "The background service ran within the last three minutes" = "The background service ran within the last three minutes";
 "The bundled watchdog definition is missing or incomplete." = "The bundled watchdog definition is missing or incomplete.";
-"The harness state directory and checkpoints will be permanently deleted. The provider transcript in ~/.claude (~/.codex) will not be affected." = "The harness state directory and checkpoints will be permanently deleted. The provider transcript in ~/.claude (~/.codex) will not be affected.";
+"The Detach state directory and checkpoints will be permanently deleted. The provider transcript in ~/.claude or ~/.codex will not be affected." = "The Detach state directory and checkpoints will be permanently deleted. The provider transcript in ~/.claude or ~/.codex will not be affected.";
+"The selected Detach state directories and checkpoints will be permanently deleted. Provider transcripts in ~/.claude and ~/.codex will not be affected." = "The selected Detach state directories and checkpoints will be permanently deleted. Provider transcripts in ~/.claude and ~/.codex will not be affected.";
 "The installed CLI version will remain functional — retrying is safe." = "The installed CLI version will remain functional — retrying is safe.";
 "The manifest is missing, damaged, or contains a different version" = "The manifest is missing, damaged, or contains a different version";
 "The manifest matches the CLI" = "The manifest matches the CLI";

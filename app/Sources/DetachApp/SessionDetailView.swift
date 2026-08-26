@@ -60,7 +60,7 @@ struct SessionDetailView: View {
                             isPresented: $confirmDelete, titleVisibility: .visible) {
             Button(L10n.string("Delete"), role: .destructive) { run(.delete) }
         } message: {
-            Text(L10n.string("The harness state directory and checkpoints will be permanently deleted. The provider transcript in ~/.claude (~/.codex) will not be affected."))
+            Text(L10n.string("The Detach state directory and checkpoints will be permanently deleted. The provider transcript in ~/.claude or ~/.codex will not be affected."))
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("session-detail-\(session.id)")

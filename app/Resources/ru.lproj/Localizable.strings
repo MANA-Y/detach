@@ -24,6 +24,7 @@
 "Internal error: %@ must run in Terminal" = "Внутренняя ошибка: команда %@ должна выполняться в Terminal";
 "detach exited with status %d" = "detach завершился с кодом %d";
 "Could not run detach: %@" = "Не удалось запустить detach: %@";
+"Session is not eligible for deletion from Finished." = "Сессию нельзя удалить из раздела «Завершены».";
 "Unsupported detach doctor schema: %d" = "Неподдерживаемая схема detach doctor: %d";
 "CLI installation timed out" = "Истекло время ожидания установки CLI";
 "CLI installer exited with status %d" = "Установщик CLI завершился с кодом %d";
@@ -95,12 +96,17 @@
 "Copy session UUID" = "Скопировать UUID сессии";
 "Could Not Complete Setup" = "Не удалось завершить настройку";
 "Could not open Terminal" = "Не удалось открыть терминал";
+"Could not delete some sessions" = "Не удалось удалить некоторые сессии";
 "Could not remove components: %@" = "Не удалось удалить компоненты: %@";
 "Could not request notification permission: %@" = "Не удалось запросить разрешение на уведомления: %@";
 "Could not show notification: %@" = "Не удалось показать уведомление: %@";
 "Created" = "Создана";
 "Delete" = "Удалить";
+"Delete %d" = "Удалить: %d";
+"Delete selected sessions (%d)?" = "Удалить выбранные сессии (%d)?";
 "Delete session “%@”?" = "Удалить сессию «%@»?";
+"Deselect %@ from deletion" = "Убрать «%@» из выбранных для удаления";
+"Done" = "Готово";
 "Detach Background Service" = "Фоновая служба Detach";
 "Detach background service" = "Фоновая служба Detach";
 "Detach cannot update from this app location. Move Detach to /Applications. The active CLI did not change. Then try again." = "Detach не может обновиться из текущего расположения. Переместите Detach в /Applications. Активный CLI не изменился. Затем повторите попытку.";
@@ -173,6 +179,10 @@
 "Retry Setup" = "Повторить настройку";
 "Running from a DMG or temporary copy is unreliable." = "Запуск из DMG или временной копии ненадёжен.";
 "Select a session" = "Выберите сессию";
+"Select" = "Выбрать";
+"Select all" = "Выбрать все";
+"Select %@ for deletion" = "Выбрать «%@» для удаления";
+"Clear selection" = "Снять выделение";
 "Session can be recovered" = "Сессию можно восстановить";
 "Session completed" = "Сессия завершена";
 "Session failed" = "Сессия завершилась с ошибкой";
@@ -192,7 +202,8 @@
 "The background service is starting or needs attention" = "Фоновая служба запускается или требует внимания";
 "The background service ran within the last three minutes" = "Фоновая служба запускалась в последние три минуты";
 "The bundled watchdog definition is missing or incomplete." = "Встроенное определение фоновой службы отсутствует или неполно.";
-"The harness state directory and checkpoints will be permanently deleted. The provider transcript in ~/.claude (~/.codex) will not be affected." = "State-каталог и чекпойнты harness удаляются безвозвратно. Транскрипт провайдера в ~/.claude (~/.codex) не затрагивается.";
+"The Detach state directory and checkpoints will be permanently deleted. The provider transcript in ~/.claude or ~/.codex will not be affected." = "State-каталог и чекпойнты Detach будут удалены безвозвратно. Транскрипт провайдера в ~/.claude или ~/.codex не затрагивается.";
+"The selected Detach state directories and checkpoints will be permanently deleted. Provider transcripts in ~/.claude and ~/.codex will not be affected." = "Выбранные state-каталоги и чекпойнты Detach будут удалены безвозвратно. Транскрипты провайдеров в ~/.claude и ~/.codex не затрагиваются.";
 "The installed CLI version will remain functional — retrying is safe." = "Установленная версия CLI останется рабочей — повторная попытка безопасна.";
 "The manifest is missing, damaged, or contains a different version" = "Манифест отсутствует, повреждён или содержит другую версию";
 "The manifest matches the CLI" = "Манифест согласован с CLI";

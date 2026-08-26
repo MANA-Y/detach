@@ -1,6 +1,18 @@
 import Foundation
 import Observation
 
+public struct SessionDeletionFailure: Equatable, Sendable {
+    public var sessionName: String
+    public var displayTitle: String
+    public var message: String
+
+    public init(sessionName: String, displayTitle: String, message: String) {
+        self.sessionName = sessionName
+        self.displayTitle = displayTitle
+        self.message = message
+    }
+}
+
 @Observable @MainActor
 public final class SessionStore {
     public enum State: Equatable, Sendable {
@@ -110,6 +122,49 @@ public final class SessionStore {
 
     /// Runs a non-interactive action (stop/delete). Returns an error message or nil.
     public func perform(_ action: SessionAction, on session: Session) async -> String? {
+        guard action == .stop || action == .delete else {
+            return L10n.format(
+                "Internal error: %@ must run in Terminal",
+                action.rawValue)
+        }
+        let result = await run(action, on: session)
+        if result.launched { await refresh() }
+        return result.message
+    }
+
+    /// Deletes every selected finished session and reports failures without
+    /// stopping the remaining operations. One final refresh publishes the
+    /// resulting list instead of polling between individual removals.
+    public func deleteFinished(
+        _ selectedSessions: [Session]
+    ) async -> [SessionDeletionFailure] {
+        var failures: [SessionDeletionFailure] = []
+        var seen: Set<String> = []
+        for session in selectedSessions where seen.insert(session.id).inserted {
+            guard let current = sessions.first(where: { $0.id == session.id }),
+                  current.canDeleteFromFinishedList else {
+                failures.append(SessionDeletionFailure(
+                    sessionName: session.sessionName,
+                    displayTitle: session.displayTitle,
+                    message: L10n.string(
+                        "Session is not eligible for deletion from Finished.")))
+                continue
+            }
+            if let message = await run(.delete, on: current).message {
+                failures.append(SessionDeletionFailure(
+                    sessionName: current.sessionName,
+                    displayTitle: current.displayTitle,
+                    message: message))
+            }
+        }
+        await refresh()
+        return failures
+    }
+
+    private func run(
+        _ action: SessionAction,
+        on session: Session
+    ) async -> (message: String?, launched: Bool) {
         let arguments: [String]
         switch action {
         case .stop:
@@ -117,20 +172,21 @@ public final class SessionStore {
         case .delete:
             arguments = [session.provider.rawValue, "delete", "--force", session.sessionName]
         case .attach, .resume, .recover:
-            return L10n.format(
+            return (L10n.format(
                 "Internal error: %@ must run in Terminal",
-                action.rawValue)
+                action.rawValue), false)
         }
         do {
             let result = try await cli.run(arguments: arguments, timeout: 30)
-            await refresh()
-            if result.exitCode == 0 { return nil }
+            if result.exitCode == 0 { return (nil, true) }
             let stderr = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            return stderr.isEmpty
+            return (stderr.isEmpty
                 ? L10n.format("detach exited with status %d", result.exitCode)
-                : stderr
+                : stderr, true)
         } catch {
-            return L10n.format("Could not run detach: %@", error.localizedDescription)
+            return (L10n.format(
+                "Could not run detach: %@",
+                error.localizedDescription), false)
         }
     }
 }
