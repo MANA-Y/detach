@@ -67,22 +67,22 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
 - A local timing-budget failure creates performance work. Warm-cache or
   variance reruns cannot turn it into readiness; an unchanged rerun is allowed
   only for an evidenced unrelated external transient whose cause is recorded.
-- Pull-request CI runs each check once from the tested merge and first parent.
-  It validates the plan and static contracts before optional cache restore.
-  The gate recomputes both. CI keeps timing ratchets, a ten-minute deadline,
-  and no reference-Mac ceilings.
-- The gate-contract runner admits three process-heavy orchestrator shards on a
-  host with at least eight logical CPUs, and two on a smaller host. Lightweight
-  contracts stay concurrent. The runner does not increase a timing budget to
-  hide process oversubscription.
-- Swift tests and both release builds use separate caches. A host with three
-  CPUs splits them. Smaller hosts run Swift and app in order.
-  UI waits for the normal app; metrics wait for Swift tests and UI. Later work
-  uses two heavy lanes and one integration lane. Distribution waits for
-  gate-contract.
-- The Swift key covers the compiler, package, code, build scripts, and version
-  metadata. A promoted `main` run can warm the three
-  products. Warming emits no evidence and cannot replace a selected check.
+- CI binds checks to tested merge and first parent. Level 0 is
+  plan and static work, level 1 is unit and contract work, and level 2 is
+  packaged and runtime work. All selected levels are required.
+- Shards revalidate merge identity but have no merge authority. The final
+  `quality-gates` job recomputes the plan and accepts only the shard set
+  and valid digests. Ambiguity fails closed.
+- CI keeps a ten-minute timing ratchet with no reference-Mac limit.
+- The gate-contract runner admits three heavy shards on eight CPUs and two on
+  fewer CPUs. Light contracts stay concurrent. Time budgets do not hide
+  oversubscription.
+- Swift tests and both release builds use separate caches and split three or
+  more CPUs. Smaller hosts run them in order. UI waits for the app; metrics
+  wait for Swift and UI. Later work uses two heavy lanes and one integration
+  lane. Distribution waits for gate-contract.
+- The Swift key covers the compiler, package, code, build scripts, and version.
+  A promoted `main` run can warm all products. Warming is not evidence.
 - CI uses the newest green `main` artifact with measured metrics. A later run
   without metrics does not replace it. Test identities, aggregate coverage,
   and critical-source coverage cannot decrease. Changed Swift lines need 90

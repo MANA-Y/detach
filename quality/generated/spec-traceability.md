@@ -45,6 +45,7 @@ It lists current specification ownership and verification links.
 - `scripts/quality-promote`
 - `scripts/quality-scenarios`
 - `scripts/quality-security`
+- `scripts/quality-shard`
 - `scripts/test`
 - `tests/*`
 - `tests/docs-contract.sh`
@@ -68,6 +69,7 @@ It lists current specification ownership and verification links.
 - `tools/quality_promote.py`
 - `tools/quality_scenarios.py`
 - `tools/quality_security.py`
+- `tools/quality_shard.py`
 
 ### Requirement verification
 

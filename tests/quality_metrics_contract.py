@@ -351,6 +351,19 @@ def main() -> None:
         )
         promoted_result = json.loads(promoted_current.read_text(encoding="utf-8"))
         assert promoted_result["comparison"]["baseline_source_commit"] == BASE_COMMIT
+        shard_current = root / "shard-current.json"
+        invoke(
+            evaluate_arguments(
+                coverage,
+                tests,
+                shard_current,
+                changed,
+                baseline=promoted_root,
+                authority="ci-shard",
+            )
+        )
+        shard_result = json.loads(shard_current.read_text(encoding="utf-8"))
+        assert shard_result["comparison"]["status"] == "passed"
 
         missing_promotion_root = root / "missing-promotion"
         create_baseline(
