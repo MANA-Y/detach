@@ -89,8 +89,8 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   percent coverage. A person cannot raise floors. Policy-owned exclusions need
   scenario evidence and cannot cover critical sources. Named test-only regions
   stay in aggregate coverage but not changed-line metrics.
-- Authoritative coverage combines instrumented Swift tests and packaged-app
-  journeys. Their three builds have isolated paths and one content cache. The
+- Authoritative coverage combines Swift tests and packaged-app journeys. CI
+  resolves one shared cache, then three builds use isolated paths. The
   gate splits workers and verifies the normal bundle. Only the stripped private
   copy gets the instrumented executable. Metrics merge profiles without a
   second test run.

@@ -48,6 +48,12 @@ grep -F 'key: detach-swift-v2-' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'run: scripts/quality-cache-warm' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'name: Materialize exact Swift dependencies' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'id: swift-dependencies' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'run: scripts/quality-cache-warm --dependencies-only' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 if grep -F 'jq ' "$ROOT/.github/workflows/quality-gates.yml" >/dev/null; then
   printf 'quality workflow reintroduced ambient jq\n' >&2
   exit 1

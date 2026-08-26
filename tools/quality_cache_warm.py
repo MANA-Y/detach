@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -36,8 +37,51 @@ def module_environment(root: Path, name: str) -> dict[str, str]:
     return environment
 
 
+def dependency_fingerprint(app: Path) -> str:
+    digest = hashlib.sha256(b"detach-swift-dependencies-v1\0")
+    for name in ("Package.swift", "Package.resolved"):
+        path = app / name
+        if not path.is_file() or path.is_symlink():
+            raise CacheWarmError(f"missing or unsafe app/{name}")
+        digest.update(name.encode("utf-8") + b"\0" + path.read_bytes())
+    return digest.hexdigest()
+
+
+def resolve_dependencies(root: Path) -> int:
+    app = root / "app"
+    fingerprint = dependency_fingerprint(app)
+    sentinel = app / ".build/quality-dependencies-v1"
+    if sentinel.is_symlink():
+        raise CacheWarmError("dependency cache sentinel is a symlink")
+    if sentinel.is_file() and sentinel.read_text(encoding="utf-8").strip() == fingerprint:
+        print("quality-cache-warm: exact Swift dependencies are ready")
+        return 0
+    command = [
+        "swift", "package", "resolve", "--disable-sandbox",
+        "--cache-path", str(app / ".build"),
+        "--scratch-path", str(app / ".build/quality-dependency-resolve"),
+    ]
+    result = subprocess.run(
+        command,
+        cwd=app,
+        env=module_environment(root, "dependency-resolve"),
+        check=False,
+    )
+    if result.returncode == 0:
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        temporary = sentinel.with_name(f".{sentinel.name}.{os.getpid()}")
+        temporary.write_text(f"{fingerprint}\n", encoding="utf-8")
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, sentinel)
+        print("quality-cache-warm: exact Swift dependencies are ready")
+    return result.returncode
+
+
 def warm(root: Path, logical_cpus: int | None = None) -> int:
     app = root / "app"
+    dependency_status = resolve_dependencies(root)
+    if dependency_status:
+        return dependency_status
     swift_jobs, normal_jobs, coverage_jobs = split_quality_pipeline_jobs(logical_cpus)
     test_scratch = app / ".build" / SWIFT_TEST_SCRATCH
     coverage_scratch = app / ".build" / UI_COVERAGE_SCRATCH
@@ -94,8 +138,10 @@ def warm(root: Path, logical_cpus: int | None = None) -> int:
 
 
 def main(arguments: list[str]) -> int:
+    if arguments == ["--dependencies-only"]:
+        return resolve_dependencies(ROOT)
     if arguments:
-        raise CacheWarmError("this command takes no arguments")
+        raise CacheWarmError("usage: quality-cache-warm [--dependencies-only]")
     return warm(ROOT)
 
 

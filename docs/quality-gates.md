@@ -140,8 +140,9 @@ it downloads optional metrics or Swift data. The authoritative gate recomputes
 both results. This fail-fast pass is diagnostic only.
 
 Swift tests, the normal app, and the instrumented app use isolated scratch and
-module-cache paths. A host with at least three CPUs splits workers and builds
-all three at the same time. Smaller hosts run Swift and app work in sequence.
+module-cache paths. CI materializes their shared dependency cache once before
+parallel builds. A host with at least three CPUs splits workers and builds all
+three at the same time. Smaller hosts run Swift and app work in sequence.
 The normal bundle is verified. Only the private UI copy gets the instrumented
 executable.
 The short packaged UI lane runs after the verified app and before the

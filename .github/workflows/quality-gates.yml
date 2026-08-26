@@ -96,6 +96,10 @@ jobs:
         name: Warm exact promoted-main Swift cache
         if: steps.promoted-main.outputs.promoted == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
         run: scripts/quality-cache-warm
+      - id: swift-dependencies
+        name: Materialize exact Swift dependencies
+        if: steps.swift-cache.outcome == 'success' && steps.promoted-main.outputs.promoted != 'true'
+        run: scripts/quality-cache-warm --dependencies-only
       - name: Run authoritative pull-request gate
         if: github.event_name == 'pull_request'
         env:
@@ -108,7 +112,7 @@ jobs:
           DETACH_QUALITY_AUTHORITY: ci-main
         run: scripts/quality-gate --mode repository --keep-going --without-release-budget
       - name: Save Swift and tmux caches
-        if: always() && steps.swift-cache.outcome == 'success' && steps.swift-cache.outputs.cache-hit != 'true' && (steps.promoted-main.outputs.promoted != 'true' || steps.swift-warm.outcome == 'success')
+        if: always() && steps.swift-cache.outcome == 'success' && steps.swift-cache.outputs.cache-hit != 'true' && ((steps.promoted-main.outputs.promoted == 'true' && steps.swift-warm.outcome == 'success') || (steps.promoted-main.outputs.promoted != 'true' && steps.swift-dependencies.outcome == 'success'))
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |

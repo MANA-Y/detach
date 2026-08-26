@@ -44,7 +44,8 @@
   so the early pass is fail-fast diagnosis and not readiness evidence.
 - `scripts/quality-cache-warm` builds the three isolated Swift products for a
   missing promoted-`main` cache key. It emits no gate evidence and never
-  replaces a selected stage.
+  replaces a selected stage. `--dependencies-only` materializes the shared
+  cache once before parallel builds.
 - `scripts/quality-scenarios rerun SC-ID` runs the owning diagnostic stage for
   an instrumented scenario, or its direct policy command otherwise. The stage
   process deadline bounds both forms. The helper has 30 seconds for evidence
