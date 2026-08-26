@@ -245,9 +245,10 @@
       "scenarios": [
         "SC-UI-DASHBOARD",
         "SC-UI-SESSION-DETAIL",
+        "SC-UI-SESSION-DELETE",
         "SC-UI-FAILURE"
       ],
-      "summary": "Packaged journeys cover sidebar control geometry and failure status."
+      "summary": "Packaged journeys cover sidebar control geometry, bulk Delete, and failure status."
     }
   ],
   "critical_sources": [
@@ -402,7 +403,7 @@
         "SC-SESSION-DELETE-CLAUDE",
         "SC-UI-SESSION-DELETE"
       ],
-      "summary": "A user deletes one completed session without affecting another session."
+      "summary": "A user deletes selected eligible sessions without affecting current work."
     },
     {
       "capability": "power-protection",
@@ -658,7 +659,7 @@
     "mutation_timeout_seconds": 240,
     "pr_feedback_seconds": 600
   },
-  "policy": 42,
+  "policy": 43,
   "release_domains": [
     {
       "gates": "-",

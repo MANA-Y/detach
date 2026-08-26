@@ -115,11 +115,13 @@ The dashboard gives every managed session:
 - ANSI-aware retained logs with color and common text attributes;
 - safe actions chosen from **Attach**, **Stop**, **Resume**, **Recover**, and
   **Delete** according to the proven state;
+- checkboxes in **Finished** for one-confirmation deletion of selected eligible
+  sessions; one failed deletion does not stop the remaining deletions;
 - optional notifications when a turn is ready for an answer, a session
   finishes or fails, or recovery becomes available;
 - a stable identity color shared by the sidebar and that session's tmux status
-  bar; saved sessions avoid reusing an occupied hue until the eight-color
-  palette is full.
+  bar. Current tasks avoid occupied hues across Codex and Claude. Finished
+  history does not keep a palette slot occupied.
 
 Sessions waiting for your reply move into **Answer ready**, ahead of agents
 that are still working. That signal comes from structured provider lifecycle
@@ -429,8 +431,10 @@ older one. Ordinary typed storage cleanup may also remove eligible histories.
 Every managed session receives a deterministic color based on provider and
 project. The app uses it in the sidebar; the tmux bar uses the same tint with
 provider, project, state, and power labels. Completed sessions fade and failed
-sessions turn red. All styling is session-local: Detach never edits the user's
-global tmux config.
+sessions turn red. A new or resumed task walks the shared palette when its
+preferred color is in use by another current task. Finished history keeps its
+displayed color but releases that palette slot. All styling is session-local:
+Detach never edits the user's global tmux config.
 
 Shells opened in user-created split panes close normally on `Ctrl-D` or exit.
 Only the managed Codex or Claude pane is retained after completion so Detach

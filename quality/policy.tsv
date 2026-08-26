@@ -1,5 +1,5 @@
 schema	1
-policy	42
+policy	43
 spec	documentation	docs/specs/documentation.md	Agent context, specifications, and quality automation stay synchronized.
 spec	runtime	docs/specs/runtime.md	Runtime state and session operations preserve exact ownership.
 spec	power	docs/specs/power.md	Power protection fails safe across both required layers.
@@ -70,7 +70,7 @@ coverage-region	ui	app/Sources/DetachApp/OnboardingView.swift	ui-e2e-instrumenta
 coverage-region	ui	app/Sources/DetachApp/RootView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-ONBOARD-FIRST-RUN,SC-UI-ONBOARD-PROVIDER,SC-UI-ONBOARD-APPROVAL	Packaged journeys cover the test-only semantic bridge and route.
 coverage-region	ui	app/Sources/DetachApp/SessionDetailView.swift	ui-e2e-instrumentation	SC-UI-SESSION-STOP,SC-UI-SESSION-DELETE	The packaged journey covers action geometry and its negative control.
 coverage-region	ui	app/Sources/DetachApp/SettingsView.swift	ui-e2e-instrumentation	SC-UI-SETTINGS	The packaged Settings journey covers its semantic control.
-coverage-region	ui	app/Sources/DetachApp/SidebarView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-SESSION-DETAIL,SC-UI-FAILURE	Packaged journeys cover sidebar control geometry and failure status.
+coverage-region	ui	app/Sources/DetachApp/SidebarView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-SESSION-DETAIL,SC-UI-SESSION-DELETE,SC-UI-FAILURE	Packaged journeys cover sidebar control geometry, bulk Delete, and failure status.
 route	1000	quality/*	policy	safe	docs/specs/documentation.md
 route	1000	.github/workflows/quality-gates.yml	policy	safe	docs/specs/documentation.md
 route	1000	.github/workflows/security.yml	policy	safe	docs/specs/documentation.md
@@ -238,7 +238,7 @@ journey	J-SESSION-CREATE	session-lifecycle	QC-RUNTIME-STATE,QC-RUNTIME-OWNERSHIP
 journey	J-SESSION-PERSIST	session-lifecycle	QC-RUNTIME-STATE,QC-RUNTIME-STORAGE	SC-SESSION-PERSIST-CODEX,SC-SESSION-PERSIST-CLAUDE	A live session remains available after the app exits.
 journey	J-SESSION-RECOVER	session-lifecycle	QC-RUNTIME-OWNERSHIP,QC-RUNTIME-STORAGE,QC-RUNTIME-TRANSITION	SC-SESSION-RECOVER-CODEX,SC-SESSION-RECOVER-CLAUDE	A user recovers the exact owned session after interruption.
 journey	J-SESSION-STOP	session-lifecycle	QC-RUNTIME-OWNERSHIP	SC-SESSION-STOP-CODEX,SC-SESSION-STOP-CLAUDE,SC-UI-SESSION-STOP	A user stops only the selected owned session.
-journey	J-SESSION-DELETE	session-lifecycle	QC-RUNTIME-OWNERSHIP,QC-RUNTIME-STORAGE	SC-SESSION-DELETE-CODEX,SC-SESSION-DELETE-CLAUDE,SC-UI-SESSION-DELETE	A user deletes one completed session without affecting another session.
+journey	J-SESSION-DELETE	session-lifecycle	QC-RUNTIME-OWNERSHIP,QC-RUNTIME-STORAGE	SC-SESSION-DELETE-CODEX,SC-SESSION-DELETE-CLAUDE,SC-UI-SESSION-DELETE	A user deletes selected eligible sessions without affecting current work.
 journey	J-POWER-ENABLE	power-protection	QC-POWER-ASSERTION,QC-POWER-LEASE,QC-POWER-CLI,QC-POWER-PLATFORM	SC-POWER-UNIT	A protected session acquires both required power protections.
 journey	J-POWER-LOW-BATTERY	power-protection	QC-POWER-PROTECTION	SC-POWER-LOW-BATTERY	Low battery removes unsafe protection and reports the reason.
 journey	J-POWER-HELPER-LEASE	power-protection	QC-POWER-AUTH,QC-POWER-LEASE,QC-POWER-XPC	SC-POWER-HELPER	The helper accepts only an authorized bounded lease.

@@ -28,7 +28,8 @@ if [ "$#" -eq 2 ] && [ "$1" = list ] && [ "$2" = --json ]; then
   fi
   printf '%s\n' \
     '{"schema":1,"provider":"codex","session_name":"detach-codex-ui-running","name":"UI Running","effective_status":"running","created_at":"2026-07-22T08:00:00Z","model":"gpt-ui-fixture","agent_turn_state":"working","session_color":"#36C5F0","power_protection_state":"protected","health_actions":["stop"]}' \
-    '{"schema":1,"provider":"claude","session_name":"detach-claude-ui-completed","name":"UI Completed","effective_status":"completed","created_at":"2026-07-22T07:00:00Z","finished_at":"2026-07-22T07:30:00Z","exit_status":0,"session_color":"#A855F7","power_protection_state":"allowed","health_actions":["delete"]}'
+    '{"schema":1,"provider":"claude","session_name":"detach-claude-ui-completed","name":"UI Completed","effective_status":"completed","created_at":"2026-07-22T07:00:00Z","finished_at":"2026-07-22T07:30:00Z","exit_status":0,"session_color":"#A855F7","power_protection_state":"allowed","health_actions":["delete"]}' \
+    '{"schema":1,"provider":"codex","session_name":"detach-codex-ui-stopped","name":"UI Stopped","effective_status":"stopped","created_at":"2026-07-22T06:00:00Z","finished_at":"2026-07-22T06:30:00Z","exit_status":143,"session_color":"#1D4ED8","power_protection_state":"allowed","health_actions":["delete"]}'
   exit 0
 fi
 
@@ -62,6 +63,12 @@ fi
 
 if [ "$#" -eq 4 ] && [ "$1" = claude ] && [ "$2" = delete ] \
     && [ "$3" = --force ] && [ "$4" = detach-claude-ui-completed ]; then
+  printf '%s\n' "$*" >>"$ACTIONS"
+  exit 0
+fi
+
+if [ "$#" -eq 4 ] && [ "$1" = codex ] && [ "$2" = delete ] \
+    && [ "$3" = --force ] && [ "$4" = detach-codex-ui-stopped ]; then
   printf '%s\n' "$*" >>"$ACTIONS"
   exit 0
 fi

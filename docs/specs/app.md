@@ -87,10 +87,13 @@ Settings → General owns both menu bar toggles. Settings → System keeps the o
 Mac Power status and approval controls. Temperature safety has its own warning
 shape and the text **Mac can sleep: temperature**.
 
-The dashboard keeps identity, status, and Mac Power separate. A thin capsule
-carries identity; a filled circle carries status. The preview uses the tmux
-blend, not the raw hue. Power words use a neutral surface and semantic color.
-Sidebar and detail share one status-color function.
+The dashboard keeps identity, status, and Mac Power separate. Identity uses a
+thin capsule and the tmux blend. Status uses a filled circle through one shared
+sidebar/detail color function. Power words use a neutral surface and semantic
+color.
+
+**Finished** bulk Delete selects only rows with typed Delete, asks once,
+continues after failures, and does not remove provider transcripts.
 
 Every app CLI invocation runs in a fresh process group with concurrent bounded
 stdout/stderr draining. Its deadline sends TERM and then KILL to the complete

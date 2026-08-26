@@ -18,6 +18,7 @@ approved_invocation() {
     'claude logs --ansi detach-claude-ui-completed'|\
     'codex stop detach-codex-ui-running'|\
     'claude delete --force detach-claude-ui-completed'|\
+    'codex delete --force detach-codex-ui-stopped'|\
     'storage --json'|\
     'config tmux-style'|\
     'config tmux-extended-keys') return 0 ;;
@@ -297,7 +298,7 @@ run_app_scenario() {
       background-app-starts-without-focus|disconnected-stop-blocks-action) ;;
       dashboard-accessible) pass=SC-UI-DASHBOARD ;;
       sidebar-selects-completed-session) ;;
-      safe-delete-reaches-fake-cli) pass=SC-UI-SESSION-DELETE ;;
+      bulk-delete-reaches-fake-cli) pass=SC-UI-SESSION-DELETE ;;
       session-signals-stay-distinct) pass=SC-UI-SESSION-DETAIL ;;
       safe-action-reaches-fake-cli) pass=SC-UI-SESSION-STOP ;;
       new-session-sheet-semantics) pass=SC-UI-NEW-SESSION ;;
@@ -322,10 +323,10 @@ run_app_scenario main sessions 20 \
   background-app-starts-without-focus \
   dashboard-accessible \
   sidebar-selects-completed-session \
-  safe-delete-reaches-fake-cli \
   session-signals-stay-distinct \
   disconnected-stop-blocks-action \
   safe-action-reaches-fake-cli \
+  bulk-delete-reaches-fake-cli \
   new-session-sheet-semantics \
   empty-dashboard-state \
   installed-app-focus-restored

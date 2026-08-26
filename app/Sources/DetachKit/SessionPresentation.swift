@@ -21,6 +21,13 @@ public enum SessionAction: String, Codable, CaseIterable, Sendable {
 }
 
 public extension Session {
+    /// Finished-list bulk actions stay behind the same typed Delete permission
+    /// as the detail view. A terminal-looking row without that permission is
+    /// never selectable for removal.
+    var canDeleteFromFinishedList: Bool {
+        section == .finished && availableActions.contains(.delete)
+    }
+
     var isWaitingForUser: Bool {
         effectiveStatus == .running && agentTurnState == .waiting
     }

@@ -1,6 +1,14 @@
 import SwiftUI
 import DetachKit
 
+enum FinishedDeletionPresentation {
+    static func errorMessage(for failures: [SessionDeletionFailure]) -> String {
+        failures
+            .map { "\($0.displayTitle): \($0.message)" }
+            .joined(separator: "\n")
+    }
+}
+
 struct SidebarView: View {
     @Environment(\.appFontPointSize) private var fontPointSize
     let store: SessionStore
@@ -8,9 +16,22 @@ struct SidebarView: View {
     @Binding var selectedID: String?
     @ObservedObject var navigation: MainNavigation
     @State private var showNewSession = false
+    @State private var isSelectingFinished = false
+    @State private var selectedFinishedIDs: Set<String> = []
+    @State private var confirmFinishedDelete = false
+    @State private var isDeletingFinished = false
+    @State private var finishedDeleteError: String?
 
     private func sessions(in section: SessionSection) -> [Session] {
         store.sessions.filter { $0.section == section }
+    }
+
+    private var deletableFinishedSessions: [Session] {
+        sessions(in: .finished).filter(\.canDeleteFromFinishedList)
+    }
+
+    private var selectedFinishedSessions: [Session] {
+        deletableFinishedSessions.filter { selectedFinishedIDs.contains($0.id) }
     }
 
     var body: some View {
@@ -23,9 +44,7 @@ struct SidebarView: View {
                             sessionRow(session)
                         }
                     } header: {
-                        Text(L10n.format("%@ · %d", section.displayName, items.count))
-                            .foregroundStyle(
-                                section == .answerReady ? Color.orange : Color.secondary)
+                        sectionHeader(section, count: items.count)
                     }
                 }
             }
@@ -44,7 +63,13 @@ struct SidebarView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            StatusBar(store: store)
+            VStack(spacing: 0) {
+                if isSelectingFinished {
+                    finishedSelectionBar
+                    Divider()
+                }
+                StatusBar(store: store)
+            }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -69,6 +94,30 @@ struct SidebarView: View {
         .sheet(isPresented: $showNewSession) {
             NewSessionSheet(detachPath: detachPath)
         }
+        .confirmationDialog(
+            L10n.format(
+                "Delete selected sessions (%d)?",
+                selectedFinishedSessions.count),
+            isPresented: $confirmFinishedDelete,
+            titleVisibility: .visible
+        ) {
+            Button(L10n.string("Delete"), role: .destructive) {
+                deleteSelectedFinishedSessions()
+            }
+        } message: {
+            Text(L10n.string(
+                "The selected Detach state directories and checkpoints will be permanently deleted. Provider transcripts in ~/.claude and ~/.codex will not be affected."))
+        }
+        .alert(
+            L10n.string("Could not delete some sessions"),
+            isPresented: .init(
+                get: { finishedDeleteError != nil },
+                set: { if !$0 { finishedDeleteError = nil } })
+        ) {
+            Button(L10n.string("OK"), role: .cancel) {}
+        } message: {
+            Text(finishedDeleteError ?? "")
+        }
         // The menu can request a sheet before reopening the main window, so
         // consume an already-pending request on the sidebar's first render.
         .onChange(of: navigation.requestsNewSession, initial: true) { _, requested in
@@ -76,38 +125,207 @@ struct SidebarView: View {
             showNewSession = true
             navigation.requestsNewSession = false
         }
+        .onChange(of: deletableFinishedSessions.map(\.id)) { _, currentIDs in
+            selectedFinishedIDs.formIntersection(currentIDs)
+            if currentIDs.isEmpty && !isDeletingFinished {
+                isSelectingFinished = false
+            }
+        }
         .navigationSplitViewColumnWidth(
             min: max(230, fontPointSize * 18),
             ideal: max(260, fontPointSize * 20))
     }
 
     @ViewBuilder
+    private func sectionHeader(_ section: SessionSection, count: Int) -> some View {
+        HStack(spacing: 8) {
+            Text(L10n.format("%@ · %d", section.displayName, count))
+                .foregroundStyle(
+                    section == .answerReady ? Color.orange : Color.secondary)
+            Spacer(minLength: 0)
+            if section == .finished && !deletableFinishedSessions.isEmpty {
+                Button(L10n.string(isSelectingFinished ? "Done" : "Select")) {
+                    if isSelectingFinished {
+                        selectedFinishedIDs.removeAll()
+                    }
+                    isSelectingFinished.toggle()
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Brand.indigo)
+                .disabled(isDeletingFinished)
+                .accessibilityIdentifier("finished-selection-mode-button")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                .background {
+                    if AppSettings.uiE2E != nil {
+                        UIE2EGeometryProbe(
+                            identifier: "finished-selection-mode-button",
+                            semanticLabel: isSelectingFinished ? "Done" : "Select",
+                            semanticRole: .button,
+                            semanticEnabled: !isDeletingFinished)
+                    }
+                }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
+            }
+        }
+    }
+
+    @ViewBuilder
     private func sessionRow(_ session: Session) -> some View {
-        if session.isWaitingForUser {
+        let row = HStack(spacing: 8) {
+            if isSelectingFinished && session.canDeleteFromFinishedList {
+                Button {
+                    if selectedFinishedIDs.contains(session.id) {
+                        selectedFinishedIDs.remove(session.id)
+                    } else {
+                        selectedFinishedIDs.insert(session.id)
+                    }
+                } label: {
+                    Image(systemName: selectedFinishedIDs.contains(session.id)
+                          ? "checkmark.square.fill" : "square")
+                        .foregroundStyle(
+                            selectedFinishedIDs.contains(session.id)
+                                ? Brand.indigo : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(isDeletingFinished)
+                .accessibilityLabel(L10n.format(
+                    selectedFinishedIDs.contains(session.id)
+                        ? "Deselect %@ from deletion" : "Select %@ for deletion",
+                    session.displayTitle))
+                .accessibilityIdentifier("finished-selection-\(session.id)")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                .background {
+                    if AppSettings.uiE2E != nil {
+                        UIE2EGeometryProbe(
+                            identifier: "finished-selection-\(session.id)",
+                            semanticLabel: selectedFinishedIDs.contains(session.id)
+                                ? "Deselect \(session.displayTitle) from deletion"
+                                : "Select \(session.displayTitle) for deletion",
+                            semanticRole: .button,
+                            semanticEnabled: !isDeletingFinished)
+                    }
+                }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
+            }
             SessionRow(session: session)
+        }
+
+        if session.isWaitingForUser {
+            row
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
                 .background { uiE2EGeometryProbe(for: session) }
 #endif
 // quality-coverage:end ui-e2e-instrumentation
                 .tag(session.id)
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children:
+                    isSelectingFinished && session.canDeleteFromFinishedList
+                        ? .contain : .combine)
                 .accessibilityLabel(session.displayTitle)
                 .accessibilityIdentifier("session-row-\(session.id)")
                 .accessibilityAction { selectedID = session.id }
                 .listRowBackground(Color.orange.opacity(0.10))
         } else {
-            SessionRow(session: session)
+            row
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
                 .background { uiE2EGeometryProbe(for: session) }
 #endif
 // quality-coverage:end ui-e2e-instrumentation
                 .tag(session.id)
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children:
+                    isSelectingFinished && session.canDeleteFromFinishedList
+                        ? .contain : .combine)
                 .accessibilityLabel(session.displayTitle)
                 .accessibilityIdentifier("session-row-\(session.id)")
                 .accessibilityAction { selectedID = session.id }
+        }
+    }
+
+    private var finishedSelectionBar: some View {
+        HStack(spacing: 8) {
+            Button(L10n.string(
+                selectedFinishedIDs.count == deletableFinishedSessions.count
+                    ? "Clear selection" : "Select all")) {
+                if selectedFinishedIDs.count == deletableFinishedSessions.count {
+                    selectedFinishedIDs.removeAll()
+                } else {
+                    selectedFinishedIDs = Set(deletableFinishedSessions.map(\.id))
+                }
+            }
+            .buttonStyle(.borderless)
+            .disabled(isDeletingFinished || deletableFinishedSessions.isEmpty)
+            .accessibilityIdentifier("finished-select-all-button")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+            .background {
+                if AppSettings.uiE2E != nil {
+                    UIE2EGeometryProbe(
+                        identifier: "finished-select-all-button",
+                        semanticLabel: selectedFinishedIDs.count
+                            == deletableFinishedSessions.count
+                            ? "Clear selection" : "Select all",
+                        semanticRole: .button,
+                        semanticEnabled: !isDeletingFinished
+                            && !deletableFinishedSessions.isEmpty)
+                }
+            }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
+
+            Spacer()
+
+            if isDeletingFinished {
+                ProgressView().controlSize(.small)
+            }
+            Button(role: .destructive) {
+                confirmFinishedDelete = true
+            } label: {
+                Label(
+                    L10n.format("Delete %d", selectedFinishedSessions.count),
+                    systemImage: "trash")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .disabled(isDeletingFinished || selectedFinishedSessions.isEmpty)
+            .accessibilityIdentifier("finished-delete-button")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+            .background {
+                if AppSettings.uiE2E != nil {
+                    UIE2EGeometryProbe(
+                        identifier: "finished-delete-button",
+                        semanticLabel: "Delete \(selectedFinishedSessions.count)",
+                        semanticRole: .button,
+                        semanticEnabled: !isDeletingFinished
+                            && !selectedFinishedSessions.isEmpty)
+                }
+            }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    private func deleteSelectedFinishedSessions() {
+        let selected = selectedFinishedSessions
+        guard !selected.isEmpty else { return }
+        isDeletingFinished = true
+        Task { @MainActor in
+            let failures = await store.deleteFinished(selected)
+            selectedFinishedIDs = Set(failures.map(\.sessionName))
+            isDeletingFinished = false
+            if failures.isEmpty {
+                isSelectingFinished = false
+            } else {
+                finishedDeleteError = FinishedDeletionPresentation.errorMessage(
+                    for: failures)
+            }
         }
     }
 
