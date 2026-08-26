@@ -96,7 +96,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: app/build/Detach.app
-          key: detach-app-v1-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Resources/**/*', 'app/scripts/make-app.sh', 'app/scripts/bundle-modes.sh', 'bin/detach', 'bin/detach-core', 'scripts/install.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
+          key: detach-app-v1-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Resources/**/*', 'app/scripts/make-app.sh', 'app/scripts/bundle-modes.sh', 'app/scripts/verify-app.sh', 'bin/detach', 'bin/detach-core', 'scripts/install.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
       - name: Restore exact Swift and tmux inputs
         id: swift-cache
         if: matrix.needs_cache || (matrix.needs_app && steps.app-cache.outputs.cache-hit != 'true')
@@ -206,7 +206,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: app/build/Detach.app
-          key: detach-app-v1-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Resources/**/*', 'app/scripts/make-app.sh', 'app/scripts/bundle-modes.sh', 'bin/detach', 'bin/detach-core', 'scripts/install.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
+          key: detach-app-v1-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Resources/**/*', 'app/scripts/make-app.sh', 'app/scripts/bundle-modes.sh', 'app/scripts/verify-app.sh', 'bin/detach', 'bin/detach-core', 'scripts/install.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
       - name: Restore Swift and tmux caches
         id: swift-cache
         if: github.event_name != 'pull_request'
@@ -256,7 +256,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: app/build/Detach.app
-          key: detach-app-v1-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Resources/**/*', 'app/scripts/make-app.sh', 'app/scripts/bundle-modes.sh', 'bin/detach', 'bin/detach-core', 'scripts/install.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
+          key: detach-app-v1-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ hashFiles('app/Package.swift', 'app/Package.resolved', 'app/Sources/**/*.swift', 'app/Resources/**/*', 'app/scripts/make-app.sh', 'app/scripts/bundle-modes.sh', 'app/scripts/verify-app.sh', 'bin/detach', 'bin/detach-core', 'scripts/install.sh', 'scripts/build-tmux.sh', 'VERSION', 'BUILD') }}
       - name: Publish gate summary
         if: always()
         shell: bash

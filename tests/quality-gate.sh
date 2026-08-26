@@ -44,6 +44,8 @@ grep -F 'if: matrix.needs_cache' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'key: detach-app-v1-' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F "'app/scripts/verify-app.sh'" \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'name: Verify exact packaged test app' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F "steps.app-cache.outputs.cache-hit != 'true'" \
