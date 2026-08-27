@@ -44,6 +44,7 @@ grep -F 'coverage executable has no coverage map' \
 for invocation in \
   'list --json' \
   'codex logs --ansi detach-codex-ui-running' \
+  'codex attach detach-codex-ui-running' \
   'claude logs --ansi detach-claude-ui-completed' \
   'codex stop detach-codex-ui-running' \
   'claude delete --force detach-claude-ui-completed' \

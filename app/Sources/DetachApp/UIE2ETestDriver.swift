@@ -260,6 +260,10 @@ enum UIE2ETestDriver {
                 runningRow,
                 name: "running session row",
                 resultIdentifier: "session-detail-\(runningID)")
+            try await waitUntil("live attach terminal", attempts: 40) {
+                find(identifier: "session-preview-terminal") != nil
+            }
+            checks.append("live-session-hosts-attach-client")
             let identityMarker = try await measuredFrame(
                 identifier: "session-detail-identity-marker",
                 name: "session identity marker")

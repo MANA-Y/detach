@@ -15,6 +15,7 @@ approved_invocation() {
   case "$1" in
     'list --json'|\
     'codex logs --ansi detach-codex-ui-running'|\
+    'codex attach detach-codex-ui-running'|\
     'claude logs --ansi detach-claude-ui-completed'|\
     'codex stop detach-codex-ui-running'|\
     'claude delete --force detach-claude-ui-completed'|\
@@ -298,6 +299,7 @@ run_app_scenario() {
     case "$check" in
       background-app-starts-without-focus|disconnected-stop-blocks-action|\
       finished-selection-clears-scrollbar|session-uuid-copies-from-text-side|\
+      live-session-hosts-attach-client|\
       settings-window-stays-on-screen|\
       settings-system-reveals-storage-and-installation) ;;
       dashboard-accessible) pass=SC-UI-DASHBOARD ;;
@@ -329,6 +331,7 @@ run_app_scenario main sessions 24 \
   dashboard-accessible \
   sidebar-selects-completed-session \
   session-uuid-copies-from-text-side \
+  live-session-hosts-attach-client \
   session-signals-stay-distinct \
   disconnected-stop-blocks-action \
   safe-action-reaches-fake-cli \

@@ -1,9 +1,16 @@
 import AppKit
 import Darwin
+import SwiftUI
 import XCTest
 import SwiftTerm
 import DetachKit
 @testable import DetachApp
+
+private final class SilentDetachCLI: DetachCLIRunning, @unchecked Sendable {
+    func run(arguments: [String], timeout: TimeInterval) async throws -> CLIResult {
+        CLIResult(exitCode: 0, stdout: "", stderr: "", timedOut: false)
+    }
+}
 
 final class SessionAttachTerminalTests: XCTestCase {
     func testPublicAttachRoundTripResizeCopyAndClientOnlyTeardown() throws {
@@ -91,6 +98,80 @@ final class SessionAttachTerminalTests: XCTestCase {
             "codex attach detach-codex-proj-abcd1234")
     }
 
+    func testIdleControllerDoesNotTouchATerminalView() {
+        let controller = SessionAttachController(invocation: Self.invocation())
+        controller.applyFont(pointSize: 12)
+        controller.start()
+        controller.terminateClient()
+        controller.send("noop")
+        controller.selectAllText()
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        XCTAssertEqual(controller.copySelection(to: pasteboard), "")
+        XCTAssertNil(controller.terminalView)
+        XCTAssertNil(controller.lastSize)
+        XCTAssertNil(controller.exitCode)
+    }
+
+    func testProcessExitDeliversOnTheMainQueue() {
+        let controller = SessionAttachController(invocation: Self.invocation())
+        let onMain = expectation(description: "main-thread exit")
+        var seen: Int32?
+        controller.onTerminated = { code in
+            XCTAssertTrue(Thread.isMainThread)
+            seen = code
+            onMain.fulfill()
+        }
+        controller.handleProcessExit(0)
+        wait(for: [onMain], timeout: 1)
+        XCTAssertEqual(controller.exitCode, 0)
+        XCTAssertEqual(seen, 0)
+
+        let offMain = expectation(description: "off-main exit")
+        controller.onTerminated = { code in
+            XCTAssertTrue(Thread.isMainThread)
+            seen = code
+            offMain.fulfill()
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            controller.handleProcessExit(9)
+        }
+        wait(for: [offMain], timeout: 1)
+        XCTAssertEqual(controller.exitCode, 9)
+        XCTAssertEqual(seen, 9)
+    }
+
+    func testCoordinatorOwnsThePublicAttachInvocation() {
+        let session = try XCTUnwrap(Self.session())
+        let view = SessionAttachTerminalView(
+            detachPath: "/tmp/detach",
+            session: session,
+            fontPointSize: 14,
+            baseEnvironment: [
+                "PATH": "/bin",
+                "HOME": "/tmp",
+                "TMUX": "/tmp/foreign.sock,1,0",
+            ])
+        let coordinator = view.makeCoordinator()
+        XCTAssertEqual(coordinator.controller.invocation.executable, "/tmp/detach")
+        XCTAssertEqual(
+            coordinator.controller.invocation.arguments,
+            ["codex", "attach", "detach-codex-proj-abcd1234"])
+        XCTAssertFalse(
+            coordinator.controller.invocation.environment.contains {
+                $0.hasPrefix("TMUX=")
+            })
+    }
+
+    @MainActor
+    func testStoppedSessionDetailUsesTheLogFallback() throws {
+        let session = try XCTUnwrap(Self.session(status: "stopped"))
+        _ = SessionDetailView(
+            session: session,
+            store: SessionStore(cli: SilentDetachCLI()),
+            detachPath: "/tmp/detach").body
+    }
+
     func testTerminalFontMatchesTheAppSize() {
         XCTAssertEqual(SessionAttachController.terminalFont(pointSize: 17).pointSize, 17)
         XCTAssertTrue(SessionAttachController.terminalFont(pointSize: 14).isFixedPitch)
@@ -122,9 +203,19 @@ final class SessionAttachTerminalTests: XCTestCase {
         throw Timeout()
     }
 
-    private static func session() -> Session? {
+    private static func session(status: String = "running") -> Session? {
         SessionListParser.parse("""
-        {"schema":1,"provider":"codex","session_name":"detach-codex-proj-abcd1234","name":"proj-abcd1234","effective_status":"running","meta_status":null,"agent_session_id":"1111-2222","project_dir":"/tmp/p","created_at":null,"last_checkpoint_at":null,"exit_status":null,"finished_at":null}
+        {"schema":1,"provider":"codex","session_name":"detach-codex-proj-abcd1234","name":"proj-abcd1234","effective_status":"\(status)","meta_status":null,"agent_session_id":"1111-2222","project_dir":"/tmp/p","created_at":null,"last_checkpoint_at":null,"exit_status":null,"finished_at":null}
         """).sessions.first
+    }
+
+    private static func invocation() -> SessionAttachInvocation {
+        SessionAttachInvocation(
+            detachPath: "/tmp/detach",
+            session: session()!,
+            baseEnvironment: [
+                "PATH": "/bin",
+                "HOME": "/tmp",
+            ])
     }
 }

@@ -27,7 +27,7 @@ if [ "$#" -eq 2 ] && [ "$1" = list ] && [ "$2" = --json ]; then
     exit 75
   fi
   printf '%s\n' \
-    '{"schema":1,"provider":"codex","session_name":"detach-codex-ui-running","name":"UI Running","effective_status":"running","created_at":"2026-07-22T08:00:00Z","model":"gpt-ui-fixture","agent_turn_state":"working","session_color":"#36C5F0","power_protection_state":"protected","health_actions":["stop"]}' \
+    '{"schema":1,"provider":"codex","session_name":"detach-codex-ui-running","name":"UI Running","effective_status":"running","created_at":"2026-07-22T08:00:00Z","model":"gpt-ui-fixture","agent_turn_state":"working","session_color":"#36C5F0","power_protection_state":"protected","health_actions":["attach","stop"]}' \
     '{"schema":1,"provider":"claude","session_name":"detach-claude-ui-completed","name":"UI Completed","effective_status":"completed","created_at":"2026-07-22T07:00:00Z","finished_at":"2026-07-22T07:30:00Z","exit_status":0,"agent_session_id":"a9f58f1d-1234-5678-9abc-def012342ed9","session_color":"#A855F7","power_protection_state":"allowed","health_actions":["delete"]}' \
     '{"schema":1,"provider":"codex","session_name":"detach-codex-ui-stopped","name":"UI Stopped","effective_status":"stopped","created_at":"2026-07-22T06:00:00Z","finished_at":"2026-07-22T06:30:00Z","exit_status":143,"session_color":"#1D4ED8","power_protection_state":"allowed","health_actions":["delete"]}'
   exit 0
@@ -53,6 +53,12 @@ fi
 if [ "$#" -eq 4 ] && [ "$2" = logs ] && [ "$3" = --ansi ]; then
   printf '\033[32mUI fixture log for %s\033[0m\n' "$4"
   exit 0
+fi
+
+if [ "$#" -eq 3 ] && [ "$1" = codex ] && [ "$2" = attach ] \
+    && [ "$3" = detach-codex-ui-running ]; then
+  printf 'UI fixture attach for %s\n' "$3"
+  exec /bin/cat
 fi
 
 if [ "$#" -eq 3 ] && [ "$1" = codex ] && [ "$2" = stop ] \

@@ -70,6 +70,10 @@ final class SessionAttachController: NSObject, LocalProcessTerminalViewDelegate 
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {
+        handleProcessExit(exitCode)
+    }
+
+    func handleProcessExit(_ exitCode: Int32?) {
         self.exitCode = exitCode
         if Thread.isMainThread {
             onTerminated?(exitCode)
