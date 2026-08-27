@@ -246,7 +246,9 @@ enum UIE2ETestDriver {
                 offset: CGSize(width: 24, height: 0),
                 size: CGSize(width: 36, height: 18))
             try await waitUntil("copied full UUID and confirmation", attempts: 15) {
-                NSPasteboard.general.changeCount > pasteboardGeneration
+                find(identifier: "session-uuid-chip").flatMap(label)
+                    == L10n.string("Copied")
+                    && NSPasteboard.general.changeCount > pasteboardGeneration
                     && NSPasteboard.general.string(forType: .string) == copiedUUID
             }
             checks.append("session-uuid-copies-from-text-side")
@@ -598,12 +600,15 @@ enum UIE2ETestDriver {
     ) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        for payload in snapshot {
+        let items = snapshot.map { payload in
             let item = NSPasteboardItem()
             for (type, data) in payload {
                 item.setData(data, forType: type)
             }
-            pasteboard.writeObjects([item])
+            return item
+        }
+        if !items.isEmpty {
+            pasteboard.writeObjects(items)
         }
     }
 

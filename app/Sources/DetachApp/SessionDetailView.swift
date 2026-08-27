@@ -451,17 +451,20 @@ struct SessionUUIDChip: View {
         }
         .buttonStyle(ChipPressStyle())
         .help(copied ? L10n.string("Copied") : uuid)
-        .accessibilityLabel(L10n.string("Copy session UUID"))
+        .accessibilityLabel(
+            copied ? L10n.string("Copied") : L10n.string("Copy session UUID"))
         .accessibilityValue(uuid)
         .accessibilityIdentifier("session-uuid-chip")
         .accessibilityAddTraits(.isButton)
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
-        .overlay(alignment: .leading) {
+        .overlay {
             if AppSettings.uiE2E != nil {
-                UIE2EGeometryProbe(identifier: "session-uuid-chip")
-                    .frame(width: 2, height: 2)
-                    .padding(.leading, 10)
+                UIE2EGeometryProbe(
+                    identifier: "session-uuid-chip",
+                    semanticLabel: copied
+                        ? L10n.string("Copied") : L10n.string("Copy session UUID"),
+                    semanticRole: .button)
             }
         }
 #endif
