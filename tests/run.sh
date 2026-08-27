@@ -612,7 +612,6 @@ bootstrap_codex_checkpoint() {
   meta="$DETACH_CODEX_STATE_ROOT/sessions/$SESSION/meta.json"
   checkpoint="$DETACH_CODEX_STATE_ROOT/sessions/$SESSION/checkpoint"
   session_color="$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_color)"
-  expected_id="$("$STATE_HELPER" meta get "$meta" codex_session_id)"
   attempts=0
   while { [ ! -s "$checkpoint/rollout.jsonl" ] || \
           [ ! -s "$checkpoint/codex-state.sqlite" ]; } && \
@@ -622,6 +621,8 @@ bootstrap_codex_checkpoint() {
   done
   [ -s "$checkpoint/rollout.jsonl" ]
   [ -s "$checkpoint/codex-state.sqlite" ]
+  expected_id="$("$STATE_HELPER" meta get "$meta" codex_session_id)"
+  [ -n "$expected_id" ]
   run_codex stop integration
   upgraded_version="0.2.0"
   upgraded_payload="$install_root/libexec/detach/versions/$upgraded_version-test"

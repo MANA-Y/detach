@@ -1855,6 +1855,22 @@ valid_claude_checkpoint_archive() {
     valid_claude_transcript_stream "$expected_id"
 }
 
+claude_matching_checkpoint_exists() {
+  local session="$1"
+  local id="$2"
+  local checkpoint_dir
+  checkpoint_dir="$(session_dir "$session")/checkpoint"
+  if [ -s "$checkpoint_dir/claude-session.tar" ] && \
+     valid_claude_checkpoint_archive "$checkpoint_dir/claude-session.tar" "$id"; then
+    return 0
+  fi
+  if [ -s "$checkpoint_dir/transcript.jsonl" ] && \
+     valid_claude_transcript "$checkpoint_dir/transcript.jsonl" "$id"; then
+    return 0
+  fi
+  return 1
+}
+
 codex_home() {
   printf '%s\n' "${CODEX_HOME:-$HOME/.codex}"
 }
@@ -3785,6 +3801,7 @@ resume_agent_session() {
   if [ "$PROVIDER" = "claude" ]; then
     local saved_id
     local resolved_status
+    local transcript_present=0
     saved_id="$(read_meta_field "$session" agent_session_id 2>/dev/null || true)"
     saved_id="$(printf '%s' "$saved_id" | tr '[:upper:]' '[:lower:]')"
     if [ "$saved_id" = "$id" ]; then
@@ -3803,13 +3820,39 @@ resume_agent_session() {
         rollout="$saved_rollout"
       fi
     fi
-    [ -n "$rollout" ] || die "Claude session '$id' was not found"
-    restore_matching_claude_checkpoint "$session" "$id" "$rollout" || \
-      die "could not restore the matching Claude checkpoint"
-    valid_claude_transcript "$rollout" "$id" || die "Claude transcript for '$id' is missing or invalid"
-    start_under_project_lock "$session" "$cwd" "$display_name" \
-      "$id" "$rollout" 0 resume "$id" "$@" || \
-      die "could not start Claude resume session"
+    transcript_present=0
+    if [ -n "$rollout" ] && { [ -e "$rollout" ] || [ -L "$rollout" ]; }; then
+      transcript_present=1
+    fi
+    if [ "$transcript_present" -eq 1 ]; then
+      safe_claude_transcript_path "$rollout" "$id" || \
+        die "Claude transcript for '$id' is missing or invalid"
+      valid_claude_transcript "$rollout" "$id" || \
+        die "Claude transcript for '$id' is missing or invalid"
+      restore_matching_claude_checkpoint "$session" "$id" "$rollout" || \
+        die "could not restore the matching Claude checkpoint"
+      start_under_project_lock "$session" "$cwd" "$display_name" \
+        "$id" "$rollout" 0 resume "$id" "$@" || \
+        die "could not start Claude resume session"
+    elif claude_matching_checkpoint_exists "$session" "$id"; then
+      [ -n "$rollout" ] && safe_claude_transcript_path "$rollout" "$id" || \
+        die "Claude session '$id' was not found"
+      restore_matching_claude_checkpoint "$session" "$id" "$rollout" || \
+        die "could not restore the matching Claude checkpoint"
+      valid_claude_transcript "$rollout" "$id" || \
+        die "Claude transcript for '$id' is missing or invalid"
+      start_under_project_lock "$session" "$cwd" "$display_name" \
+        "$id" "$rollout" 0 resume "$id" "$@" || \
+        die "could not start Claude resume session"
+    elif [ "$saved_id" = "$id" ]; then
+      # Detach owns this UUID. Claude never wrote a transcript, and no
+      # matching checkpoint can recreate one, so --resume would fail.
+      start_under_project_lock "$session" "$cwd" "$display_name" \
+        "$id" "" 0 "$@" || \
+        die "could not start Claude resume session"
+    else
+      die "Claude session '$id' was not found"
+    fi
     [ "$detach" -eq 1 ] || attach_session "$session"
     return
   fi

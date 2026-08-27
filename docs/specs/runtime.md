@@ -194,16 +194,17 @@ in two helpers.
 
 ### Provider identity and checkpoints
 
-Claude gets a wrapper-owned UUID via `--session-id`. Codex identity is resolved
-after launch by matching the run-token originator in rollout files and Codex's
-SQLite threads, refusing an ambiguous first binding. When the provider later
-switches to another run-owned user thread mid-run (for example `/clear`),
-discovery rebinds identity, transcript, and checkpoints to the newest
-originator-matched thread within one heartbeat or checkpoint tick, records the
-superseded thread ids so the next switch is again unambiguous, and keeps the
-current binding on a creation-time tie. Subagent threads never rebind a
-session. Wrapper-owned provider flags are rejected; policy defaults apply only
-when the user did not supply an allowed override.
+Claude gets a wrapper-owned UUID via `--session-id`. Resume uses `--resume` with
+a valid transcript or matching checkpoint. It uses `--session-id` only if both
+are absent. A present invalid transcript fails closed. Codex binds identity
+after launch by matching the run-token originator in rollout files and SQLite;
+an ambiguous first binding fails. If the provider switches to another run-owned
+user thread (for example `/clear`), discovery rebinds identity, transcript, and
+checkpoints to the newest originator-matched thread within one heartbeat or
+checkpoint tick. It records superseded thread IDs so the next switch stays
+unambiguous, and it keeps the current binding on a creation-time tie. Subagent
+threads never rebind a session. Wrapper-owned provider flags are rejected;
+policy defaults apply only without an allowed override.
 
 Every 300 seconds by default, a per-session lock protects checkpoint creation.
 A checkpoint contains metadata, validated provider JSONL, pane capture, and a
