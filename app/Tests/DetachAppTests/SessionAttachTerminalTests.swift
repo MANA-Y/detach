@@ -144,7 +144,7 @@ final class SessionAttachTerminalTests: XCTestCase {
         XCTAssertEqual(seen, 9)
     }
 
-    func testCoordinatorOwnsThePublicAttachInvocation() {
+    func testCoordinatorOwnsThePublicAttachInvocation() throws {
         let session = try XCTUnwrap(Self.session())
         let view = SessionAttachTerminalView(
             detachPath: "/tmp/detach",
