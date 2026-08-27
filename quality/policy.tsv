@@ -1,5 +1,5 @@
 schema	1
-policy	49
+policy	50
 spec	documentation	docs/specs/documentation.md	Agent context, specifications, and quality automation stay synchronized.
 spec	runtime	docs/specs/runtime.md	Runtime state and session operations preserve exact ownership.
 spec	power	docs/specs/power.md	Power protection fails safe across both required layers.
@@ -46,8 +46,8 @@ test-domain	install	static,app,distribution,tmux-runtime,release-budget	installa
 test-domain	tmux-build	static,app,codex,claude,tmux-runtime,release-budget	session-lifecycle
 test-domain	release-tool	static,app,release-preflight,publish-preflight,release-workflow,release-budget	update,publication
 test-domain	app-script	static,app,tmux-runtime,release-preflight,release-budget	installation
-test-domain	codex-test	static,app,codex,release-budget	session-lifecycle
-test-domain	claude-test	static,app,claude,release-budget	session-lifecycle
+test-domain	codex-test	static,codex,release-budget	session-lifecycle
+test-domain	claude-test	static,claude,release-budget	session-lifecycle
 test-domain	distribution-test	static,app,distribution,release-budget	installation
 test-domain	runtime-test	static,app,tmux-runtime,release-budget	session-lifecycle,power-protection
 test-domain	ui-test	static,app,release-budget	app-experience

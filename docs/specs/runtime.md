@@ -153,26 +153,26 @@ Closing Terminal or Detach.app only removes clients. The Detach tmux server,
 worker, provider, checkpoint loop, and power wrapper continue in the macOS user
 session. They do not promise survival across logout or reboot, and an explicit
 kill of tmux/provider ends the live run. Recovery checkpoints remain available.
-Integration tests must preserve this close-client lifetime contract.
+Provider test parts can run concurrently only with private state, socket, and
+artifact roots. Their parent writes scenario events and requires every part.
+The tests preserve the close-client lifetime contract.
 
-Detach status options are session-local and use `@detach*`; never mutate a
-foreign tmux server's configuration. The status line tints its whole strip with
-a dense blend of the session identity color behind light plain-text labels,
-plus a solid painted-space left edge (no font-dependent partial blocks), and
-puts the power label and clock in `status-right`. Finished sessions keep a
-faint tint of the same hue; failures tint the strip with the reserved red. The
+Detach status options are session-local and use `@detach*`; they never change a
+foreign tmux server. The status strip uses a dense identity-color blend, light
+plain-text labels, a solid painted-space edge, and power and time on the right.
+Finished sessions keep a faint form of the hue. Failures use reserved red. The
 eight-hue identity palette omits pure red. Allocation scans both providers
 under the Start/Resume/Recover install lock. Known terminal history keeps its
 shown identity but does not reserve a hue; unknown state stays conservative.
 Keep an existing hue when unique among current state. Otherwise, walk from the
 stable provider/project preference to the first free hue, and duplicate only
 when all eight are occupied. The single `blend_session_color` formula makes
-every derived surface. The style snapshot saves and restores `status-right`
-and its length alongside the left side; a snapshot from an older Detach that never
-captured the right side must not clear the user's `status-right`. The text
-Plain text is the primary power signal: `MAC AWAKE`, `MAC CAN SLEEP`, `LOW
-BATTERY`, `MAC CAN SLEEP: TEMPERATURE`, `POWER UNAVAILABLE`, or a transition;
-app wording is equivalent and icons are secondary.
+every derived surface. The style snapshot saves and restores both sides and
+their lengths. An older snapshot without right-side data does not clear the
+user's `status-right`. Plain text is the primary power signal: `MAC AWAKE`,
+`MAC CAN SLEEP`, `LOW BATTERY`, `MAC CAN SLEEP: TEMPERATURE`,
+`POWER UNAVAILABLE`, or a transition. App wording is equivalent and icons are
+secondary.
 
 Managed input changes only the private server. `tmux-mouse` defaults on: wheel
 steps are one line; selection copies without clearing, exiting, or snapping;

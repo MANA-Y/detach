@@ -53,10 +53,9 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   a capability, and a requirement. Each requirement links to a user journey
   and at least one automated scenario. Generated JSON and Markdown views must
   match the policy.
-- Retained gates are timing and quality history, not policy history, and cannot
-  restore old policy. An unsupported evidence schema is outside the telemetry
-  sample. Current-schema telemetry can span earlier policy identifiers without
-  dashboard-only fields. Malformed evidence remains an attention signal.
+- Retained gates are timing and quality history, not policy history. An
+  unsupported schema is outside telemetry. Current-schema data can span older
+  policy identifiers. Malformed evidence remains an attention signal.
 - `quality/evals.json` keeps expected outcomes for historical changes, escaped
   defects, policy mutations, and scope violations. Its graders compare stages,
   specs, capabilities, journeys, release gates, and ignored paths. Change an
@@ -67,12 +66,12 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
 - A local timing-budget failure creates performance work. Warm-cache or
   variance reruns cannot turn it into readiness; an unchanged rerun is allowed
   only for an evidenced unrelated external transient whose cause is recorded.
-- CI binds checks to tested merge and first parent. Level 0 is
-  plan and static work, level 1 is unit and contract work, and level 2 is
-  packaged and runtime work. All selected levels are required.
-- Shards revalidate merge identity but have no merge authority. The final
-  `quality-gates` job recomputes the plan and accepts only the shard set
-  and valid digests. Ambiguity fails closed.
+- CI binds checks to the tested merge and first parent. Linux runs level 0
+  planning and static work. Level 1 is unit and contract work. Level 2 is
+  packaged and runtime work on macOS. All selected levels are required.
+- Shards revalidate merge identity but have no merge authority. The final Linux
+  job recomputes the plan and accepts only exact digest-bound shard evidence.
+  Evidence roots are absolute. Ambiguity fails closed. A failed shard cancels peers.
 - CI keeps a ten-minute timing ratchet with no reference-Mac limit.
 - Gate contracts admit three heavy shards on eight CPUs and two on
   fewer CPUs. Light contracts stay concurrent. Budgets expose overload.

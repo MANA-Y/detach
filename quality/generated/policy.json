@@ -659,7 +659,7 @@
     "mutation_timeout_seconds": 240,
     "pr_feedback_seconds": 600
   },
-  "policy": 49,
+  "policy": 50,
   "release_domains": [
     {
       "gates": "-",
@@ -3247,12 +3247,12 @@
     {
       "capabilities": "session-lifecycle",
       "id": "codex-test",
-      "stages": "static,app,codex,release-budget"
+      "stages": "static,codex,release-budget"
     },
     {
       "capabilities": "session-lifecycle",
       "id": "claude-test",
-      "stages": "static,app,claude,release-budget"
+      "stages": "static,claude,release-budget"
     },
     {
       "capabilities": "installation",

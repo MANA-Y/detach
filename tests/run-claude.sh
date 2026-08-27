@@ -13,6 +13,24 @@ SOCKET="detach-claude-test-$$"
 SOCKET_PATH="$TMUX_SOCKET_ROOT/$SOCKET.sock"
 ARTIFACT_DIR="${DETACH_PROVIDER_TEST_ARTIFACT_DIR:-}"
 FAILURE_LINE=""
+CLAUDE_TEST_PART="${DETACH_CLAUDE_TEST_PART:-all}"
+
+case "$CLAUDE_TEST_PART" in
+  all|lifecycle|recovery|history) ;;
+  *)
+    printf 'unknown Claude test part: %s\n' "$CLAUDE_TEST_PART" >&2
+    exit 2
+    ;;
+esac
+
+claude_part_selected() {
+  [ "$CLAUDE_TEST_PART" = all ] || [ "$CLAUDE_TEST_PART" = "$1" ]
+}
+
+claude_scenario_event() {
+  [ "${DETACH_QUALITY_PARTITIONED_PROVIDER:-0}" = 1 ] || \
+    "$ROOT/scripts/quality-scenarios" event "$1" "$2"
+}
 
 if [ -n "${DETACH_TEST_STATE_BIN:-}" ]; then
   STATE_HELPER="$DETACH_TEST_STATE_BIN"
@@ -226,6 +244,41 @@ wait_for_file_text() {
   return 1
 }
 
+human_label='Rev (ai)'
+human_digest="$(printf '%s' "$human_label" | shasum -a 256 | \
+  awk '{print substr($1, 1, 12)}')"
+human_session="detach-claude-Rev-ai-$human_digest"
+
+bootstrap_claude_checkpoint() {
+  mkdir -p "$TMP_ROOT/extra-a" "$TMP_ROOT/extra-b"
+  export FAKE_CLAUDE_SLEEP=20
+  export FAKE_CLAUDE_EXIT=0
+  export FAKE_CLAUDE_EXPECT_RESTORED=0
+  reset_fake_claude_ready
+  "$SCRIPT" claude --name "$human_label" --detach -- \
+    --name display-name 'checkpoint fixture' \
+    --add-dir "$TMP_ROOT/extra-a" "$TMP_ROOT/extra-b"
+  wait_for_fake_claude_ready
+  session_id="$(awk 'previous == "--session-id" { print; exit } { previous = $0 }' \
+    "$FAKE_CLAUDE_ARGS_FILE")"
+  meta="$DETACH_CLAUDE_STATE_ROOT/sessions/$human_session/meta.json"
+  session="$human_session"
+  session_dir="$(dirname "$meta")"
+  checkpoint="$session_dir/checkpoint"
+  attempts=0
+  while { [ ! -s "$checkpoint/transcript.jsonl" ] || \
+          [ ! -s "$checkpoint/claude-session.tar" ]; } && \
+        [ "$attempts" -lt 100 ]; do
+    attempts=$((attempts + 1))
+    sleep 0.1
+  done
+  [ -s "$checkpoint/transcript.jsonl" ]
+  [ -s "$checkpoint/claude-session.tar" ]
+  "$SCRIPT" claude stop "$human_label"
+}
+
+if claude_part_selected lifecycle; then
+
 bash -n "$SCRIPT"
 bash -n "$ROOT/tests/fake-claude"
 [ "$($SCRIPT __version)" = "$(<"$ROOT/VERSION")" ]
@@ -287,21 +340,16 @@ current_codex_color="$("$SCRIPT" codex __allocate_session_color "$color_cwd")"
 [ "$current_codex_color" != "$current_claude_color" ]
 rm -rf "$codex_color_sessions" "$claude_color_sessions"
 
-human_label='Rev (ai)'
-human_digest="$(printf '%s' "$human_label" | shasum -a 256 | \
-  awk '{print substr($1, 1, 12)}')"
-human_session="detach-claude-Rev-ai-$human_digest"
-
 marker="$TMP_ROOT/must-not-exist"
 literal_prompt="spaces ; \$(touch $marker) * \"quotes\""
 mkdir -p "$TMP_ROOT/extra-a" "$TMP_ROOT/extra-b"
 # The display label stays out of tmux and filesystem identifiers, remains
 # usable for every lifecycle command, and survives resume/recovery.
-"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-CREATE-CLAUDE
-"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-PERSIST-CLAUDE
-"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-RECOVER-CLAUDE
-"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-STOP-CLAUDE
-"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-DELETE-CLAUDE
+claude_scenario_event begin SC-SESSION-CREATE-CLAUDE
+claude_scenario_event begin SC-SESSION-PERSIST-CLAUDE
+claude_scenario_event begin SC-SESSION-RECOVER-CLAUDE
+claude_scenario_event begin SC-SESSION-STOP-CLAUDE
+claude_scenario_event begin SC-SESSION-DELETE-CLAUDE
 reset_fake_claude_ready
 "$SCRIPT" claude --name "$human_label" --detach -- \
   --name display-name "$literal_prompt" --add-dir "$TMP_ROOT/extra-a" "$TMP_ROOT/extra-b"
@@ -330,7 +378,7 @@ session="$("$STATE_HELPER" meta get "$meta" session_name)"
 [ "$("$STATE_HELPER" meta get "$meta" display_name)" = "$human_label" ]
 "$SCRIPT" claude status "$human_label" | \
   grep -F "Name:           $human_label" >/dev/null
-"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-CREATE-CLAUDE
+claude_scenario_event pass SC-SESSION-CREATE-CLAUDE
 session_dir="$(dirname "$meta")"
 checkpoint="$session_dir/checkpoint"
 
@@ -349,7 +397,7 @@ live_pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_pane_
 [ "$(tmux -L "$SOCKET" display-message -p -t "$live_pane_id" '#{pane_dead}')" = "0" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -w -t "$live_pane_id" remain-on-exit)" = off ]
 [ "$(tmux -L "$SOCKET" show-options -qv -p -t "$live_pane_id" remain-on-exit)" = on ]
-"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-PERSIST-CLAUDE
+claude_scenario_event pass SC-SESSION-PERSIST-CLAUDE
 session_color="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_color)"
 [[ "$session_color" =~ ^#[[:xdigit:]]{6}$ ]]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_status)" = "running" ]
@@ -583,10 +631,19 @@ stopped_run_token="$("$STATE_HELPER" meta get "$meta" run_token)"
 [ -n "$("$STATE_HELPER" meta get "$meta" stopped_at)" ]
 grep -Fx "release --session $session --run-token $stopped_run_token" \
   "$FAKE_POWER_RELEASES_FILE" >/dev/null
-"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-STOP-CLAUDE
+claude_scenario_event pass SC-SESSION-STOP-CLAUDE
+
+if [ "$CLAUDE_TEST_PART" = lifecycle ]; then
+  "$SCRIPT" claude delete --force "$human_label"
+fi
+fi
 
 # Simulate losing primary metadata during a power failure. Recovery must use
 # checkpoint metadata and resume the exact Claude session UUID.
+if claude_part_selected recovery; then
+if [ "$CLAUDE_TEST_PART" = recovery ]; then
+  bootstrap_claude_checkpoint
+fi
 "$STATE_HELPER" meta patch "$checkpoint/meta.json" --string status running --null exit_status
 rm -f "$meta"
 printf '{damaged transcript\n' >"$CLAUDE_CONFIG_DIR/projects/fake/$session_id.jsonl"
@@ -671,7 +728,7 @@ grep -Fx -- "$TMP_ROOT/extra-b" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 [ -s "$CLAUDE_CONFIG_DIR/tasks/$session_id/task.json" ]
 [ -s "$CLAUDE_CONFIG_DIR/tasks/session-${session_id:0:8}/task.json" ]
 [ -s "$CLAUDE_CONFIG_DIR/teams/session-${session_id:0:8}/config.json" ]
-"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-RECOVER-CLAUDE
+claude_scenario_event pass SC-SESSION-RECOVER-CLAUDE
 
 "$SCRIPT" claude stop "$human_label"
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
@@ -717,8 +774,10 @@ reset_fake_claude_ready
 wait_for_fake_claude_ready
 "$SCRIPT" claude stop "$human_label"
 export FAKE_CLAUDE_EXPECT_RESTORED=0
-default_history_fixture="$TMP_ROOT/default-claude-history-fixture"
-cp -Rp "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" "$default_history_fixture"
+if [ "$CLAUDE_TEST_PART" = all ]; then
+  default_history_fixture="$TMP_ROOT/default-claude-history-fixture"
+  cp -Rp "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" "$default_history_fixture"
+fi
 
 mkdir -p "$CLAUDE_CONFIG_DIR/projects/copy"
 cp -p "$CLAUDE_CONFIG_DIR/projects/fake/$second_id.jsonl" \
@@ -740,6 +799,15 @@ grep -Fx 'outside sentinel' "$outside" >/dev/null
 "$SCRIPT" claude delete --force "$human_label"
 [ ! -d "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" ]
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
+fi
+
+if claude_part_selected history; then
+if [ "$CLAUDE_TEST_PART" = history ]; then
+  bootstrap_claude_checkpoint
+  default_history_fixture="$TMP_ROOT/default-claude-history-fixture"
+  cp -Rp "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" "$default_history_fixture"
+  "$SCRIPT" claude delete --force "$human_label"
+fi
 
 # Claude uses the same default history-series contract as Codex: a completed
 # run remains intact while the next fresh conversation receives a new slot.
@@ -801,5 +869,6 @@ done
 "$SCRIPT" claude delete --force "$second_default_session"
 [ ! -e "$FAKE_GIT_MARKER" ]
 
-"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-DELETE-CLAUDE
-printf 'Claude detach integration tests passed\n'
+claude_scenario_event pass SC-SESSION-DELETE-CLAUDE
+fi
+printf 'Claude detach integration tests passed (%s)\n' "$CLAUDE_TEST_PART"

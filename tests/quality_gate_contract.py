@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -23,7 +24,9 @@ from quality_gate import (  # noqa: E402
     gate_orchestrator_limit,
     include_gate_orchestrators,
     parse_name_status,
+    parse_options,
     run_app_stage,
+    run_provider_parts,
     split_quality_pipeline_jobs,
     split_swift_build_jobs,
     ui_coverage_binary,
@@ -32,6 +35,22 @@ from quality_policy import POLICY_FILE, Policy  # noqa: E402
 
 
 class QualityGateContract(unittest.TestCase):
+    def test_relative_result_root_becomes_absolute_evidence(self) -> None:
+        relative = Path("app/build/relative-quality-evidence")
+        with patch.dict(
+            "os.environ",
+            {"DETACH_QUALITY_GATE_RESULT_ROOT": str(relative)},
+            clear=False,
+        ), patch("quality_gate.git_text", return_value="a" * 40):
+            gate = QualityGate(parse_options([]))
+        self.assertEqual(gate.result_root, (Path.cwd() / relative).absolute())
+        self.assertTrue(gate.run_dir.is_absolute())
+
+    def test_environment_document_marks_an_unavailable_platform_tool(self) -> None:
+        gate = QualityGate.__new__(QualityGate)
+        with patch("quality_gate.run", side_effect=GateError("missing")):
+            self.assertEqual(gate.command_version(["missing-tool"]), "unavailable")
+
     def test_name_status_preserves_rename_and_unusual_paths(self) -> None:
         raw = b"R100\0old name\0new\nname\0A\0plain\0"
         self.assertEqual(
@@ -199,6 +218,115 @@ class QualityGateContract(unittest.TestCase):
         with patch.dict("os.environ", environment, clear=True):
             with self.assertRaisesRegex(GateError, "hosted CI authority"):
                 exact_products_enabled()
+
+    def test_codex_parts_get_private_artifact_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            suite = root / "tests/run.sh"
+            suite.parent.mkdir()
+            suite.write_text(
+                "#!/bin/bash\n"
+                "set -eu\n"
+                "printf '%s\\t%s\\n' \"$DETACH_CODEX_TEST_PART\" "
+                "\"$DETACH_PROVIDER_TEST_ARTIFACT_DIR\"\n",
+                encoding="utf-8",
+            )
+            suite.chmod(0o755)
+            run_dir = root / "evidence"
+            run_dir.mkdir()
+            artifacts = run_dir / "codex-artifacts"
+            environment = {
+                "PATH": "/usr/bin:/bin",
+                "DETACH_PROVIDER_TEST_ARTIFACT_DIR": str(artifacts),
+            }
+            events = run_dir / "codex-events.jsonl"
+            with patch.dict(
+                "os.environ",
+                {
+                    "DETACH_QUALITY_SCENARIO_STAGE": "codex",
+                    "DETACH_QUALITY_SCENARIO_EVENTS": str(events),
+                },
+            ):
+                self.assertEqual(
+                    run_provider_parts(root, run_dir, "codex", environment),
+                    0,
+                )
+            for part in (
+                "preflight",
+                "lifecycle",
+                "recovery",
+                "resume",
+                "identity",
+                "crash",
+            ):
+                log = (run_dir / f"codex-parts/{part}.log").read_text(
+                    encoding="utf-8"
+                )
+                self.assertEqual(log, f"{part}\t{artifacts / part}\n")
+            records = [
+                json.loads(line)
+                for line in events.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(len(records), 10)
+            self.assertEqual(
+                {(record["kind"], record["id"]) for record in records},
+                {
+                    (kind, f"SC-SESSION-{scenario}-CODEX")
+                    for kind in ("begin", "pass")
+                    for scenario in ("CREATE", "PERSIST", "STOP", "RECOVER", "DELETE")
+                },
+            )
+
+    def test_claude_parts_get_private_artifact_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            suite = root / "tests/run-claude.sh"
+            suite.parent.mkdir()
+            suite.write_text(
+                "#!/bin/bash\n"
+                "set -eu\n"
+                "printf '%s\\t%s\\n' \"$DETACH_CLAUDE_TEST_PART\" "
+                "\"$DETACH_PROVIDER_TEST_ARTIFACT_DIR\"\n",
+                encoding="utf-8",
+            )
+            suite.chmod(0o755)
+            run_dir = root / "evidence"
+            run_dir.mkdir()
+            artifacts = run_dir / "claude-artifacts"
+            environment = {
+                "PATH": "/usr/bin:/bin",
+                "DETACH_PROVIDER_TEST_ARTIFACT_DIR": str(artifacts),
+            }
+            events = run_dir / "claude-events.jsonl"
+            with patch.dict(
+                "os.environ",
+                {
+                    "DETACH_QUALITY_SCENARIO_STAGE": "claude",
+                    "DETACH_QUALITY_SCENARIO_EVENTS": str(events),
+                },
+            ):
+                self.assertEqual(
+                    run_provider_parts(root, run_dir, "claude", environment),
+                    0,
+                )
+            for part in ("lifecycle", "recovery", "history"):
+                log = (run_dir / f"claude-parts/{part}.log").read_text(
+                    encoding="utf-8"
+                )
+                self.assertEqual(log, f"{part}\t{artifacts / part}\n")
+            records = [
+                json.loads(line)
+                for line in events.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(len(records), 10)
+            self.assertEqual(
+                {(record["kind"], record["id"]) for record in records},
+                {
+                    (kind, f"SC-SESSION-{scenario}-CLAUDE")
+                    for kind in ("begin", "pass")
+                    for scenario in ("CREATE", "PERSIST", "STOP", "RECOVER", "DELETE")
+                },
+            )
 
 
 def main() -> int:

@@ -19,6 +19,27 @@ OUTER_SOCKET_PATH="$TMUX_SOCKET_ROOT/$OUTER_SOCKET.sock"
 SESSION="detach-codex-integration"
 ARTIFACT_DIR="${DETACH_PROVIDER_TEST_ARTIFACT_DIR:-}"
 FAILURE_LINE=""
+CODEX_TEST_PART="${DETACH_CODEX_TEST_PART:-all}"
+
+case "$CODEX_TEST_PART" in
+  all|preflight|lifecycle|recovery|restart|resume|identity|crash|history) ;;
+  *)
+    printf 'unknown Codex test part: %s\n' "$CODEX_TEST_PART" >&2
+    exit 2
+    ;;
+esac
+
+codex_part_selected() {
+  [ "$CODEX_TEST_PART" = all ] || [ "$CODEX_TEST_PART" = "$1" ] || {
+    [ "$CODEX_TEST_PART" = preflight ] && [ "$1" = history ] ||
+    [ "$CODEX_TEST_PART" = recovery ] && [ "$1" = restart ]
+  }
+}
+
+codex_scenario_event() {
+  [ "${DETACH_QUALITY_PARTITIONED_PROVIDER:-0}" = 1 ] || \
+    "$ROOT/scripts/quality-scenarios" event "$1" "$2"
+}
 
 if [ -n "${DETACH_TEST_STATE_BIN:-}" ]; then
   STATE_HELPER="$DETACH_TEST_STATE_BIN"
@@ -365,9 +386,10 @@ test_sqlite() {
   sqlite3 -cmd '.timeout 5000' "$@"
 }
 
-bash -n "$SCRIPT"
-bash -n "$ROOT/bin/detach-core"
-[ "$($SCRIPT __version)" = "$(<"$ROOT/VERSION")" ]
+if codex_part_selected preflight; then
+  bash -n "$SCRIPT"
+  bash -n "$ROOT/bin/detach-core"
+  [ "$($SCRIPT __version)" = "$(<"$ROOT/VERSION")" ]
 
 if FAKE_POWER_STATE=unavailable run_codex --name power-preflight --detach -- \
   'must not start without power protection' >/dev/null 2>&1; then
@@ -542,6 +564,7 @@ legacy_style="$(tmux -L "$SOCKET" show-options -qv -t "=$legacy_session:" status
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$legacy_session:" status-left)" = "legacy user status" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$legacy_session:" status-left-length)" = "37" ]
 tmux -L "$SOCKET" kill-session -t "=$legacy_session"
+fi
 
 # The installed layout exposes only detach on PATH. The frontend must still
 # find its sibling core after resolving the public symlink.
@@ -563,22 +586,54 @@ fi
 SCRIPT="$install_root/bin/detach"
 DETACH="$SCRIPT"
 
-marker="$TMP_ROOT/must-not-exist"
-literal_prompt="spaces ; \$(touch $marker) * \"quotes\""
-export FAKE_CODEX_SLEEP=12
-integration_release="$TMP_ROOT/integration-provider-release"
-export FAKE_CODEX_RELEASE_FILE="$integration_release"
-"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-CREATE-CODEX
-"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-PERSIST-CODEX
-"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-RECOVER-CODEX
-"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-STOP-CODEX
-"$ROOT/scripts/quality-scenarios" event begin SC-SESSION-DELETE-CODEX
-run_codex --name integration --detach -- "$literal_prompt"
+bootstrap_codex_checkpoint() {
+  export FAKE_CODEX_SLEEP=20
+  export FAKE_CODEX_EXIT=0
+  export FAKE_CODEX_FOREIGN_FIRST=0
+  export FAKE_CODEX_INIT_DELAY=0.1
+  run_codex --name integration --detach -- 'recovery fixture'
+  wait_for_tmux_option "$SESSION" @detach_status running
+  meta="$DETACH_CODEX_STATE_ROOT/sessions/$SESSION/meta.json"
+  checkpoint="$DETACH_CODEX_STATE_ROOT/sessions/$SESSION/checkpoint"
+  session_color="$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_color)"
+  expected_id="$("$STATE_HELPER" meta get "$meta" codex_session_id)"
+  attempts=0
+  while { [ ! -s "$checkpoint/rollout.jsonl" ] || \
+          [ ! -s "$checkpoint/codex-state.sqlite" ]; } && \
+        [ "$attempts" -lt 80 ]; do
+    attempts=$((attempts + 1))
+    sleep 0.1
+  done
+  [ -s "$checkpoint/rollout.jsonl" ]
+  [ -s "$checkpoint/codex-state.sqlite" ]
+  run_codex stop integration
+  upgraded_version="0.2.0"
+  upgraded_payload="$install_root/libexec/detach/versions/$upgraded_version-test"
+  install -d "$upgraded_payload"
+  install -m 0755 "$ROOT/bin/detach" "$ROOT/bin/detach-core" "$upgraded_payload/"
+  printf '%s\n' "$upgraded_version" >"$upgraded_payload/VERSION"
+  ln -s "$upgraded_payload/detach" "$install_root/bin/.detach-upgrade"
+  mv -f "$install_root/bin/.detach-upgrade" "$install_root/bin/detach"
+  failed_style="bg=$(expected_tint '#B91C1C' 55)"
+}
+
+if codex_part_selected lifecycle; then
+  marker="$TMP_ROOT/must-not-exist"
+  literal_prompt="spaces ; \$(touch $marker) * \"quotes\""
+  export FAKE_CODEX_SLEEP=12
+  integration_release="$TMP_ROOT/integration-provider-release"
+  export FAKE_CODEX_RELEASE_FILE="$integration_release"
+  codex_scenario_event begin SC-SESSION-CREATE-CODEX
+  codex_scenario_event begin SC-SESSION-PERSIST-CODEX
+  codex_scenario_event begin SC-SESSION-RECOVER-CODEX
+  codex_scenario_event begin SC-SESSION-STOP-CODEX
+  codex_scenario_event begin SC-SESSION-DELETE-CODEX
+  run_codex --name integration --detach -- "$literal_prompt"
 
 wait_for_tmux_option "$SESSION" @detach_status running
 tmux -L "$SOCKET" has-session -t "=$SESSION"
 "$DETACH" list | grep -F 'codex' | grep -F "$SESSION" >/dev/null
-"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-CREATE-CODEX
+codex_scenario_event pass SC-SESSION-CREATE-CODEX
 mkdir -p "$TMP_ROOT/unrelated-tmux-tmpdir"
 TMUX_TMPDIR="$TMP_ROOT/unrelated-tmux-tmpdir" \
   "$DETACH" list | grep -F 'codex' | grep -F "$SESSION" >/dev/null
@@ -592,7 +647,7 @@ pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_pane_id)"
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_status)" = "running" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -w -t "$pane_id" remain-on-exit)" = off ]
 [ "$(tmux -L "$SOCKET" show-options -qv -p -t "$pane_id" remain-on-exit)" = on ]
-"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-PERSIST-CODEX
+codex_scenario_event pass SC-SESSION-PERSIST-CODEX
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_tmux_style)" = "1" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_style_snapshot)" = "1" ]
 session_color="$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_color)"
@@ -912,10 +967,19 @@ run_codex stop integration
 [ -n "$("$STATE_HELPER" meta get "$meta" stopped_at)" ]
 grep -Fx "release --session $SESSION --run-token $stopped_run_token" \
   "$FAKE_POWER_RELEASES_FILE" >/dev/null
-"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-STOP-CODEX
+codex_scenario_event pass SC-SESSION-STOP-CODEX
+
+if [ "$CODEX_TEST_PART" = lifecycle ]; then
+  run_codex delete --force integration
+fi
+fi
 
 # Simulate losing the primary metadata in a power failure. Auto-recovery must
 # use the checkpoint metadata and resume the exact saved UUID.
+if codex_part_selected recovery; then
+if [ "$CODEX_TEST_PART" = recovery ]; then
+  bootstrap_codex_checkpoint
+fi
 "$STATE_HELPER" meta patch "$checkpoint/meta.json" --string status running
 rm -f "$meta"
 
@@ -936,13 +1000,23 @@ case "$worker_pid" in
   ''|*[!0-9]*) printf 'recovered pane has invalid worker PID: %s\n' "$worker_pid" >&2; exit 1 ;;
 esac
 worker_pgid="$(wait_for_process_group_id "$worker_pid")"
-"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-RECOVER-CODEX
+codex_scenario_event pass SC-SESSION-RECOVER-CODEX
 
 run_codex stop integration
 ! kill -0 "$worker_pid" 2>/dev/null
 wait_for_process_group_exit "$worker_pgid"
 [ "$("$STATE_HELPER" meta get "$meta" status)" = "stopped" ]
 [ -n "$("$STATE_HELPER" meta get "$meta" stopped_at)" ]
+
+if [ "$CODEX_TEST_PART" = recovery ]; then
+  run_codex delete --force integration
+fi
+fi
+
+if codex_part_selected restart; then
+if [ "$CODEX_TEST_PART" = recovery ] || [ "$CODEX_TEST_PART" = restart ]; then
+  bootstrap_codex_checkpoint
+fi
 
 # A fresh run with the same name must never inherit the previous run's UUID.
 [ -s "$checkpoint/rollout.jsonl" ]
@@ -962,6 +1036,16 @@ if run_codex --name integration --detach -- 'must not replace a running task'; t
 fi
 [ "$("$STATE_HELPER" meta get "$meta" run_token)" = "$fresh_run_token" ]
 run_codex stop integration
+
+if [ "$CODEX_TEST_PART" != all ]; then
+  run_codex delete --force integration
+fi
+fi
+
+if codex_part_selected resume; then
+if [ "$CODEX_TEST_PART" = resume ]; then
+  bootstrap_codex_checkpoint
+fi
 
 # Explicit resume follows Codex semantics and accepts the exact thread UUID.
 export FAKE_CODEX_INIT_DELAY=0
@@ -1046,10 +1130,31 @@ json_line="$(run_codex list --json | grep -F "\"session_name\":\"$SESSION\"")"
 [ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_state)" = "working" ]
 [ "$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_id)" = "turn-after-idle" ]
 
+if [ "$CODEX_TEST_PART" = resume ]; then
+  run_codex stop integration
+  run_codex delete --force integration
+fi
+fi
+
 # Codex /clear opens a successor thread inside the same provider process.
 # Discovery must rebind identity, turn state, and checkpoints to the newest
 # run-owned thread, refuse a creation-time tie, ignore subagent threads, and
 # consume superseded ids so the next switch is unambiguous again.
+if codex_part_selected identity; then
+if [ "$CODEX_TEST_PART" = identity ]; then
+  export FAKE_CODEX_SLEEP=60
+  export FAKE_CODEX_EXIT=0
+  export FAKE_CODEX_FOREIGN_FIRST=0
+  export FAKE_CODEX_INIT_DELAY=0.1
+  run_codex --name integration --detach -- 'identity fixture'
+  wait_for_tmux_option "$SESSION" @detach_status running
+  meta="$DETACH_CODEX_STATE_ROOT/sessions/$SESSION/meta.json"
+  checkpoint="$DETACH_CODEX_STATE_ROOT/sessions/$SESSION/checkpoint"
+  session_color="$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_color)"
+  json_line="$(run_codex list --json | grep -F "\"session_name\":\"$SESSION\"")"
+  turn_rollout="$("$STATE_HELPER" meta get "$meta" transcript_path)"
+  turn_id="$(printf '%s' "$json_line" | "$STATE_HELPER" meta get /dev/stdin agent_turn_id)"
+fi
 switch_project_dir="$("$STATE_HELPER" meta get "$meta" project_dir)"
 switch_run_token="$("$STATE_HELPER" meta get "$meta" run_token)"
 pre_switch_id="$("$STATE_HELPER" meta get "$meta" codex_session_id)"
@@ -1243,11 +1348,14 @@ wait "$checkpoint_holder"
 [ "$(<"$external_storage/keep")" = 'provider data' ]
 ! tmux -L "$SOCKET" has-session -t "=$SESSION" 2>/dev/null
 ! run_codex list --json | grep -F "\"session_name\":\"$SESSION\"" >/dev/null
+codex_scenario_event pass SC-SESSION-DELETE-CODEX
+fi
 
 # Killing the worker can leave its provider alive in a retained pane. Detach
 # must expose that uncertainty, refuse every state-changing action, and keep
 # the session out of both cleanup plans until the whole managed process group
 # is gone.
+if codex_part_selected crash; then
 worker_crash_name=health-worker-crash
 worker_crash_session=detach-codex-health-worker-crash
 DETACH_CODEX_BIN="$FAKE_CODEX_LONG_BIN" \
@@ -1449,10 +1557,12 @@ tmux_loss_json="$(run_codex list --json | \
 [ "$(printf '%s' "$tmux_loss_json" | "$STATE_HELPER" meta get /dev/stdin reconcile_action)" = \
   mark_recoverable ]
 run_codex delete --force "$tmux_loss_name"
+fi
 
 # Default-history allocation is provider-root independent. Claude exercises
 # full preservation below in its integration; keep the Codex lane's mirror
 # bounded to exact monotonic slot selection.
+if codex_part_selected history; then
 default_slug="$(basename "$ROOT" | LC_ALL=C tr -cs 'A-Za-z0-9_-' '-' | \
   sed 's/^-*//; s/-*$//')"
 [ -n "$default_slug" ] || default_slug=project
@@ -1552,6 +1662,6 @@ if DETACH_CODEX_STATE_ROOT="$unsafe_state" run_codex __delete_locked "$SESSION";
 fi
 grep -Fx 'do not delete' "$unsafe_target/$SESSION/sentinel" >/dev/null
 [ ! -e "$FAKE_GIT_MARKER" ]
+fi
 
-"$ROOT/scripts/quality-scenarios" event pass SC-SESSION-DELETE-CODEX
-printf 'Codex detach integration tests passed\n'
+printf 'Codex detach integration tests passed (%s)\n' "$CODEX_TEST_PART"
