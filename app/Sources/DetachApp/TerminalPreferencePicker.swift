@@ -268,37 +268,49 @@ enum OpenPanelDirectoryMemory {
     }
 }
 
-protocol OpenPanelConfiguring: AnyObject {
-    var canChooseFiles: Bool { get set }
-    var canChooseDirectories: Bool { get set }
-    var allowsMultipleSelection: Bool { get set }
-    var canCreateDirectories: Bool { get set }
-    var allowedContentTypes: [UTType] { get set }
-    var directoryURL: URL? { get set }
-    var prompt: String? { get set }
+struct OpenPanelRules: Equatable {
+    var canChooseFiles: Bool
+    var canChooseDirectories: Bool
+    var allowsMultipleSelection: Bool
+    var canCreateDirectories: Bool
+    var allowedContentTypes: [UTType]?
+    var directoryURL: URL?
+    var prompt: String
 }
-
-extension NSOpenPanel: OpenPanelConfiguring {}
 
 enum TerminalApplicationChooser {
     static let applicationsDirectory = URL(
         fileURLWithPath: "/Applications",
         isDirectory: true)
 
-    @MainActor
-    static func makeOpenPanel() -> NSOpenPanel {
-        let panel = NSOpenPanel()
-        applyApplicationBundleRules(to: panel)
-        return panel
+    static var applicationBundleRules: OpenPanelRules {
+        OpenPanelRules(
+            canChooseFiles: true,
+            canChooseDirectories: false,
+            allowsMultipleSelection: false,
+            canCreateDirectories: false,
+            allowedContentTypes: [.applicationBundle],
+            directoryURL: applicationsDirectory,
+            prompt: L10n.string("Choose Another App…"))
     }
 
-    static func applyApplicationBundleRules(to panel: OpenPanelConfiguring) {
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.directoryURL = applicationsDirectory
-        panel.prompt = L10n.string("Choose Another App…")
+    @MainActor
+    static func makeOpenPanel() -> NSOpenPanel {
+        apply(applicationBundleRules, to: NSOpenPanel())
+    }
+
+    @discardableResult
+    static func apply(_ rules: OpenPanelRules, to panel: NSOpenPanel) -> NSOpenPanel {
+        panel.canChooseFiles = rules.canChooseFiles
+        panel.canChooseDirectories = rules.canChooseDirectories
+        panel.allowsMultipleSelection = rules.allowsMultipleSelection
+        panel.canCreateDirectories = rules.canCreateDirectories
+        if let allowedContentTypes = rules.allowedContentTypes {
+            panel.allowedContentTypes = allowedContentTypes
+        }
+        panel.directoryURL = rules.directoryURL
+        panel.prompt = rules.prompt
+        return panel
     }
 
     @MainActor
@@ -321,20 +333,20 @@ enum TerminalApplicationChooser {
 }
 
 enum ProjectDirectoryChooser {
-    @MainActor
-    static func makeOpenPanel(startingAt directory: URL) -> NSOpenPanel {
-        let panel = NSOpenPanel()
-        applyDirectoryRules(to: panel, startingAt: directory)
-        return panel
+    static func directoryRules(startingAt directory: URL) -> OpenPanelRules {
+        OpenPanelRules(
+            canChooseFiles: false,
+            canChooseDirectories: true,
+            allowsMultipleSelection: false,
+            canCreateDirectories: false,
+            allowedContentTypes: nil,
+            directoryURL: directory,
+            prompt: L10n.string("Choose…"))
     }
 
-    static func applyDirectoryRules(to panel: OpenPanelConfiguring, startingAt directory: URL) {
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = false
-        panel.directoryURL = directory
-        panel.prompt = L10n.string("Choose…")
+    @MainActor
+    static func makeOpenPanel(startingAt directory: URL) -> NSOpenPanel {
+        TerminalApplicationChooser.apply(directoryRules(startingAt: directory), to: NSOpenPanel())
     }
 
     static func startingDirectory(selectedProject: URL?) -> URL {

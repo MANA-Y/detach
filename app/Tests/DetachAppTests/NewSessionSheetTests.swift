@@ -79,13 +79,13 @@ final class NewSessionSheetTests: XCTestCase {
     }
 
     func testOtherAppChooserOpensApplicationBundles() {
-        let panel = OpenPanelStub()
-        TerminalApplicationChooser.applyApplicationBundleRules(to: panel)
-        XCTAssertEqual(panel.allowedContentTypes, [.applicationBundle])
-        XCTAssertEqual(panel.directoryURL?.path, "/Applications")
-        XCTAssertTrue(panel.canChooseFiles)
-        XCTAssertFalse(panel.canChooseDirectories)
-        XCTAssertFalse(panel.allowsMultipleSelection)
+        let rules = TerminalApplicationChooser.applicationBundleRules
+        XCTAssertEqual(rules.allowedContentTypes, [.applicationBundle])
+        XCTAssertEqual(rules.directoryURL?.path, "/Applications")
+        XCTAssertTrue(rules.canChooseFiles)
+        XCTAssertFalse(rules.canChooseDirectories)
+        XCTAssertFalse(rules.allowsMultipleSelection)
+        XCTAssertFalse(rules.canCreateDirectories)
     }
 
     func testProjectChooserStartsInTheSelectedProjectParent() {
@@ -120,14 +120,12 @@ final class NewSessionSheetTests: XCTestCase {
     }
 
     func testProjectChooserPanelPicksDirectories() {
-        let panel = OpenPanelStub()
-        ProjectDirectoryChooser.applyDirectoryRules(
-            to: panel,
+        let rules = ProjectDirectoryChooser.directoryRules(
             startingAt: URL(fileURLWithPath: "/tmp", isDirectory: true))
-        XCTAssertTrue(panel.canChooseDirectories)
-        XCTAssertFalse(panel.canChooseFiles)
-        XCTAssertFalse(panel.canCreateDirectories)
-        XCTAssertEqual(panel.directoryURL?.path, "/tmp")
+        XCTAssertTrue(rules.canChooseDirectories)
+        XCTAssertFalse(rules.canChooseFiles)
+        XCTAssertFalse(rules.canCreateDirectories)
+        XCTAssertEqual(rules.directoryURL?.path, "/tmp")
     }
 
     func testPanelHostPrefersTheKeyWindowThenFallsBack() {
@@ -176,14 +174,4 @@ final class NewSessionSheetTests: XCTestCase {
 
 private final class IdentifierBox {
     var value = "dev.example.missing-terminal"
-}
-
-private final class OpenPanelStub: OpenPanelConfiguring {
-    var canChooseFiles = false
-    var canChooseDirectories = false
-    var allowsMultipleSelection = true
-    var canCreateDirectories = true
-    var allowedContentTypes: [UTType] = []
-    var directoryURL: URL?
-    var prompt: String?
 }
