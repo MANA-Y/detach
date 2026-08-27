@@ -223,11 +223,11 @@ struct SidebarView: View {
             }
             SessionRow(session: session)
         }
+        .contentShape(Rectangle())
+        .onTapGesture { selectedID = session.id }
 
         if session.isWaitingForUser {
             row
-                .contentShape(Rectangle())
-                .onTapGesture { selectedID = session.id }
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
                 .background { uiE2EGeometryProbe(for: session) }
@@ -243,8 +243,6 @@ struct SidebarView: View {
                 .listRowBackground(Color.orange.opacity(0.10))
         } else {
             row
-                .contentShape(Rectangle())
-                .onTapGesture { selectedID = session.id }
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
                 .background { uiE2EGeometryProbe(for: session) }
