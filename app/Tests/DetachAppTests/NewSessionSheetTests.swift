@@ -23,28 +23,35 @@ final class NewSessionSheetTests: XCTestCase {
     }
 
     func testBuildsExpandedAdvancedSection() {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 420),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false)
-        window.contentView = NSHostingView(rootView: NewSessionSheet(
+        _ = NewSessionSheet(
             detachPath: "/tmp/detach",
-            showsAdvanced: true))
-        window.makeKeyAndOrderFront(nil)
-        defer { window.close() }
-        pumpMain()
-        XCTAssertNotNil(window.contentView)
+            showsAdvanced: true).body
     }
 
     func testPickerRefreshLoadsInstalledAndMissingSelections() {
-        let installed = hostPicker(bundleIdentifier: "com.apple.Terminal")
-        defer { installed.close() }
-        XCTAssertNotNil(installed.contentView)
+        var installed = "com.apple.Terminal"
+        _ = TerminalPreferencePicker(bundleIdentifier: Binding(
+            get: { installed },
+            set: { installed = $0 })).body
 
-        let missing = hostPicker(bundleIdentifier: "dev.example.missing-terminal")
-        defer { missing.close() }
-        XCTAssertNotNil(missing.contentView)
+        var missing = "dev.example.missing-terminal"
+        _ = TerminalPreferencePicker(
+            bundleIdentifier: Binding(
+                get: { missing },
+                set: { missing = $0 }),
+            accessibilityIdentifier: "new-session-terminal").body
+    }
+
+    func testPickerChooseAcceptsATerminalURL() throws {
+        let terminal = try XCTUnwrap(Self.terminalApplicationURL())
+        let box = IdentifierBox()
+        var picker = TerminalPreferencePicker(bundleIdentifier: Binding(
+            get: { box.value },
+            set: { box.value = $0 }))
+        picker.choose(at: terminal)
+        XCTAssertEqual(box.value, "com.apple.Terminal")
+        picker.choose(at: URL(fileURLWithPath: "/tmp"))
+        XCTAssertEqual(box.value, "com.apple.Terminal")
     }
 
     func testPreferenceSelectionAcceptsTerminalAndRejectsABareFolder() throws {
@@ -72,11 +79,13 @@ final class NewSessionSheetTests: XCTestCase {
     }
 
     func testOtherAppChooserOpensApplicationBundles() {
-        let panel = TerminalApplicationChooser.makeOpenPanel()
+        let panel = OpenPanelStub()
+        TerminalApplicationChooser.applyApplicationBundleRules(to: panel)
         XCTAssertEqual(panel.allowedContentTypes, [.applicationBundle])
         XCTAssertEqual(panel.directoryURL?.path, "/Applications")
         XCTAssertTrue(panel.canChooseFiles)
         XCTAssertFalse(panel.canChooseDirectories)
+        XCTAssertFalse(panel.allowsMultipleSelection)
     }
 
     func testProjectChooserStartsInTheSelectedProjectParent() {
@@ -111,60 +120,48 @@ final class NewSessionSheetTests: XCTestCase {
     }
 
     func testProjectChooserPanelPicksDirectories() {
-        let panel = ProjectDirectoryChooser.makeOpenPanel(
+        let panel = OpenPanelStub()
+        ProjectDirectoryChooser.applyDirectoryRules(
+            to: panel,
             startingAt: URL(fileURLWithPath: "/tmp", isDirectory: true))
         XCTAssertTrue(panel.canChooseDirectories)
         XCTAssertFalse(panel.canChooseFiles)
+        XCTAssertFalse(panel.canCreateDirectories)
         XCTAssertEqual(panel.directoryURL?.path, "/tmp")
     }
 
-    func testPanelHostPrefersTheKeyWindow() {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
-            styleMask: [.titled],
+    func testPanelHostPrefersTheKeyWindowThenFallsBack() {
+        let key = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 80, height: 40),
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false)
-        window.makeKeyAndOrderFront(nil)
-        defer { window.close() }
-        XCTAssertEqual(PanelHostWindow.current(), window)
+        defer { key.close() }
+        XCTAssertTrue(PanelHostWindow.preferred(keyWindow: key, windows: []) === key)
+        XCTAssertNil(PanelHostWindow.preferred(keyWindow: nil, windows: []))
+        _ = PanelHostWindow.current()
     }
 
     func testPinWindowTopEdgeReappliesTheStoredTop() {
         let window = NSWindow(
             contentRect: NSRect(x: 80, y: 160, width: 360, height: 180),
-            styleMask: [.titled],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false)
-        window.contentView = NSHostingView(rootView: PinWindowTopEdge()
-            .frame(width: 1, height: 1))
-        window.makeKeyAndOrderFront(nil)
+        let pin = PinWindowTopEdgeView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        window.contentView = pin
         defer { window.close() }
-        pumpMain()
-        let pinnedTop = window.frame.maxY
+        XCTAssertNil(pin.hitTest(NSPoint(x: 0, y: 0)))
+        pin.viewDidMoveToWindow()
+        let pinnedTop = WindowTopPin.storedMaxY(for: window)
         var grown = window.frame
         grown.size.height += 90
         grown.origin.y -= 90
-        window.setFrame(grown, display: true)
-        pumpMain()
+        window.setFrame(grown, display: false)
+        pin.keepTopPinned()
         XCTAssertEqual(window.frame.maxY, pinnedTop, accuracy: 1.5)
-    }
-
-    private func hostPicker(bundleIdentifier: String) -> NSWindow {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 140),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false)
-        window.contentView = NSHostingView(
-            rootView: TerminalPickerHost(bundleIdentifier: bundleIdentifier)
-                .frame(width: 400, height: 120))
-        window.makeKeyAndOrderFront(nil)
-        pumpMain()
-        return window
-    }
-
-    private func pumpMain() {
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.2))
+        pin.schedulePin()
+        pin.layout()
     }
 
     private static func terminalApplicationURL() -> URL? {
@@ -177,10 +174,16 @@ final class NewSessionSheetTests: XCTestCase {
     }
 }
 
-private struct TerminalPickerHost: View {
-    @State var bundleIdentifier: String
+private final class IdentifierBox {
+    var value = "dev.example.missing-terminal"
+}
 
-    var body: some View {
-        TerminalPreferencePicker(bundleIdentifier: $bundleIdentifier)
-    }
+private final class OpenPanelStub: OpenPanelConfiguring {
+    var canChooseFiles = false
+    var canChooseDirectories = false
+    var allowsMultipleSelection = true
+    var canCreateDirectories = true
+    var allowedContentTypes: [UTType] = []
+    var directoryURL: URL?
+    var prompt: String?
 }

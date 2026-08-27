@@ -227,11 +227,15 @@ final class PinWindowTopEdgeView: NSView {
 enum PanelHostWindow {
     @MainActor
     static func current() -> NSWindow? {
-        if let key = NSApp.keyWindow {
-            return key
+        preferred(keyWindow: NSApp.keyWindow, windows: NSApp.windows)
+    }
+
+    static func preferred(keyWindow: NSWindow?, windows: [NSWindow]) -> NSWindow? {
+        if let keyWindow {
+            return keyWindow
         }
-        return NSApp.windows.first(where: { $0.sheetParent != nil })
-            ?? NSApp.windows.first(where: { $0.attachedSheet != nil })
+        return windows.first(where: { $0.sheetParent != nil })
+            ?? windows.first(where: { $0.attachedSheet != nil })
     }
 }
 
@@ -264,17 +268,37 @@ enum OpenPanelDirectoryMemory {
     }
 }
 
+protocol OpenPanelConfiguring: AnyObject {
+    var canChooseFiles: Bool { get set }
+    var canChooseDirectories: Bool { get set }
+    var allowsMultipleSelection: Bool { get set }
+    var canCreateDirectories: Bool { get set }
+    var allowedContentTypes: [UTType] { get set }
+    var directoryURL: URL? { get set }
+    var prompt: String? { get set }
+}
+
+extension NSOpenPanel: OpenPanelConfiguring {}
+
 enum TerminalApplicationChooser {
+    static let applicationsDirectory = URL(
+        fileURLWithPath: "/Applications",
+        isDirectory: true)
+
     @MainActor
     static func makeOpenPanel() -> NSOpenPanel {
         let panel = NSOpenPanel()
+        applyApplicationBundleRules(to: panel)
+        return panel
+    }
+
+    static func applyApplicationBundleRules(to panel: OpenPanelConfiguring) {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.applicationBundle]
-        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        panel.directoryURL = applicationsDirectory
         panel.prompt = L10n.string("Choose Another App…")
-        return panel
     }
 
     @MainActor
@@ -300,13 +324,17 @@ enum ProjectDirectoryChooser {
     @MainActor
     static func makeOpenPanel(startingAt directory: URL) -> NSOpenPanel {
         let panel = NSOpenPanel()
+        applyDirectoryRules(to: panel, startingAt: directory)
+        return panel
+    }
+
+    static func applyDirectoryRules(to panel: OpenPanelConfiguring, startingAt directory: URL) {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = false
         panel.directoryURL = directory
         panel.prompt = L10n.string("Choose…")
-        return panel
     }
 
     static func startingDirectory(selectedProject: URL?) -> URL {
