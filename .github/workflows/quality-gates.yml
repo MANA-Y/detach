@@ -265,7 +265,7 @@ jobs:
           printf 'DETACH_QUALITY_EXACT_APP=1\n' >>"$GITHUB_ENV"
       - id: swift-warm
         name: Warm exact promoted-main Swift cache
-        if: steps.promoted-main.outputs.promoted == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
+        if: steps.promoted-main.outputs.promoted == 'true' && steps.swift-cache.outputs.cache-hit != 'true' && (steps.product-cache.outputs.cache-hit != 'true' || steps.app-cache.outputs.cache-hit != 'true')
         run: scripts/quality-cache-warm
       - id: app-warm
         name: Prepare exact promoted-main test app

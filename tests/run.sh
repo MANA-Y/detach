@@ -22,7 +22,7 @@ FAILURE_LINE=""
 CODEX_TEST_PART="${DETACH_CODEX_TEST_PART:-all}"
 
 case "$CODEX_TEST_PART" in
-  all|preflight|lifecycle|recovery|restart|resume|identity|crash|history) ;;
+  all|guardrails|preflight|configuration|session|lifecycle-recovery|resume-identity|lifecycle|recovery|restart|resume|identity|crash|history) ;;
   *)
     printf 'unknown Codex test part: %s\n' "$CODEX_TEST_PART" >&2
     exit 2
@@ -31,8 +31,26 @@ esac
 
 codex_part_selected() {
   [ "$CODEX_TEST_PART" = all ] || [ "$CODEX_TEST_PART" = "$1" ] || {
-    [ "$CODEX_TEST_PART" = preflight ] && [ "$1" = history ] ||
-    [ "$CODEX_TEST_PART" = recovery ] && [ "$1" = restart ]
+    [ "$CODEX_TEST_PART" = preflight ] && {
+      [ "$1" = history ] || [ "$1" = configuration ]
+    } ||
+    [ "$CODEX_TEST_PART" = recovery ] && [ "$1" = restart ] ||
+    [ "$CODEX_TEST_PART" = guardrails ] && {
+      case "$1" in preflight|crash|history) return 0 ;; esac
+      return 1
+    } ||
+    [ "$CODEX_TEST_PART" = session ] && {
+      case "$1" in lifecycle|recovery|restart|resume|identity) return 0 ;; esac
+      return 1
+    } ||
+    [ "$CODEX_TEST_PART" = lifecycle-recovery ] && {
+      case "$1" in configuration|lifecycle|recovery|restart) return 0 ;; esac
+      return 1
+    } ||
+    [ "$CODEX_TEST_PART" = resume-identity ] && {
+      case "$1" in resume|identity) return 0 ;; esac
+      return 1
+    }
   }
 }
 
@@ -479,10 +497,12 @@ tmux -L "$CWD_SOCKET" kill-server >/dev/null 2>&1 || true
 
 [ "$($SCRIPT config tmux-style)" = "detach" ]
 [ "$(run_codex __session_color /fixtures/harness)" = "#1D4ED8" ]
+fi
 
 # A repository marker is enough to canonicalize a nested project. Detach must
 # not execute ambient git (which can prompt for Xcode Command Line Tools on a
 # clean Mac) either while resolving the project root or while checkpointing.
+if codex_part_selected configuration; then
 marker_repository="$TMP_ROOT/marker-repository"
 marker_repository_nested="$marker_repository/sources/nested"
 human_label='Rev (ai)'
@@ -1037,13 +1057,13 @@ fi
 [ "$("$STATE_HELPER" meta get "$meta" run_token)" = "$fresh_run_token" ]
 run_codex stop integration
 
-if [ "$CODEX_TEST_PART" != all ]; then
+if [ "$CODEX_TEST_PART" != all ] && [ "$CODEX_TEST_PART" != session ]; then
   run_codex delete --force integration
 fi
 fi
 
 if codex_part_selected resume; then
-if [ "$CODEX_TEST_PART" = resume ]; then
+if [ "$CODEX_TEST_PART" = resume ] || [ "$CODEX_TEST_PART" = resume-identity ]; then
   bootstrap_codex_checkpoint
 fi
 
