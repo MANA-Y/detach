@@ -1066,7 +1066,9 @@ fi
 # Explicit resume follows Codex semantics and accepts the exact thread UUID.
 export FAKE_CODEX_INIT_DELAY=0
 export FAKE_CODEX_SLEEP=1
-expected_rollout="$(test_sqlite "$CODEX_HOME/state_5.sqlite" "SELECT rollout_path FROM threads WHERE id = '$expected_id';")"
+expected_rollout="$("$STATE_HELPER" meta get "$meta" transcript_path)"
+[ -n "$expected_rollout" ]
+[ -f "$expected_rollout" ]
 cp -p "$expected_rollout" "$checkpoint/rollout.jsonl"
 printf '{damaged rollout\n' >"$expected_rollout"
 uppercase_id="$(printf '%s' "$expected_id" | tr '[:lower:]' '[:upper:]')"
