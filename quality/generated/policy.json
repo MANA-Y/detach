@@ -198,6 +198,24 @@
     },
     {
       "group": "ui",
+      "path": "app/Sources/DetachApp/NewSessionSheet.swift",
+      "region": "sheet-appkit",
+      "scenarios": [
+        "SC-UI-NEW-SESSION"
+      ],
+      "summary": "The packaged journey owns launch and the project open panel."
+    },
+    {
+      "group": "ui",
+      "path": "app/Sources/DetachApp/TerminalPreferencePicker.swift",
+      "region": "open-panel",
+      "scenarios": [
+        "SC-UI-NEW-SESSION"
+      ],
+      "summary": "The packaged new-session journey owns the AppKit open-panel host."
+    },
+    {
+      "group": "ui",
       "path": "app/Sources/DetachApp/OnboardingView.swift",
       "region": "ui-e2e-instrumentation",
       "scenarios": [

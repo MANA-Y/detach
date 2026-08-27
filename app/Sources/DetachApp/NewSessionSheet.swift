@@ -269,17 +269,9 @@ struct NewSessionSheet: View {
                 Button {
                     Task { await launch() }
                 } label: {
-                    HStack(spacing: 7) {
-                        if isLaunching {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text(L10n.string("Launching…"))
-                        } else {
-                            Image(systemName: "terminal")
-                            Text(TerminalLaunchPresentation.title(
-                                terminalDisplayName: selectedTerminalDisplayName))
-                        }
-                    }
+                    NewSessionLaunch.label(
+                        isLaunching: isLaunching,
+                        terminalDisplayName: selectedTerminalDisplayName)
                 }
                     .buttonStyle(.borderedProminent)
                     .tint(Brand.tint(for: provider))
@@ -327,6 +319,7 @@ struct NewSessionSheet: View {
 #endif
 // quality-coverage:end ui-e2e-instrumentation
 
+// quality-coverage:begin sheet-appkit
     @MainActor
     private func presentProjectChooser() {
         ProjectDirectoryChooser.present(
@@ -343,12 +336,12 @@ struct NewSessionSheet: View {
         guard !isLaunching, isNameValid, let projectDir else { return }
         isLaunching = true
         defer { isLaunching = false }
-        let command = TerminalCommand.start(
+        let command = NewSessionLaunch.command(
             detachPath: detachPath,
             provider: provider,
             projectDir: projectDir.path,
             name: normalizedName,
-            prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : prompt)
+            prompt: prompt)
         launchFailure = nil
         let failure = await TerminalLauncher.open(
             command: command,
@@ -357,6 +350,44 @@ struct NewSessionSheet: View {
             launchFailure = failure
         } else {
             dismiss()
+        }
+    }
+}
+// quality-coverage:end sheet-appkit
+
+enum NewSessionLaunch {
+    static func trimmedPrompt(_ prompt: String) -> String? {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func command(
+        detachPath: String,
+        provider: Provider,
+        projectDir: String,
+        name: String?,
+        prompt: String
+    ) -> String {
+        TerminalCommand.start(
+            detachPath: detachPath,
+            provider: provider,
+            projectDir: projectDir,
+            name: name,
+            prompt: trimmedPrompt(prompt))
+    }
+
+    @ViewBuilder
+    static func label(isLaunching: Bool, terminalDisplayName: String) -> some View {
+        HStack(spacing: 7) {
+            if isLaunching {
+                ProgressView()
+                    .controlSize(.small)
+                Text(L10n.string("Launching…"))
+            } else {
+                Image(systemName: "terminal")
+                Text(TerminalLaunchPresentation.title(
+                    terminalDisplayName: terminalDisplayName))
+            }
         }
     }
 }

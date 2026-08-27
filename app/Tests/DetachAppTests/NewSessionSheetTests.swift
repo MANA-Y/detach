@@ -66,6 +66,32 @@ final class NewSessionSheetTests: XCTestCase {
         XCTAssertTrue(rejected.error?.contains("tmp") == true)
     }
 
+    func testLaunchPlanOmitsABlankPromptAndKeepsText() {
+        XCTAssertNil(NewSessionLaunch.trimmedPrompt("  \n"))
+        XCTAssertEqual(NewSessionLaunch.trimmedPrompt("  go\n"), "go")
+        let command = NewSessionLaunch.command(
+            detachPath: "/tmp/detach",
+            provider: .codex,
+            projectDir: "/tmp/proj",
+            name: "Rev",
+            prompt: "  review this  ")
+        XCTAssertTrue(command.contains("cd '/tmp/proj'"), command)
+        XCTAssertTrue(command.contains("--name 'Rev'"), command)
+        XCTAssertTrue(command.contains("-- 'review this'"), command)
+        let blank = NewSessionLaunch.command(
+            detachPath: "/tmp/detach",
+            provider: .claude,
+            projectDir: "/tmp/p",
+            name: nil,
+            prompt: "   ")
+        XCTAssertFalse(blank.contains(" -- "), blank)
+    }
+
+    func testLaunchLabelCoversBothIdleAndBusyStates() {
+        _ = NewSessionLaunch.label(isLaunching: false, terminalDisplayName: "iTerm")
+        _ = NewSessionLaunch.label(isLaunching: true, terminalDisplayName: "Terminal")
+    }
+
     func testLaunchTitleAndDisplayNameUseTheSelectedTerminal() {
         XCTAssertEqual(
             TerminalLaunchPresentation.title(terminalDisplayName: "iTerm"),
@@ -96,6 +122,21 @@ final class NewSessionSheetTests: XCTestCase {
         XCTAssertEqual(
             ProjectDirectoryChooser.startingDirectory(selectedProject: nil),
             FileManager.default.homeDirectoryForCurrentUser)
+    }
+
+    func testOpenPanelPresentationKeepsOnlyAnOKSelection() {
+        let url = URL(fileURLWithPath: "/Applications/Terminal.app")
+        XCTAssertEqual(
+            OpenPanelPresentation.selectedURL(response: .OK, url: url),
+            url)
+        XCTAssertNil(OpenPanelPresentation.selectedURL(response: .cancel, url: url))
+    }
+
+    func testWindowTopPinStoresAMaxYOnAPlainObject() {
+        let storage = NSObject()
+        XCTAssertNil(WindowTopPin.associatedMaxY(on: storage))
+        WindowTopPin.store(240, on: storage)
+        XCTAssertEqual(WindowTopPin.associatedMaxY(on: storage), 240, accuracy: 0.01)
     }
 
     func testWindowTopPinKeepsTheTopEdgeFixedWhenHeightGrows() {

@@ -91,10 +91,7 @@ struct TerminalPreferencePicker: View {
     @MainActor
     private func presentChooser() {
         choiceError = nil
-        TerminalApplicationChooser.present(from: PanelHostWindow.current()) { url in
-            guard let url else { return }
-            choose(at: url)
-        }
+        TerminalApplicationChooser.presentOtherApp { choose(at: $0) }
     }
 
     @MainActor
@@ -136,18 +133,94 @@ enum WindowTopPin {
         return next
     }
 
-    static func storedMaxY(for window: NSWindow) -> CGFloat {
-        let storage = window.sheetParent ?? window
-        if let value = objc_getAssociatedObject(storage, &storedMaxYKey) as? NSNumber {
-            return CGFloat(truncating: value)
-        }
-        let value = window.frame.maxY
+    static func associatedMaxY(on storage: NSObject) -> CGFloat? {
+        (objc_getAssociatedObject(storage, &storedMaxYKey) as? NSNumber)
+            .map { CGFloat(truncating: $0) }
+    }
+
+    static func store(_ maxY: CGFloat, on storage: NSObject) {
         objc_setAssociatedObject(
             storage,
             &storedMaxYKey,
-            NSNumber(value: Double(value)),
+            NSNumber(value: Double(maxY)),
             .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        return value
+    }
+}
+
+final class PinWindowTopEdgeView: NSView {
+    private var pinnedMaxY: CGFloat?
+    private var isAdjusting = false
+    private var observer: NSObjectProtocol?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        removeResizeObserver()
+        guard window != nil else {
+            pinnedMaxY = nil
+            return
+        }
+        startPinning()
+    }
+
+    override func layout() {
+        super.layout()
+        keepTopPinned()
+    }
+
+    deinit {
+        removeResizeObserver()
+    }
+
+    func keepTopPinned() {
+        guard !isAdjusting, window != nil else { return }
+        applyPinnedTop()
+    }
+
+    func removeResizeObserver() {
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+            self.observer = nil
+        }
+    }
+
+    func startPinning() {
+        guard let window else { return }
+        observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResizeNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.keepTopPinned()
+        }
+        schedulePin(capture: true)
+    }
+
+    func schedulePin(capture: Bool = false) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if capture || self.pinnedMaxY == nil {
+                self.pinnedMaxY = self.window?.frame.maxY
+            }
+            self.keepTopPinned()
+        }
+    }
+
+    func applyPinnedTop() {
+        guard let window else { return }
+        let storage = window.sheetParent ?? window
+        let pinnedMaxY = WindowTopPin.associatedMaxY(on: storage) ?? window.frame.maxY
+        WindowTopPin.store(pinnedMaxY, on: storage)
+        self.pinnedMaxY = pinnedMaxY
+        let current = window.frame
+        guard abs(current.maxY - pinnedMaxY) > 0.5 else { return }
+        isAdjusting = true
+        window.setFrameOrigin(
+            NSPoint(
+                x: current.minX,
+                y: current.minY + pinnedMaxY - current.maxY))
+        isAdjusting = false
     }
 }
 
@@ -161,75 +234,7 @@ struct PinWindowTopEdge: NSViewRepresentable {
     }
 }
 
-final class PinWindowTopEdgeView: NSView {
-    private var pinnedMaxY: CGFloat?
-    private var isAdjusting = false
-    private var observer: NSObjectProtocol?
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if let observer {
-            NotificationCenter.default.removeObserver(observer)
-            self.observer = nil
-        }
-        guard let window else {
-            pinnedMaxY = nil
-            return
-        }
-        observer = NotificationCenter.default.addObserver(
-            forName: NSWindow.didResizeNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            self?.keepTopPinned()
-        }
-        schedulePin(capture: true)
-    }
-
-    override func layout() {
-        super.layout()
-        keepTopPinned()
-    }
-
-    deinit {
-        if let observer {
-            NotificationCenter.default.removeObserver(observer)
-        }
-    }
-
-    func schedulePin(capture: Bool = false) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            if capture || self.pinnedMaxY == nil {
-                self.pinnedMaxY = self.window?.frame.maxY
-            }
-            self.keepTopPinned()
-        }
-    }
-
-    func keepTopPinned() {
-        guard !isAdjusting, let window else { return }
-        let pinnedMaxY = WindowTopPin.storedMaxY(for: window)
-        self.pinnedMaxY = pinnedMaxY
-        let current = window.frame
-        guard abs(current.maxY - pinnedMaxY) > 0.5 else { return }
-        isAdjusting = true
-        window.setFrameOrigin(
-            NSPoint(
-                x: current.minX,
-                y: current.minY + pinnedMaxY - current.maxY))
-        isAdjusting = false
-    }
-}
-
 enum PanelHostWindow {
-    @MainActor
-    static func current() -> NSWindow? {
-        preferred(keyWindow: NSApp.keyWindow, windows: NSApp.windows)
-    }
-
     static func preferred(keyWindow: NSWindow?, windows: [NSWindow]) -> NSWindow? {
         if let keyWindow {
             return keyWindow
@@ -278,6 +283,15 @@ struct OpenPanelRules: Equatable {
     var prompt: String
 }
 
+enum OpenPanelPresentation {
+    static func selectedURL(
+        response: NSApplication.ModalResponse,
+        url: URL?
+    ) -> URL? {
+        response == .OK ? url : nil
+    }
+}
+
 enum TerminalApplicationChooser {
     static let applicationsDirectory = URL(
         fileURLWithPath: "/Applications",
@@ -293,7 +307,35 @@ enum TerminalApplicationChooser {
             directoryURL: applicationsDirectory,
             prompt: L10n.string("Choose Another App…"))
     }
+}
 
+enum ProjectDirectoryChooser {
+    static func directoryRules(startingAt directory: URL) -> OpenPanelRules {
+        OpenPanelRules(
+            canChooseFiles: false,
+            canChooseDirectories: true,
+            allowsMultipleSelection: false,
+            canCreateDirectories: false,
+            allowedContentTypes: nil,
+            directoryURL: directory,
+            prompt: L10n.string("Choose…"))
+    }
+
+    static func startingDirectory(selectedProject: URL?) -> URL {
+        selectedProject?.deletingLastPathComponent()
+            ?? FileManager.default.homeDirectoryForCurrentUser
+    }
+}
+
+// quality-coverage:begin open-panel
+extension PanelHostWindow {
+    @MainActor
+    static func current() -> NSWindow? {
+        preferred(keyWindow: NSApp.keyWindow, windows: NSApp.windows)
+    }
+}
+
+extension TerminalApplicationChooser {
     @MainActor
     static func makeOpenPanel() -> NSOpenPanel {
         apply(applicationBundleRules, to: NSOpenPanel())
@@ -314,11 +356,19 @@ enum TerminalApplicationChooser {
     }
 
     @MainActor
+    static func presentOtherApp(completion: @escaping (URL) -> Void) {
+        present(from: PanelHostWindow.current()) { url in
+            guard let url else { return }
+            completion(url)
+        }
+    }
+
+    @MainActor
     static func present(from window: NSWindow?, completion: @escaping (URL?) -> Void) {
         let saved = OpenPanelDirectoryMemory.snapshot()
         let panel = makeOpenPanel()
         let finish: (NSApplication.ModalResponse) -> Void = { response in
-            let url = response == .OK ? panel.url : nil
+            let url = OpenPanelPresentation.selectedURL(response: response, url: panel.url)
             DispatchQueue.main.async {
                 OpenPanelDirectoryMemory.restore(saved)
                 completion(url)
@@ -332,26 +382,10 @@ enum TerminalApplicationChooser {
     }
 }
 
-enum ProjectDirectoryChooser {
-    static func directoryRules(startingAt directory: URL) -> OpenPanelRules {
-        OpenPanelRules(
-            canChooseFiles: false,
-            canChooseDirectories: true,
-            allowsMultipleSelection: false,
-            canCreateDirectories: false,
-            allowedContentTypes: nil,
-            directoryURL: directory,
-            prompt: L10n.string("Choose…"))
-    }
-
+extension ProjectDirectoryChooser {
     @MainActor
     static func makeOpenPanel(startingAt directory: URL) -> NSOpenPanel {
         TerminalApplicationChooser.apply(directoryRules(startingAt: directory), to: NSOpenPanel())
-    }
-
-    static func startingDirectory(selectedProject: URL?) -> URL {
-        selectedProject?.deletingLastPathComponent()
-            ?? FileManager.default.homeDirectoryForCurrentUser
     }
 
     @MainActor
@@ -362,7 +396,7 @@ enum ProjectDirectoryChooser {
     ) {
         let panel = makeOpenPanel(startingAt: startingDirectory(selectedProject: selectedProject))
         let finish: (NSApplication.ModalResponse) -> Void = { response in
-            let url = response == .OK ? panel.url : nil
+            let url = OpenPanelPresentation.selectedURL(response: response, url: panel.url)
             DispatchQueue.main.async {
                 completion(url)
             }
@@ -374,6 +408,7 @@ enum ProjectDirectoryChooser {
         }
     }
 }
+// quality-coverage:end open-panel
 
 enum TerminalLaunchPresentation {
     static func title(terminalDisplayName: String) -> String {
