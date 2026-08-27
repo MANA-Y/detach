@@ -470,9 +470,8 @@ enum UIE2ETestDriver {
             try await click(advanced, name: "new session Advanced")
             _ = try await measuredFrame(
                 identifier: "new-session-prompt", name: "new session prompt")
-            try await waitUntil("new session terminal picker") {
-                find(identifier: "new-session-terminal") != nil
-            }
+            _ = try await measuredFrame(
+                identifier: "new-session-terminal", name: "new session terminal")
             checks.append("new-session-hosts-terminal-picker")
             var lastMaxY = pinnedTop
             var lastFrame = sheet.frame

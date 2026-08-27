@@ -136,7 +136,10 @@ final class NewSessionSheetTests: XCTestCase {
         let storage = NSObject()
         XCTAssertNil(WindowTopPin.associatedMaxY(on: storage))
         WindowTopPin.store(240, on: storage)
-        XCTAssertEqual(WindowTopPin.associatedMaxY(on: storage), 240, accuracy: 0.01)
+        XCTAssertEqual(
+            Double(WindowTopPin.associatedMaxY(on: storage) ?? -1),
+            240,
+            accuracy: 0.01)
     }
 
     func testWindowTopPinKeepsTheTopEdgeFixedWhenHeightGrows() {

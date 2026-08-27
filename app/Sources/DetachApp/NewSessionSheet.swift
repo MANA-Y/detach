@@ -185,6 +185,13 @@ struct NewSessionSheet: View {
                         TerminalPreferencePicker(
                             bundleIdentifier: $terminalBundleIdentifier,
                             accessibilityIdentifier: "new-session-terminal")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                            .background {
+                                uiE2EGeometryProbe(identifier: "new-session-terminal")
+                            }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
                     }
                     VStack(alignment: .leading, spacing: 5) {
                         fieldLabel(L10n.string("Initial prompt (optional)"))
