@@ -396,6 +396,9 @@ run_token="$("$STATE_HELPER" meta get "$meta" run_token)"
 tmux -L "$SOCKET" has-session -t "=$session"
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach)" = "1" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_provider)" = "claude" ]
+[ "$(tmux -L "$SOCKET" show-options -qv -t "=$session:" set-titles)" = "on" ]
+[ "$(tmux -L "$SOCKET" show-options -qv -t "=$session:" set-titles-string)" = \
+  "Detach · $PROJECT_LABEL" ]
 live_pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_pane_id)"
 # The start command (and therefore its creator process) has returned, yet the
 # private tmux server and provider worker continue without an attached client.

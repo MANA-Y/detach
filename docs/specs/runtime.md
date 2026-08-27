@@ -157,18 +157,19 @@ Provider test parts need private state, socket, and artifact roots. Their parent
 orders events and requires every part. Small hosts reuse lifecycle checkpoints
 in three Codex and two Claude parts. Larger hosts use finer parts.
 
-Detach status options are session-local and use `@detach*`; they never change a
-foreign tmux server. The status strip uses a dense identity-color blend, light
-plain-text labels, a solid painted-space edge, and power and time on the right.
-Finished sessions keep a faint form of the hue. Failures use reserved red. The
-eight-hue identity palette omits pure red. Allocation scans both providers
+Detach status options use session-local `@detach*` keys and never change a
+foreign tmux server. The strip blends an identity color, uses light text and a
+solid edge, and shows power and time on the right.
+Each managed session sets `Detach · <project basename>` as the terminal title.
+It follows the active tmux session, independent of styling.
+Finished sessions keep a faint hue. Failures use reserved red, which the
+eight-hue identity palette omits. Allocation scans both providers
 under the Start/Resume/Recover install lock. Known terminal history keeps its
-shown identity but does not reserve a hue; unknown state stays conservative.
-Keep an existing hue when unique among current state. Otherwise, walk from the
-stable provider/project preference to the first free hue, and duplicate only
-when all eight are occupied. The single `blend_session_color` formula makes
-every derived surface. The style snapshot saves and restores both sides and
-their lengths. An older snapshot without right-side data does not clear the
+identity but reserves no hue. Unknown state stays conservative. Keep a
+current unique hue. Otherwise, choose the first free hue from the stable
+provider/project preference, and duplicate only after all eight are used.
+`blend_session_color` makes every surface. Style snapshots save and restore
+both sides and lengths. An old snapshot without right-side data preserves the
 user's `status-right`. Plain text is the primary power signal: `MAC AWAKE`,
 `MAC CAN SLEEP`, `LOW BATTERY`, `MAC CAN SLEEP: TEMPERATURE`,
 `POWER UNAVAILABLE`, or a transition. App wording is equivalent and icons are
