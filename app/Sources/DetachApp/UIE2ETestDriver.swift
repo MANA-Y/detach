@@ -1026,12 +1026,10 @@ enum UIE2ETestDriver {
         guard events.count == 2 else {
             throw Failure(message: "cannot create mouse pair for \(name)")
         }
-        // Queue the complete pair before yielding. Dispatching only mouseDown
-        // can enter AppKit's tracking loop before this main-actor task gets a
-        // chance to enqueue the matching mouseUp.
-        for event in events {
-            NSApp.postEvent(event, atStart: false)
-        }
+        // Put the complete pair at the front in delivery order. The main event
+        // loop dispatches mouseDown and can consume mouseUp while it tracks.
+        NSApp.postEvent(events[1], atStart: true)
+        NSApp.postEvent(events[0], atStart: true)
         try await Task.sleep(nanoseconds: 100_000_000)
     }
 
