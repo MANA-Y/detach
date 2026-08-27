@@ -296,7 +296,9 @@ run_app_scenario() {
     }
     case "$check" in
       background-app-starts-without-focus|disconnected-stop-blocks-action|\
-      finished-selection-clears-scrollbar|session-uuid-copies-from-text-side) ;;
+      finished-selection-clears-scrollbar|session-uuid-copies-from-text-side|\
+      settings-window-stays-on-screen|\
+      settings-system-reveals-storage-and-installation) ;;
       dashboard-accessible) pass=SC-UI-DASHBOARD ;;
       sidebar-selects-completed-session) ;;
       bulk-delete-reaches-fake-cli) pass=SC-UI-SESSION-DELETE ;;
@@ -334,7 +336,10 @@ run_app_scenario main sessions 24 \
   empty-dashboard-state \
   installed-app-focus-restored
 run_app_scenario failure error 8 actionable-failure-presentation
-run_app_scenario settings empty 8 settings-change-persists
+run_app_scenario settings empty 8 \
+  settings-change-persists \
+  settings-window-stays-on-screen \
+  settings-system-reveals-storage-and-installation
 run_app_scenario onboarding-first-run empty 8 onboarding-first-run-completes
 run_app_scenario onboarding-provider empty 8 onboarding-detects-provider
 run_app_scenario onboarding-approval empty 8 onboarding-explains-approval

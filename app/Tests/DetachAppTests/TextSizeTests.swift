@@ -81,6 +81,73 @@ final class TextSizeTests: XCTestCase {
         XCTAssertGreaterThan(AppFontSize.settingsHeight(base: 420, for: 20), 420)
     }
 
+    func testSettingsWindowUsesTheHostingScreenVisibleHeight() {
+        XCTAssertEqual(
+            SettingsWindowLayout.contentHeight(
+                base: 780,
+                fontPointSize: AppFontSize.defaultValue,
+                visibleScreenHeight: 1200),
+            SettingsWindowLayout.comfortableContentHeight)
+        XCTAssertEqual(
+            SettingsWindowLayout.contentHeight(
+                base: 450,
+                fontPointSize: AppFontSize.defaultValue,
+                visibleScreenHeight: 1200),
+            450)
+        let shortScreen = SettingsWindowLayout.contentHeight(
+            base: 780,
+            fontPointSize: AppFontSize.defaultValue,
+            visibleScreenHeight: 480)
+        XCTAssertLessThan(shortScreen, 480)
+        XCTAssertGreaterThanOrEqual(
+            shortScreen, SettingsWindowLayout.minimumContentHeight)
+        XCTAssertLessThan(
+            shortScreen,
+            SettingsWindowLayout.contentHeight(
+                base: 780,
+                fontPointSize: AppFontSize.defaultValue,
+                visibleScreenHeight: 900))
+    }
+
+    @MainActor
+    func testSettingsWindowReappliesItsHostingScreenSizeAfterNotification() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false)
+        let host = NSView(frame: window.contentLayoutRect)
+        let frameView = SettingsWindowFrameView(frame: .zero)
+        host.addSubview(frameView)
+        window.contentView = host
+
+        frameView.apply(
+            width: 620,
+            baseHeight: 780,
+            fontPointSize: AppFontSize.defaultValue)
+
+        let expectedHeight = SettingsWindowLayout.contentHeight(
+            base: 780,
+            fontPointSize: AppFontSize.defaultValue,
+            visibleScreenHeight: window.screen?.visibleFrame.height ?? 720)
+        XCTAssertEqual(window.contentMinSize.width, 620, accuracy: 0.001)
+        XCTAssertEqual(window.contentMinSize.height, expectedHeight, accuracy: 0.001)
+        XCTAssertEqual(window.contentMaxSize, window.contentMinSize)
+
+        window.contentMinSize = .zero
+        window.contentMaxSize = NSSize(width: 1_000, height: 1_000)
+        window.setContentSize(NSSize(width: 200, height: 200))
+        NotificationCenter.default.post(
+            name: NSWindow.didChangeScreenNotification,
+            object: window)
+
+        XCTAssertEqual(window.contentMinSize.width, 620, accuracy: 0.001)
+        XCTAssertEqual(window.contentMinSize.height, expectedHeight, accuracy: 0.001)
+        let contentView = try XCTUnwrap(window.contentView)
+        XCTAssertEqual(contentView.bounds.width, 620, accuracy: 0.001)
+        XCTAssertEqual(contentView.bounds.height, expectedHeight, accuracy: 0.001)
+    }
+
     func testLogResizeUsesExactPointSizeAndPreservesTraitsAndColors() throws {
         let regular = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
         let bold = NSFont.monospacedSystemFont(ofSize: 10, weight: .bold)

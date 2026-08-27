@@ -84,8 +84,9 @@ faster with a window and slower without one. It never stops. Closing the last
 window keeps the app and icon.
 ⌘Q and Quit end the app while sessions, checkpoints, and protection continue.
 Settings → General owns both menu bar toggles. Settings → System keeps the only
-Mac Power status and approval controls. Temperature safety has its own warning
-shape and the text **Mac can sleep: temperature**.
+Mac Power status and approval controls. The Settings window follows the hosting
+screen; System scrolls. Temperature safety has its own warning shape and the
+text **Mac can sleep: temperature**.
 
 The dashboard shows identity, status, and Mac Power separately. Identity is a
 thin tmux-colored capsule. Status is a filled circle. Power has a neutral
@@ -95,11 +96,10 @@ the full UUID and shows **Copied**.
 **Finished** bulk Delete uses typed Delete, asks once, tolerates failures, and
 keeps provider transcripts. Select/Done has 12-point scroll clearance.
 
-Every app CLI invocation runs in a fresh process group with concurrent bounded
-stdout/stderr draining. Its deadline sends TERM and then KILL to the complete
-group, and a descendant that only inherits a pipe cannot hold the caller past
-the drain deadline. GUI PATH augmentation orders NVM and mise Node directories
-by semantic version, with valid versions ahead of non-version aliases.
+Every app CLI invocation runs in a fresh process group that drains stdout and
+stderr. Its deadline sends TERM then KILL to the group. A pipe-only descendant
+cannot hold the caller past the drain deadline. GUI PATH orders NVM and mise
+Node directories by semantic version.
 
 Helper replacement is a durable fail-closed transaction. One versioned JSON
 journal records `preparing`, `unregisterSubmitted`, `removed`, or `registering`,

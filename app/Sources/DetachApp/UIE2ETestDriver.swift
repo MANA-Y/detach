@@ -502,6 +502,25 @@ enum UIE2ETestDriver {
                         forKey: AppSettings.tipsEnabledKey) != priorTips
                 }
             checks.append("settings-change-persists")
+            guard let settingsWindow = UIE2EEventWindowResolver.owner(of: tipsToggle)
+            else {
+                throw Failure(message: "Settings window is missing")
+            }
+            guard let visible = settingsWindow.screen?.visibleFrame else {
+                throw Failure(message: "Settings window has no hosting screen")
+            }
+            let frame = settingsWindow.frame
+            guard visible.insetBy(dx: -2, dy: -2).contains(frame) else {
+                throw Failure(message: "Settings window is off the hosting screen")
+            }
+            checks.append("settings-window-stays-on-screen")
+            let systemTab = try await buttonLabeled(
+                L10n.string("System"), attempts: 20)
+            try await click(systemTab, name: "System settings tab")
+            try await revealGeometry(identifier: "settings-storage", name: "Storage")
+            try await revealGeometry(
+                identifier: "settings-installation", name: "Installation")
+            checks.append("settings-system-reveals-storage-and-installation")
             return Report(
                 schema: 1, passed: true, checks: checks, error: nil,
                 accessibilityTree: snapshots())
@@ -614,6 +633,23 @@ enum UIE2ETestDriver {
         if !items.isEmpty {
             pasteboard.writeObjects(items)
         }
+    }
+
+    private static func buttonLabeled(
+        _ name: String,
+        attempts: Int = 100
+    ) async throws -> any NSAccessibilityProtocol {
+        var result: (any NSAccessibilityProtocol)?
+        try await waitUntil("button \(name)", attempts: attempts) {
+            result = elements().first { element in
+                label(element) == name
+                    && (roleOf(element) == .button
+                        || roleOf(element) == .radioButton
+                        || roleOf(element) == .checkBox)
+            }
+            return result != nil
+        }
+        return result!
     }
 
     private static func restoreFocus(
@@ -910,6 +946,21 @@ enum UIE2ETestDriver {
             screen = screen.offsetBy(dx: offset.width, dy: offset.height)
         }
         try await click(frame: screen, name: name, owningWindow: window)
+    }
+
+    private static func revealGeometry(
+        identifier: String,
+        name: String
+    ) async throws {
+        var view: UIE2EGeometryView?
+        try await waitUntil("\(name) geometry", attempts: 20) {
+            view = elements().compactMap { $0 as? UIE2EGeometryView }.first {
+                $0.identifierValue == identifier
+            }
+            view?.publishFrame()
+            return view.map { $0.window != nil && !$0.bounds.isEmpty } == true
+        }
+        try await revealMeasuredControl(view!, identifier: identifier, name: name)
     }
 
     private static func measuredFrame(
