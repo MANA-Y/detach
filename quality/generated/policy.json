@@ -232,6 +232,24 @@
     },
     {
       "group": "ui",
+      "path": "app/Sources/DetachApp/SessionAttachTerminalView.swift",
+      "region": "swiftterm-metal",
+      "scenarios": [
+        "SC-UI-SESSION-DETAIL"
+      ],
+      "summary": "XCTest cannot host LocalProcessTerminalView. HeadlessTerminal owns the process proof."
+    },
+    {
+      "group": "ui",
+      "path": "app/Sources/DetachApp/SessionAttachTerminalView.swift",
+      "region": "swiftterm-host",
+      "scenarios": [
+        "SC-UI-SESSION-DETAIL"
+      ],
+      "summary": "XCTest cannot construct the SwiftTerm representable. The packaged journey hosts it."
+    },
+    {
+      "group": "ui",
       "path": "app/Sources/DetachApp/SettingsView.swift",
       "region": "ui-e2e-instrumentation",
       "scenarios": [

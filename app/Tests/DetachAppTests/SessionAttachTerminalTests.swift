@@ -111,6 +111,9 @@ final class SessionAttachTerminalTests: XCTestCase {
         XCTAssertNil(controller.terminalView)
         XCTAssertNil(controller.lastSize)
         XCTAssertNil(controller.exitCode)
+        controller.recordSize(cols: 80, rows: 24)
+        XCTAssertEqual(controller.lastSize?.cols, 80)
+        XCTAssertEqual(controller.lastSize?.rows, 24)
     }
 
     func testProcessExitDeliversOnTheMainQueue() {
@@ -166,6 +169,16 @@ final class SessionAttachTerminalTests: XCTestCase {
     @MainActor
     func testStoppedSessionDetailUsesTheLogFallback() throws {
         let session = try XCTUnwrap(Self.session(status: "stopped"))
+        _ = SessionDetailView(
+            session: session,
+            store: SessionStore(cli: SilentDetachCLI()),
+            detachPath: "/tmp/detach").body
+    }
+
+    @MainActor
+    func testRunningSessionDetailEmbedsTheAttachClient() throws {
+        let session = try XCTUnwrap(Self.session(status: "running"))
+        XCTAssertTrue(SessionAttachInvocation.shouldEmbed(session, clientActive: true))
         _ = SessionDetailView(
             session: session,
             store: SessionStore(cli: SilentDetachCLI()),

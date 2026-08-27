@@ -15,31 +15,14 @@ final class SessionAttachController: NSObject, LocalProcessTerminalViewDelegate 
         self.invocation = invocation
     }
 
-    func configure(_ view: LocalProcessTerminalView, fontPointSize: CGFloat) {
-        view.processDelegate = self
-        view.font = Self.terminalFont(pointSize: fontPointSize)
-        view.nativeBackgroundColor = ANSIParser.terminalBackground
-        view.nativeForegroundColor = NSColor(white: 0.85, alpha: 1)
-        view.setAccessibilityIdentifier("session-preview-terminal")
-        view.setAccessibilityLabel(L10n.string("Live session terminal"))
-        view.setAccessibilityElement(true)
-        view.setAccessibilityRole(.textArea)
-        terminalView = view
-    }
-
     func applyFont(pointSize: CGFloat) {
         guard let terminalView else { return }
-        let font = Self.terminalFont(pointSize: pointSize)
-        guard terminalView.font.pointSize != font.pointSize else { return }
-        terminalView.font = font
+        applyFont(to: terminalView, pointSize: pointSize)
     }
 
     func start() {
         guard let terminalView else { return }
-        terminalView.startProcess(
-            executable: invocation.executable,
-            args: invocation.arguments,
-            environment: invocation.environment)
+        start(on: terminalView)
     }
 
     func terminateClient() {
@@ -61,16 +44,8 @@ final class SessionAttachController: NSObject, LocalProcessTerminalViewDelegate 
         terminalView?.selectAll(nil)
     }
 
-    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {
-        lastSize = (newCols, newRows)
-    }
-
-    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
-
-    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-
-    func processTerminated(source: TerminalView, exitCode: Int32?) {
-        handleProcessExit(exitCode)
+    func recordSize(cols: Int, rows: Int) {
+        lastSize = (cols, rows)
     }
 
     func handleProcessExit(_ exitCode: Int32?) {
@@ -87,6 +62,45 @@ final class SessionAttachController: NSObject, LocalProcessTerminalViewDelegate 
     static func terminalFont(pointSize: CGFloat) -> NSFont {
         NSFont.monospacedSystemFont(ofSize: max(pointSize, 1), weight: .regular)
     }
+
+// quality-coverage:begin swiftterm-metal
+    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {
+        recordSize(cols: newCols, rows: newRows)
+    }
+
+    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
+
+    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+
+    func processTerminated(source: TerminalView, exitCode: Int32?) {
+        handleProcessExit(exitCode)
+    }
+
+    func configure(_ view: LocalProcessTerminalView, fontPointSize: CGFloat) {
+        view.processDelegate = self
+        view.font = Self.terminalFont(pointSize: fontPointSize)
+        view.nativeBackgroundColor = ANSIParser.terminalBackground
+        view.nativeForegroundColor = NSColor(white: 0.85, alpha: 1)
+        view.setAccessibilityIdentifier("session-preview-terminal")
+        view.setAccessibilityLabel(L10n.string("Live session terminal"))
+        view.setAccessibilityElement(true)
+        view.setAccessibilityRole(.textArea)
+        terminalView = view
+    }
+
+    func applyFont(to view: LocalProcessTerminalView, pointSize: CGFloat) {
+        let font = Self.terminalFont(pointSize: pointSize)
+        guard view.font.pointSize != font.pointSize else { return }
+        view.font = font
+    }
+
+    func start(on view: LocalProcessTerminalView) {
+        view.startProcess(
+            executable: invocation.executable,
+            args: invocation.arguments,
+            environment: invocation.environment)
+    }
+// quality-coverage:end swiftterm-metal
 }
 
 enum SessionAttachClipboard {
@@ -115,6 +129,7 @@ struct SessionAttachTerminalView: NSViewRepresentable {
             onTerminated: onTerminated)
     }
 
+// quality-coverage:begin swiftterm-host
     func makeNSView(context: Context) -> LocalProcessTerminalView {
         let view = LocalProcessTerminalView(frame: .zero)
         context.coordinator.controller.onTerminated = context.coordinator.onTerminated
@@ -135,6 +150,7 @@ struct SessionAttachTerminalView: NSViewRepresentable {
     ) {
         coordinator.controller.terminateClient()
     }
+// quality-coverage:end swiftterm-host
 
     final class Coordinator {
         let controller: SessionAttachController
