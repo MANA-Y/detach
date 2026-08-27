@@ -22,7 +22,7 @@ FAILURE_LINE=""
 CODEX_TEST_PART="${DETACH_CODEX_TEST_PART:-all}"
 
 case "$CODEX_TEST_PART" in
-  all|guardrails|preflight|configuration|session|lifecycle-recovery|resume-identity|lifecycle|recovery|restart|resume|identity|crash|history) ;;
+  all|guardrails|preflight|configuration|lifecycle-recovery|resume-identity|lifecycle|recovery|restart|resume|identity|crash|history) ;;
   *)
     printf 'unknown Codex test part: %s\n' "$CODEX_TEST_PART" >&2
     exit 2
@@ -37,10 +37,6 @@ codex_part_selected() {
     [ "$CODEX_TEST_PART" = recovery ] && [ "$1" = restart ] ||
     [ "$CODEX_TEST_PART" = guardrails ] && {
       case "$1" in preflight|crash|history) return 0 ;; esac
-      return 1
-    } ||
-    [ "$CODEX_TEST_PART" = session ] && {
-      case "$1" in lifecycle|recovery|restart|resume|identity) return 0 ;; esac
       return 1
     } ||
     [ "$CODEX_TEST_PART" = lifecycle-recovery ] && {
@@ -1057,7 +1053,7 @@ fi
 [ "$("$STATE_HELPER" meta get "$meta" run_token)" = "$fresh_run_token" ]
 run_codex stop integration
 
-if [ "$CODEX_TEST_PART" != all ] && [ "$CODEX_TEST_PART" != session ]; then
+if [ "$CODEX_TEST_PART" != all ]; then
   run_codex delete --force integration
 fi
 fi
@@ -1070,7 +1066,9 @@ fi
 # Explicit resume follows Codex semantics and accepts the exact thread UUID.
 export FAKE_CODEX_INIT_DELAY=0
 export FAKE_CODEX_SLEEP=1
-expected_rollout="$(test_sqlite "$CODEX_HOME/state_5.sqlite" "SELECT rollout_path FROM threads WHERE id = '$expected_id';")"
+expected_rollout="$("$STATE_HELPER" meta get "$meta" transcript_path)"
+[ -n "$expected_rollout" ]
+[ -f "$expected_rollout" ]
 cp -p "$expected_rollout" "$checkpoint/rollout.jsonl"
 printf '{damaged rollout\n' >"$expected_rollout"
 uppercase_id="$(printf '%s' "$expected_id" | tr '[:lower:]' '[:upper:]')"
