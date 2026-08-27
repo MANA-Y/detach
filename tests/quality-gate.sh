@@ -930,7 +930,13 @@ set -eu
 [ -f "$GATE_ORDER_ROOT/ui-e2e" ]
 [ -f "$GATE_ORDER_ROOT/quality-contracts" ]
 : >"$GATE_ORDER_ROOT/codex-started"
-sleep 3
+attempt=0
+while [ ! -f "$GATE_ORDER_ROOT/integration-after-contract" ] && \
+    [ "$attempt" -lt 50 ]; do
+  attempt=$((attempt + 1))
+  sleep 0.1
+done
+[ -f "$GATE_ORDER_ROOT/integration-after-contract" ]
 : >"$GATE_ORDER_ROOT/codex"
 SH
 cat >"$REPO/tests/quality-gate-fixtures/gate-contract" <<'SH'
