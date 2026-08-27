@@ -174,6 +174,26 @@ final class ProcessChildCommandRunnerTests: XCTestCase {
                 }
     }
 
+    func testPOSIXLauncherReportsCurrentDirectoryPathTooLong() {
+        let tooLong = URL(
+            fileURLWithPath: "/" + String(repeating: "a", count: Int(PATH_MAX)),
+            isDirectory: true)
+        XCTAssertThrowsError(try POSIXChildProcessLauncher().run(
+            ChildProcessRequest(
+                executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                arguments: [],
+                environment: [:],
+                currentDirectoryURL: tooLong,
+                inheritsStandardIO: false))) { error in
+                    let error = error as NSError
+                    XCTAssertEqual(error.domain, NSPOSIXErrorDomain)
+                    XCTAssertEqual(error.code, Int(ENAMETOOLONG))
+                    XCTAssertTrue(
+                        error.localizedDescription.contains(
+                            "posix_spawn_file_actions_addchdir_np"))
+                }
+    }
+
     func testPOSIXLauncherKillsAndReapsChildWhenPIDPublicationFails() {
         let missingDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("detach-missing-\(UUID().uuidString)")
