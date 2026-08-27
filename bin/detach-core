@@ -939,13 +939,14 @@ blend_session_color() {
   printf '#%02X%02X%02X\n' "$red" "$green" "$blue"
 }
 
-tmux_status_literal() {
+tmux_format_literal() {
   local value="$1"
+  local limit="${2:-${#value}}"
   local result=""
   local character
   local index
 
-  for ((index = 0; index < ${#value} && index < 48; index++)); do
+  for ((index = 0; index < ${#value} && index < limit; index++)); do
     character="${value:index:1}"
     if [[ "$character" == [[:cntrl:]] ]]; then
       result+='?'
@@ -957,6 +958,22 @@ tmux_status_literal() {
     fi
   done
   printf '%s' "$result"
+}
+
+tmux_status_literal() {
+  tmux_format_literal "$1" 48
+}
+
+tmux_apply_session_title() {
+  local session="$1"
+  local cwd project
+
+  cwd="$(tmux_option "$session" '@detach_cwd')"
+  project="$(basename "${cwd:-project}")"
+  [ -n "$project" ] || project='project'
+  project="$(tmux_format_literal "$project")"
+  "${TMUX_CMD[@]}" set-option -q -t "=$session:" set-titles-string "Detach · $project" && \
+    "${TMUX_CMD[@]}" set-option -q -t "=$session:" set-titles on
 }
 
 tmux_forget_session_style_snapshot() {
@@ -1522,6 +1539,8 @@ attach_session() {
 
   tmux_has_session "$session" || die "tmux session '$session' is not running"
   tmux_is_managed "$session" || die "refusing to attach to unmanaged tmux session '$session'"
+  tmux_apply_session_title "$session" || \
+    error "warning: could not configure the terminal title for this session"
   tmux_configure_server || \
     error "warning: could not configure Detach server input options for this session"
   if [ -n "$INSIDE_TMUX" ]; then
@@ -3538,6 +3557,8 @@ start_tmux_session() {
   "${TMUX_CMD[@]}" set-option -q -t "=$session:" @detach_power_state "$(power_protection_state)"
   "${TMUX_CMD[@]}" set-option -q -t "=$session:" @detach_cli_version "$(release_version 2>/dev/null || printf 'unknown')"
   "${TMUX_CMD[@]}" set-option -q -t "=$session:" @detach_core_path "$SELF"
+  tmux_apply_session_title "$session" || \
+    error "warning: could not configure the terminal title for this session"
   # Retain only the managed provider pane for logs and exit status. User-created
   # splits inherit the window-level off value and disappear normally on exit.
   "${TMUX_CMD[@]}" set-option -q -w -t "$pane_id" remain-on-exit off

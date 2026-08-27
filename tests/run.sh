@@ -656,6 +656,9 @@ TMUX_TMPDIR="$TMP_ROOT/unrelated-tmux-tmpdir" \
   "$DETACH" list | grep -F 'codex' | grep -F "$SESSION" >/dev/null
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach)" = "1" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_provider)" = "codex" ]
+[ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" set-titles)" = "on" ]
+[ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" set-titles-string)" = \
+  "Detach · $PROJECT_LABEL" ]
 pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_pane_id)"
 # The creator CLI has already exited. The tmux server and worker must remain
 # alive without an attached client (the same lifecycle as closing Terminal or
