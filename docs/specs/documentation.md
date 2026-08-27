@@ -80,8 +80,8 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
   wait for Swift and UI. Later work uses two heavy lanes and one integration
   lane. Distribution waits for gate-contract.
 - Exact keys bind code, resources, scripts, version, and toolchain. `main` warms
-  the app and executable products. CI verifies each hit; a miss
-  rebuilds. Warming is not evidence.
+  only a missing app or executable product. CI verifies hits and rebuilds
+  misses. Warming is not evidence.
 - CI uses the newest green `main` artifact with measured metrics. A later run
   without metrics does not replace it. Test identities, aggregate coverage,
   and critical-source coverage cannot decrease. Changed Swift lines need 90

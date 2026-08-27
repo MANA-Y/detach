@@ -153,9 +153,9 @@ Closing Terminal or Detach.app only removes clients. The Detach tmux server,
 worker, provider, checkpoint loop, and power wrapper continue in the macOS user
 session. They do not promise survival across logout or reboot, and an explicit
 kill of tmux/provider ends the live run. Recovery checkpoints remain available.
-Provider test parts can run concurrently only with private state, socket, and
-artifact roots. Their parent writes scenario events and requires every part.
-The tests preserve the close-client lifetime contract.
+Provider test parts need private state, socket, and artifact roots. Their parent
+orders events and requires every part. Small hosts reuse lifecycle checkpoints
+in three Codex and two Claude parts. Larger hosts use finer parts.
 
 Detach status options are session-local and use `@detach*`; they never change a
 foreign tmux server. The status strip uses a dense identity-color blend, light

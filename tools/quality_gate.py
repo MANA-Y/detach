@@ -102,6 +102,15 @@ PROVIDER_TEST_PARTS = {
         "history",
     ),
 }
+COMPACT_CODEX_TEST_PARTS = (
+    "guardrails",
+    "lifecycle-recovery",
+    "resume-identity",
+)
+COMPACT_CLAUDE_TEST_PARTS = (
+    "session",
+    "history",
+)
 PROVIDER_PART_SCENARIOS = {
     "codex": {
         "lifecycle": (
@@ -111,8 +120,23 @@ PROVIDER_PART_SCENARIOS = {
         ),
         "recovery": ("SC-SESSION-RECOVER-CODEX",),
         "identity": ("SC-SESSION-DELETE-CODEX",),
+        "lifecycle-recovery": (
+            "SC-SESSION-CREATE-CODEX",
+            "SC-SESSION-PERSIST-CODEX",
+            "SC-SESSION-STOP-CODEX",
+            "SC-SESSION-RECOVER-CODEX",
+        ),
+        "resume-identity": (
+            "SC-SESSION-DELETE-CODEX",
+        ),
     },
     "claude": {
+        "session": (
+            "SC-SESSION-CREATE-CLAUDE",
+            "SC-SESSION-PERSIST-CLAUDE",
+            "SC-SESSION-STOP-CLAUDE",
+            "SC-SESSION-RECOVER-CLAUDE",
+        ),
         "lifecycle": (
             "SC-SESSION-CREATE-CLAUDE",
             "SC-SESSION-PERSIST-CLAUDE",
@@ -122,6 +146,15 @@ PROVIDER_PART_SCENARIOS = {
         "history": ("SC-SESSION-DELETE-CLAUDE",),
     },
 }
+
+
+def provider_test_parts(stage: str) -> tuple[str, ...] | None:
+    parts = PROVIDER_TEST_PARTS.get(stage)
+    if stage == "codex" and (os.cpu_count() or 0) < 6:
+        return COMPACT_CODEX_TEST_PARTS
+    if stage == "claude" and (os.cpu_count() or 0) < 6:
+        return COMPACT_CLAUDE_TEST_PARTS
+    return parts
 
 
 class GateError(Exception):
@@ -1914,7 +1947,7 @@ def run_provider_parts(
     stage: str,
     environment: dict[str, str],
 ) -> int:
-    parts = PROVIDER_TEST_PARTS.get(stage)
+    parts = provider_test_parts(stage)
     if parts is None:
         print(f"quality-gate: no provider test partition for {stage}", file=sys.stderr)
         return 2
@@ -1997,6 +2030,67 @@ def run_provider_parts(
                 output.close()
 
 
+def run_static_contracts(root: Path, run_dir: Path) -> int:
+    contracts = (
+        ("documentation", [str(root / "tests/docs-contract.sh")]),
+        ("release-budget", [str(root / "tests/release-budget-ratchet.sh")]),
+        ("shell-safety", [str(root / "tests/shell-safety.sh")]),
+        ("suite-inventory", [str(root / "tests/test-suite-contract.sh")]),
+    )
+    part_root = run_dir / "static-parts"
+    part_root.mkdir(mode=0o700)
+    processes: list[
+        tuple[str, Path, subprocess.Popen[bytes], TextIO, float]
+    ] = []
+    try:
+        for name, command in contracts:
+            log = part_root / f"{name}.log"
+            output = log.open("w", encoding="utf-8")
+            log.chmod(0o600)
+            process = subprocess.Popen(
+                command,
+                cwd=root,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+            )
+            processes.append((name, log, process, output, time.monotonic()))
+        statuses: dict[int, int] = {}
+        durations: dict[int, int] = {}
+        pending = set(range(len(processes)))
+        while pending:
+            for index in list(pending):
+                _, _, process, output, started = processes[index]
+                status = process.poll()
+                if status is None:
+                    continue
+                output.close()
+                statuses[index] = status
+                durations[index] = max(0, round(time.monotonic() - started))
+                pending.remove(index)
+            if pending:
+                time.sleep(0.05)
+        for index, (name, log, _, _, _) in enumerate(processes):
+            sys.stdout.write(log.read_text(encoding="utf-8", errors="replace"))
+            print(
+                f"quality-gate: static part {name} completed in "
+                f"{durations[index]}s with exit {statuses[index]}"
+            )
+        return next(
+            (statuses[index] for index in range(len(processes)) if statuses[index]),
+            0,
+        )
+    except OSError as error:
+        print(f"quality-gate: cannot run static contracts: {error}", file=sys.stderr)
+        return 2
+    finally:
+        for _, _, process, output, _ in processes:
+            if process.poll() is None:
+                process.terminate()
+                process.wait()
+            if not output.closed:
+                output.close()
+
+
 def run_static_stage(root: Path, run_dir: Path, mode: str, resolved_base: str) -> int:
     static_file = run_dir / "static-files.z"
     try:
@@ -2043,16 +2137,7 @@ def run_static_stage(root: Path, run_dir: Path, mode: str, resolved_base: str) -
     status = child_run(["git", "-C", str(root), "diff", "--check", "HEAD"], cwd=root)
     if status:
         return status
-    for command in (
-        [str(root / "tests/docs-contract.sh")],
-        [str(root / "tests/release-budget-ratchet.sh")],
-        [str(root / "tests/shell-safety.sh")],
-        [str(root / "tests/test-suite-contract.sh")],
-    ):
-        status = child_run(command, cwd=root)
-        if status:
-            return status
-    return 0
+    return run_static_contracts(root, run_dir)
 
 
 def gate_contract_definitions(

@@ -91,6 +91,13 @@ grep -F 'DETACH_QUALITY_APP_SCRATCH: 1' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'run: scripts/quality-cache-warm' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+swift_warm_step="$(sed -n \
+  '/name: Warm exact promoted-main Swift cache/,/run: scripts\/quality-cache-warm/p' \
+  "$ROOT/.github/workflows/quality-gates.yml")"
+printf '%s\n' "$swift_warm_step" | \
+  grep -F "steps.product-cache.outputs.cache-hit != 'true'" >/dev/null
+printf '%s\n' "$swift_warm_step" | \
+  grep -F "steps.app-cache.outputs.cache-hit != 'true'" >/dev/null
 grep -F 'name: Materialize exact Swift dependencies' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'id: swift-dependencies' \

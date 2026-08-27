@@ -25,8 +25,10 @@ from quality_gate import (  # noqa: E402
     include_gate_orchestrators,
     parse_name_status,
     parse_options,
+    provider_test_parts,
     run_app_stage,
     run_provider_parts,
+    run_static_contracts,
     split_quality_pipeline_jobs,
     split_swift_build_jobs,
     ui_coverage_binary,
@@ -246,18 +248,15 @@ class QualityGateContract(unittest.TestCase):
                     "DETACH_QUALITY_SCENARIO_STAGE": "codex",
                     "DETACH_QUALITY_SCENARIO_EVENTS": str(events),
                 },
-            ):
+            ), patch("quality_gate.os.cpu_count", return_value=3):
                 self.assertEqual(
                     run_provider_parts(root, run_dir, "codex", environment),
                     0,
                 )
             for part in (
-                "preflight",
-                "lifecycle",
-                "recovery",
-                "resume",
-                "identity",
-                "crash",
+                "guardrails",
+                "lifecycle-recovery",
+                "resume-identity",
             ):
                 log = (run_dir / f"codex-parts/{part}.log").read_text(
                     encoding="utf-8"
@@ -275,6 +274,42 @@ class QualityGateContract(unittest.TestCase):
                     for kind in ("begin", "pass")
                     for scenario in ("CREATE", "PERSIST", "STOP", "RECOVER", "DELETE")
                 },
+            )
+            with patch("quality_gate.os.cpu_count", return_value=10):
+                self.assertEqual(
+                    provider_test_parts("codex"),
+                    ("preflight", "lifecycle", "recovery", "resume", "identity", "crash"),
+                )
+
+    def test_static_contracts_keep_separate_deterministic_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tests = root / "tests"
+            tests.mkdir()
+            names = (
+                "docs-contract.sh",
+                "release-budget-ratchet.sh",
+                "shell-safety.sh",
+                "test-suite-contract.sh",
+            )
+            for name in names:
+                script = tests / name
+                script.write_text(
+                    f"#!/bin/bash\nprintf '%s\\n' '{name}'\n",
+                    encoding="utf-8",
+                )
+                script.chmod(0o755)
+            run_dir = root / "evidence"
+            run_dir.mkdir()
+            self.assertEqual(run_static_contracts(root, run_dir), 0)
+            logs = run_dir / "static-parts"
+            self.assertEqual(
+                (logs / "documentation.log").read_text(encoding="utf-8"),
+                "docs-contract.sh\n",
+            )
+            self.assertEqual(
+                (logs / "suite-inventory.log").read_text(encoding="utf-8"),
+                "test-suite-contract.sh\n",
             )
 
     def test_claude_parts_get_private_artifact_paths(self) -> None:
@@ -304,12 +339,12 @@ class QualityGateContract(unittest.TestCase):
                     "DETACH_QUALITY_SCENARIO_STAGE": "claude",
                     "DETACH_QUALITY_SCENARIO_EVENTS": str(events),
                 },
-            ):
+            ), patch("quality_gate.os.cpu_count", return_value=3):
                 self.assertEqual(
                     run_provider_parts(root, run_dir, "claude", environment),
                     0,
                 )
-            for part in ("lifecycle", "recovery", "history"):
+            for part in ("session", "history"):
                 log = (run_dir / f"claude-parts/{part}.log").read_text(
                     encoding="utf-8"
                 )
@@ -327,6 +362,11 @@ class QualityGateContract(unittest.TestCase):
                     for scenario in ("CREATE", "PERSIST", "STOP", "RECOVER", "DELETE")
                 },
             )
+            with patch("quality_gate.os.cpu_count", return_value=10):
+                self.assertEqual(
+                    provider_test_parts("claude"),
+                    ("lifecycle", "recovery", "history"),
+                )
 
 
 def main() -> int:

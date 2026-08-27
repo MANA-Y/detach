@@ -139,9 +139,10 @@ Pull-request CI validates its exact impact plan and runs static contracts on a
 Linux control runner before it downloads optional metrics or Swift data. The
 macOS shards run every selected product check. The final Linux control runner
 recomputes the plan and validates the exact digest-bound shard set. These
-control runners do not execute or replace macOS product evidence. The early
-fail-fast pass is diagnostic only. A failed matrix shard cancels its peers; the
-final aggregate still fails when evidence is missing.
+control runners do not execute or replace macOS product evidence. Independent
+level-zero contracts run concurrently. The early fail-fast pass is diagnostic
+only. A failed matrix shard cancels its peers; missing evidence fails the final
+aggregate.
 
 Swift tests, the normal app, and the instrumented app use isolated scratch and
 module-cache paths. CI materializes their shared dependency cache once before
@@ -169,14 +170,17 @@ without increasing the stage budget.
 
 Swift and Clang caches stay under `app/.build`. Their hosted key covers the
 compiler, package, sources, tests, build scripts, and version metadata. A
-promoted `main` run can warm a missing key but emits no gate evidence. The
-packaged UI test uses a
+promoted `main` run warms only a missing exact product and emits no gate
+evidence. The packaged UI test uses a
 stripped process-private app, fake CLI, and private state. Provider tests use
 private state and socket roots plus the newly bundled `tmux` and
 `detach-state`. Each provider part has private state, socket, log, and failure
-artifact roots. Parts run concurrently. Their parent writes scenario events in
-one order and fails the stage when any part fails. Tests do not use installed
-product state or ambient helpers.
+artifact roots. Parts run concurrently. Smaller hosts use three Codex parts and
+two Claude parts; larger hosts use finer parts. Compact layouts reuse
+checkpoints across recovery and restart, resume and identity, or Claude
+lifecycle and recovery. The parent writes scenario events in one order and
+fails the stage when any part fails. Tests do not use installed product state
+or ambient helpers.
 
 There are no quarantined tests. A future quarantine needs an owner, reason, and
 expiry. It cannot remove release evidence.

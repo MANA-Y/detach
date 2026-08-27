@@ -16,7 +16,7 @@ FAILURE_LINE=""
 CLAUDE_TEST_PART="${DETACH_CLAUDE_TEST_PART:-all}"
 
 case "$CLAUDE_TEST_PART" in
-  all|lifecycle|recovery|history) ;;
+  all|session|lifecycle|recovery|history) ;;
   *)
     printf 'unknown Claude test part: %s\n' "$CLAUDE_TEST_PART" >&2
     exit 2
@@ -24,7 +24,12 @@ case "$CLAUDE_TEST_PART" in
 esac
 
 claude_part_selected() {
-  [ "$CLAUDE_TEST_PART" = all ] || [ "$CLAUDE_TEST_PART" = "$1" ]
+  [ "$CLAUDE_TEST_PART" = all ] || [ "$CLAUDE_TEST_PART" = "$1" ] || {
+    [ "$CLAUDE_TEST_PART" = session ] && {
+      case "$1" in lifecycle|recovery) return 0 ;; esac
+      return 1
+    }
+  }
 }
 
 claude_scenario_event() {
