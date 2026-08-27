@@ -465,9 +465,9 @@ enum UIE2ETestDriver {
             trace("new-session sheet window \(sheet.frame)")
             let pinnedTop = sheet.frame.maxY
             let collapsedHeight = sheet.frame.height
-            try await clickMeasuredControl(
-                identifier: "new-session-advanced",
-                name: "new session Advanced")
+            let advanced = try await element(identifier: "new-session-advanced")
+            try requireSemanticControl(advanced, name: "new session Advanced")
+            try await click(advanced, name: "new session Advanced")
             _ = try await measuredFrame(
                 identifier: "new-session-prompt", name: "new session prompt")
             var lastMaxY = pinnedTop
@@ -997,8 +997,11 @@ enum UIE2ETestDriver {
         guard let view = target, let window = view.window else {
             throw Failure(message: "\(name) has no measured control view")
         }
-        let windowFrame = view.convert(view.bounds, to: nil)
-        var screen = window.convertToScreen(windowFrame)
+        view.publishFrame()
+        guard var screen = UIE2EGeometryRegistry.frame(for: identifier),
+              !screen.isEmpty else {
+            throw Failure(message: "\(name) has no published geometry")
+        }
         if let size {
             screen = CGRect(
                 x: screen.minX + offset.width,

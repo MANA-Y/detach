@@ -98,17 +98,27 @@ struct TerminalPreferencePicker: View {
     }
 
     @MainActor
-    private func choose(at url: URL) {
+    func choose(at url: URL) {
+        switch TerminalPreferenceSelection.result(for: url) {
+        case .success(let identifier):
+            choiceError = nil
+            bundleIdentifier = identifier
+            refresh()
+        case .failure(let message):
+            choiceError = message
+        }
+    }
+}
+
+enum TerminalPreferenceSelection {
+    static func result(for url: URL) -> Result<String, String> {
         guard let application = TerminalCatalog.application(at: url),
               !application.bundleIdentifier.isEmpty else {
-            choiceError = L10n.format(
+            return .failure(L10n.format(
                 "%@ can't be used as a terminal because it has no bundle identifier.",
-                url.deletingPathExtension().lastPathComponent)
-            return
+                url.deletingPathExtension().lastPathComponent))
         }
-        choiceError = nil
-        bundleIdentifier = application.bundleIdentifier
-        refresh()
+        return .success(application.bundleIdentifier)
     }
 }
 

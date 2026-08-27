@@ -19,9 +19,14 @@ struct NewSessionSheet: View {
     @State private var launchFailure: TerminalLaunchFailure?
     @State private var isLaunching = false
 
-    init(detachPath: String, initialName: String = "") {
+    init(
+        detachPath: String,
+        initialName: String = "",
+        showsAdvanced: Bool = false
+    ) {
         self.detachPath = detachPath
         _name = State(initialValue: initialName)
+        _showAdvanced = State(initialValue: showsAdvanced)
     }
 
     private var normalizedName: String? {
@@ -154,10 +159,10 @@ struct NewSessionSheet: View {
                     Image(systemName: "chevron.right")
                         .rotationEffect(.degrees(showAdvanced ? 90 : 0))
                     Text(L10n.string("Advanced"))
-                    Spacer(minLength: 0)
                 }
                 .appFont(.caption, weight: .semibold)
                 .foregroundStyle(.secondary)
+                .frame(minHeight: 24)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
