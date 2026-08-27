@@ -104,9 +104,9 @@ Node directories by semantic version.
 Helper replacement is a durable fail-closed transaction. One versioned JSON
 journal records `preparing`, `unregisterSubmitted`, `removed`, or `registering`,
 the install/remove goal, target digest, boot UUID, and lifetime-barrier contract.
-Every transition is written by atomic rename and fsynced with its directory
-before the corresponding side effect. A per-user `flock` protects that user's
-journal. In addition, the root helper creates a stable root-owned `0644` inode
+Each transition uses atomic rename and file/directory fsync before its side
+effect. A per-user `flock` protects the journal. In addition, the root helper
+creates a stable root-owned `0644` inode
 under `/var/run`; every app user opens it read-only and holds one exclusive
 kernel `flock` across the complete asynchronous SMAppService transaction. This
 is the machine-wide single-writer barrier across Fast User Switching, and the
