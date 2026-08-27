@@ -1358,7 +1358,7 @@ private struct SettingsWindowFrame: NSViewRepresentable {
     }
 }
 
-private final class SettingsWindowFrameView: NSView {
+final class SettingsWindowFrameView: NSView {
     private var width: CGFloat = 0
     private var baseHeight: CGFloat = 0
     private var fontPointSize = AppFontSize.defaultValue
