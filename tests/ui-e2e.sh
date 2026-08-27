@@ -320,7 +320,7 @@ run_app_scenario() {
   done
 }
 
-run_app_scenario main sessions 22 \
+run_app_scenario main sessions 24 \
   background-app-starts-without-focus \
   dashboard-accessible \
   sidebar-selects-completed-session \

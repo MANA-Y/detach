@@ -108,6 +108,12 @@ final class SessionUUIDPresentationTests: XCTestCase {
             pasteboard.string(forType: .string),
             "a9f58f1d-1234-5678-9abc-def012342ed9")
     }
+
+    @MainActor
+    func testChipBuildsTheWholeCopyControl() {
+        _ = SessionUUIDChip(
+            uuid: "a9f58f1d-1234-5678-9abc-def012342ed9").body
+    }
 }
 
 final class SessionActionPresentationTests: XCTestCase {

@@ -251,6 +251,10 @@ enum UIE2ETestDriver {
                     && NSPasteboard.general.changeCount > pasteboardGeneration
                     && NSPasteboard.general.string(forType: .string) == copiedUUID
             }
+            try await waitUntil("UUID copy confirmation reset", attempts: 25) {
+                find(identifier: "session-uuid-chip").flatMap(label)
+                    == L10n.string("Copy session UUID")
+            }
             checks.append("session-uuid-copies-from-text-side")
             let runningID = "detach-codex-ui-running"
             let runningRow = try await element(
