@@ -183,8 +183,8 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func sessionRow(_ session: Session) -> some View {
-        let row = HStack(spacing: 8) {
-            if isSelectingFinished && session.canDeleteFromFinishedList {
+        if isSelectingFinished && session.canDeleteFromFinishedList {
+            HStack(spacing: 8) {
                 Button {
                     if selectedFinishedIDs.contains(session.id) {
                         selectedFinishedIDs.remove(session.id)
@@ -220,41 +220,39 @@ struct SidebarView: View {
                 }
 #endif
 // quality-coverage:end ui-e2e-instrumentation
+                SessionRow(session: session)
             }
-            SessionRow(session: session)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { selectedID = session.id }
-
-        if session.isWaitingForUser {
-            row
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
-                .background { uiE2EGeometryProbe(for: session) }
+            .background { uiE2EGeometryProbe(for: session) }
 #endif
 // quality-coverage:end ui-e2e-instrumentation
-                .tag(session.id)
-                .accessibilityElement(children:
-                    isSelectingFinished && session.canDeleteFromFinishedList
-                        ? .contain : .combine)
-                .accessibilityLabel(session.displayTitle)
-                .accessibilityIdentifier("session-row-\(session.id)")
-                .accessibilityAction { selectedID = session.id }
-                .listRowBackground(Color.orange.opacity(0.10))
+            .tag(session.id)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(session.displayTitle)
+            .accessibilityIdentifier("session-row-\(session.id)")
+            .listRowBackground(
+                session.isWaitingForUser ? Color.orange.opacity(0.10) : nil)
         } else {
-            row
+            Button {
+                selectedID = session.id
+            } label: {
+                SessionRow(session: session)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
-                .background { uiE2EGeometryProbe(for: session) }
+            .background { uiE2EGeometryProbe(for: session) }
 #endif
 // quality-coverage:end ui-e2e-instrumentation
-                .tag(session.id)
-                .accessibilityElement(children:
-                    isSelectingFinished && session.canDeleteFromFinishedList
-                        ? .contain : .combine)
-                .accessibilityLabel(session.displayTitle)
-                .accessibilityIdentifier("session-row-\(session.id)")
-                .accessibilityAction { selectedID = session.id }
+            .tag(session.id)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(session.displayTitle)
+            .accessibilityIdentifier("session-row-\(session.id)")
+            .listRowBackground(
+                session.isWaitingForUser ? Color.orange.opacity(0.10) : nil)
         }
     }
 

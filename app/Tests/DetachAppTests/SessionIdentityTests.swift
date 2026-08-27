@@ -98,14 +98,14 @@ final class SessionUUIDPresentationTests: XCTestCase {
     }
 
     func testCopyWritesTheFullUUIDToThePasteboard() {
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
+        let pasteboard = RecordingSessionUUIDPasteboard()
         XCTAssertTrue(
             SessionUUIDPresentation.copy(
                 "a9f58f1d-1234-5678-9abc-def012342ed9",
                 to: pasteboard))
+        XCTAssertTrue(pasteboard.didClear)
         XCTAssertEqual(
-            pasteboard.string(forType: .string),
+            pasteboard.strings[.string],
             "a9f58f1d-1234-5678-9abc-def012342ed9")
     }
 
@@ -113,6 +113,25 @@ final class SessionUUIDPresentationTests: XCTestCase {
     func testChipBuildsTheWholeCopyControl() {
         _ = SessionUUIDChip(
             uuid: "a9f58f1d-1234-5678-9abc-def012342ed9").body
+    }
+}
+
+private final class RecordingSessionUUIDPasteboard: SessionUUIDPasteboardWriting {
+    private(set) var didClear = false
+    private(set) var strings: [NSPasteboard.PasteboardType: String] = [:]
+
+    func clearContents() -> Int {
+        didClear = true
+        strings.removeAll()
+        return 1
+    }
+
+    func setString(
+        _ string: String,
+        forType dataType: NSPasteboard.PasteboardType
+    ) -> Bool {
+        strings[dataType] = string
+        return true
     }
 }
 

@@ -336,12 +336,11 @@ run_app_scenario main sessions 24 \
   bulk-delete-reaches-fake-cli \
   new-session-sheet-semantics \
   empty-dashboard-state \
-  installed-app-focus-restored
-run_app_scenario failure error 8 actionable-failure-presentation
-run_app_scenario settings empty 8 \
+  actionable-failure-presentation \
   settings-change-persists \
   settings-window-stays-on-screen \
-  settings-system-reveals-storage-and-installation
+  settings-system-reveals-storage-and-installation \
+  installed-app-focus-restored
 run_app_scenario onboarding-first-run empty 8 onboarding-first-run-completes
 run_app_scenario onboarding-provider empty 8 onboarding-detects-provider
 run_app_scenario onboarding-approval empty 8 onboarding-explains-approval
