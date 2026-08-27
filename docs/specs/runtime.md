@@ -194,25 +194,25 @@ in two helpers.
 
 ### Provider identity and checkpoints
 
-Claude gets a wrapper-owned UUID via `--session-id`. Resume uses `--resume`
-for a valid transcript or matching checkpoint, `--session-id` only when that
-owned UUID has neither, and fails closed on a present invalid transcript.
-Codex identity is resolved after launch by matching the run-token originator
-in rollout files and Codex's SQLite threads, refusing an ambiguous first
-binding. When the provider later switches to another run-owned user thread
-(for example `/clear`), discovery rebinds identity, transcript, and checkpoints
-to the newest originator-matched thread within one heartbeat or checkpoint
-tick, records superseded thread ids, and keeps a creation-time tie. Subagent threads never rebind a session. Wrapper-owned
-provider flags are rejected; policy defaults apply only when the user did not
-supply an allowed override.
+Claude gets a wrapper-owned UUID via `--session-id`. Resume uses `--resume` with
+a valid transcript or matching checkpoint. It uses `--session-id` only if both
+are absent. A present invalid transcript fails closed. Codex binds identity
+after launch by matching the run-token originator in rollout files and SQLite;
+an ambiguous first binding fails. If the provider switches to another run-owned
+user thread (for example `/clear`), discovery rebinds identity, transcript, and
+checkpoints to the newest originator-matched thread within one heartbeat or
+checkpoint tick. It records superseded thread IDs so the next switch stays
+unambiguous, and it keeps the current binding on a creation-time tie. Subagent
+threads never rebind a session. Wrapper-owned provider flags are rejected;
+policy defaults apply only without an allowed override.
 
-A per-session lock protects checkpoint creation every 300 seconds.
+Every 300 seconds by default, a per-session lock protects checkpoint creation.
 A checkpoint contains metadata, validated provider JSONL, pane capture, and a
 repository root from a real `.git` ancestor. Codex adds an integrity-checked
 SQLite backup. Claude archives its matching project session and companions.
-Staging copies provider hard links as regular files.
+Provider-created hard links become independent regular files in staging.
 Archives and restore destinations still reject hard links and non-plain
-entries.
+entries. A provider test override can disable the final `/bin/sync`.
 
 Only allowlisted provider flags are serialized to `resume-args.bin`. A provider
 flag that should survive Resume or Recover must be added deliberately.
