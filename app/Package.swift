@@ -22,7 +22,7 @@ let package = Package(
         .executable(name: "detach-state", targets: ["DetachState"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.5"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6"),
     ],
     targets: [
         .target(name: "DetachKit"),
