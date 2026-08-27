@@ -163,10 +163,6 @@ enum UIE2ETestDriver {
         store: SessionStore
     ) async -> Report {
         switch configuration.scenario {
-        case "failure":
-            return await runFailurePresentation()
-        case "settings":
-            return await runSettings()
         case "onboarding-first-run":
             return await runOnboardingFirstRun(
                 configuration: configuration,
@@ -438,6 +434,11 @@ enum UIE2ETestDriver {
             checks.append("empty-dashboard-state")
             trace("empty dashboard visible")
 
+            try Data("error\n".utf8).write(
+                to: configuration.fixtureState, options: .atomic)
+            checks.append(try await verifyFailurePresentation(in: mainWindow))
+            checks.append(contentsOf: try await verifySettings(in: mainWindow))
+
             try await restoreFocus(
                 to: previousFrontmost, policy: previousActivationPolicy)
             checks.append("installed-app-focus-restored")
@@ -460,76 +461,58 @@ enum UIE2ETestDriver {
         }
     }
 
-    private static func runFailurePresentation() async -> Report {
-        var checks: [String] = []
-        do {
-            let mainWindow = try testWindow()
-            try await activate(mainWindow)
-            let errorStatus = try await element(identifier: "session-status-error")
-            guard label(errorStatus)?.isEmpty == false else {
-                throw Failure(message: "actionable session failure has no semantics")
-            }
-            _ = try await measuredFrame(
-                identifier: "session-status-error",
-                name: "actionable session failure")
-            checks.append("actionable-failure-presentation")
-            return Report(
-                schema: 1, passed: true, checks: checks, error: nil,
-                accessibilityTree: snapshots())
-        } catch {
-            return Report(
-                schema: 1, passed: false, checks: checks,
-                error: error.localizedDescription,
-                accessibilityTree: snapshots())
+    private static func verifyFailurePresentation(
+        in mainWindow: NSWindow
+    ) async throws -> String {
+        try await activate(mainWindow)
+        let errorStatus = try await element(identifier: "session-status-error")
+        guard label(errorStatus)?.isEmpty == false else {
+            throw Failure(message: "actionable session failure has no semantics")
         }
+        _ = try await measuredFrame(
+            identifier: "session-status-error",
+            name: "actionable session failure")
+        return "actionable-failure-presentation"
     }
 
-    private static func runSettings() async -> Report {
+    private static func verifySettings(
+        in mainWindow: NSWindow
+    ) async throws -> [String] {
         var checks: [String] = []
-        do {
-            let mainWindow = try testWindow()
-            try await activate(mainWindow)
-            try await keyPress(",", keyCode: 43, modifiers: [.command])
-            let tipsToggle = try await element(identifier: "settings-show-tips")
-            try requireSemanticControl(tipsToggle, name: "settings tips toggle")
-            let priorTips = AppSettings.defaults.bool(
-                forKey: AppSettings.tipsEnabledKey)
-            try await clickUntil(
-                tipsToggle,
-                name: "settings tips toggle",
-                outcome: "settings value persists") {
-                    AppSettings.defaults.bool(
-                        forKey: AppSettings.tipsEnabledKey) != priorTips
-                }
-            checks.append("settings-change-persists")
-            guard let settingsWindow = UIE2EEventWindowResolver.owner(of: tipsToggle)
-            else {
-                throw Failure(message: "Settings window is missing")
+        try await activate(mainWindow)
+        try await keyPress(",", keyCode: 43, modifiers: [.command])
+        let tipsToggle = try await element(identifier: "settings-show-tips")
+        try requireSemanticControl(tipsToggle, name: "settings tips toggle")
+        let priorTips = AppSettings.defaults.bool(
+            forKey: AppSettings.tipsEnabledKey)
+        try await clickUntil(
+            tipsToggle,
+            name: "settings tips toggle",
+            outcome: "settings value persists") {
+                AppSettings.defaults.bool(
+                    forKey: AppSettings.tipsEnabledKey) != priorTips
             }
-            guard let visible = settingsWindow.screen?.visibleFrame else {
-                throw Failure(message: "Settings window has no hosting screen")
-            }
-            let frame = settingsWindow.frame
-            guard visible.insetBy(dx: -2, dy: -2).contains(frame) else {
-                throw Failure(message: "Settings window is off the hosting screen")
-            }
-            checks.append("settings-window-stays-on-screen")
-            let systemTab = try await buttonLabeled(
-                L10n.string("System"), attempts: 20)
-            try await click(systemTab, name: "System settings tab")
-            try await revealGeometry(identifier: "settings-storage", name: "Storage")
-            try await revealGeometry(
-                identifier: "settings-installation", name: "Installation")
-            checks.append("settings-system-reveals-storage-and-installation")
-            return Report(
-                schema: 1, passed: true, checks: checks, error: nil,
-                accessibilityTree: snapshots())
-        } catch {
-            return Report(
-                schema: 1, passed: false, checks: checks,
-                error: error.localizedDescription,
-                accessibilityTree: snapshots())
+        checks.append("settings-change-persists")
+        guard let settingsWindow = UIE2EEventWindowResolver.owner(of: tipsToggle)
+        else {
+            throw Failure(message: "Settings window is missing")
         }
+        guard let visible = settingsWindow.screen?.visibleFrame else {
+            throw Failure(message: "Settings window has no hosting screen")
+        }
+        let frame = settingsWindow.frame
+        guard visible.insetBy(dx: -2, dy: -2).contains(frame) else {
+            throw Failure(message: "Settings window is off the hosting screen")
+        }
+        checks.append("settings-window-stays-on-screen")
+        let systemTab = try await buttonLabeled(
+            L10n.string("System"), attempts: 20)
+        try await click(systemTab, name: "System settings tab")
+        try await revealGeometry(identifier: "settings-storage", name: "Storage")
+        try await revealGeometry(
+            identifier: "settings-installation", name: "Installation")
+        checks.append("settings-system-reveals-storage-and-installation")
+        return checks
     }
 
     private static func runOnboardingFirstRun(
@@ -777,6 +760,9 @@ enum UIE2ETestDriver {
         if let identifier = identifierOf(element),
            usesMeasuredGeometry(identifier) {
             try await waitUntil("real control geometry for \(name)") {
+                elements().compactMap { $0 as? UIE2EGeometryView }.first {
+                    $0.identifierValue == identifier
+                }?.publishFrame()
                 guard let measured = UIE2EGeometryRegistry.frame(for: identifier) else {
                     return false
                 }
@@ -1037,6 +1023,9 @@ enum UIE2ETestDriver {
             else { continue }
             events.append(event)
         }
+        guard events.count == 2 else {
+            throw Failure(message: "cannot create mouse pair for \(name)")
+        }
         // Queue the complete pair before yielding. Dispatching only mouseDown
         // can enter AppKit's tracking loop before this main-actor task gets a
         // chance to enqueue the matching mouseUp.
@@ -1075,18 +1064,6 @@ enum UIE2ETestDriver {
         try await waitUntil("test app activation") {
             NSApp.isActive && mainWindow.isKeyWindow
         }
-    }
-
-    private static func testWindow() throws -> NSWindow {
-        guard let mainWindow = NSApp.windows.first(where: {
-            $0.identifier?.rawValue == "main"
-        }) else {
-            throw Failure(message: "main test window is missing")
-        }
-        guard NSApp.setActivationPolicy(.regular) else {
-            throw Failure(message: "cannot enable test app activation")
-        }
-        return mainWindow
     }
 
     private static func find(identifier: String) -> (any NSAccessibilityProtocol)? {

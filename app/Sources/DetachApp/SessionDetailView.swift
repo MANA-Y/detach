@@ -414,11 +414,22 @@ enum SessionUUIDPresentation {
     }
 
     @discardableResult
-    static func copy(_ uuid: String, to pasteboard: NSPasteboard = .general) -> Bool {
+    static func copy(
+        _ uuid: String,
+        to pasteboard: any SessionUUIDPasteboardWriting = NSPasteboard.general
+    ) -> Bool {
         pasteboard.clearContents()
         return pasteboard.setString(uuid, forType: .string)
     }
 }
+
+protocol SessionUUIDPasteboardWriting: AnyObject {
+    @discardableResult
+    func clearContents() -> Int
+    func setString(_ string: String, forType dataType: NSPasteboard.PasteboardType) -> Bool
+}
+
+extension NSPasteboard: SessionUUIDPasteboardWriting {}
 
 /// The whole chip is the control. A nested icon-only button inside
 /// `FlowLayout` often misses clicks on macOS.
