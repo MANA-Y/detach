@@ -201,6 +201,7 @@ done
 run_app_scenario() {
   local scenario="$1" fixture="$2" scenario_budget="$3"
   local app_status check_index=0 actual check scenario_deadline driver_budget
+  local scenario_started="$SECONDS"
   shift 3
   scenario_deadline=$((SECONDS + scenario_budget))
   driver_budget=$((scenario_budget - 3))
@@ -320,6 +321,7 @@ run_app_scenario() {
     fi
     check_index=$((check_index + 1))
   done
+  printf 'UI e2e: %s passed in %ss\n' "$scenario" "$((SECONDS - scenario_started))"
 }
 
 run_app_scenario main sessions 24 \

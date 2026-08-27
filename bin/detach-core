@@ -972,7 +972,11 @@ tmux_apply_session_title() {
   project="$(basename "${cwd:-project}")"
   [ -n "$project" ] || project='project'
   project="$(tmux_format_literal "$project")"
-  "${TMUX_CMD[@]}" set-option -q -t "=$session:" set-titles-string "Detach · $project" && \
+  # tmux decodes command arguments with the client locale. Release tooling
+  # uses C, so give only this client a UTF-8 locale and leave the provider's
+  # inherited environment unchanged.
+  LC_ALL=C.UTF-8 "${TMUX_CMD[@]}" set-option -q -t "=$session:" \
+    set-titles-string "Detach · $project" && \
     "${TMUX_CMD[@]}" set-option -q -t "=$session:" set-titles on
 }
 

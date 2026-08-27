@@ -223,6 +223,8 @@ struct SidebarView: View {
             }
             SessionRow(session: session)
         }
+        .contentShape(Rectangle())
+        .onTapGesture { selectedID = session.id }
 
         if session.isWaitingForUser {
             row
