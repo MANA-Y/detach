@@ -50,15 +50,13 @@ final class NewSessionSheetTests: XCTestCase {
     func testPreferenceSelectionAcceptsTerminalAndRejectsABareFolder() throws {
         let terminal = try XCTUnwrap(Self.terminalApplicationURL())
         XCTAssertEqual(
-            try TerminalPreferenceSelection.result(for: terminal).get(),
+            TerminalPreferenceSelection.outcome(for: terminal).bundleIdentifier,
             "com.apple.Terminal")
 
-        switch TerminalPreferenceSelection.result(for: URL(fileURLWithPath: "/tmp")) {
-        case .success:
-            XCTFail("a folder must not be a terminal")
-        case .failure(let message):
-            XCTAssertTrue(message.contains("tmp"))
-        }
+        let rejected = TerminalPreferenceSelection.outcome(
+            for: URL(fileURLWithPath: "/tmp"))
+        XCTAssertNil(rejected.bundleIdentifier)
+        XCTAssertTrue(rejected.error?.contains("tmp") == true)
     }
 
     func testLaunchTitleAndDisplayNameUseTheSelectedTerminal() {

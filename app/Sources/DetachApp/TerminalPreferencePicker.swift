@@ -99,26 +99,31 @@ struct TerminalPreferencePicker: View {
 
     @MainActor
     func choose(at url: URL) {
-        switch TerminalPreferenceSelection.result(for: url) {
-        case .success(let identifier):
+        let outcome = TerminalPreferenceSelection.outcome(for: url)
+        if let identifier = outcome.bundleIdentifier {
             choiceError = nil
             bundleIdentifier = identifier
             refresh()
-        case .failure(let message):
-            choiceError = message
+        } else {
+            choiceError = outcome.error
         }
     }
 }
 
 enum TerminalPreferenceSelection {
-    static func result(for url: URL) -> Result<String, String> {
+    struct Outcome: Equatable {
+        var bundleIdentifier: String?
+        var error: String?
+    }
+
+    static func outcome(for url: URL) -> Outcome {
         guard let application = TerminalCatalog.application(at: url),
               !application.bundleIdentifier.isEmpty else {
-            return .failure(L10n.format(
+            return Outcome(error: L10n.format(
                 "%@ can't be used as a terminal because it has no bundle identifier.",
                 url.deletingPathExtension().lastPathComponent))
         }
-        return .success(application.bundleIdentifier)
+        return Outcome(bundleIdentifier: application.bundleIdentifier)
     }
 }
 
