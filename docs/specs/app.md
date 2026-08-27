@@ -104,9 +104,9 @@ Node directories by semantic version.
 Helper replacement is a durable fail-closed transaction. One versioned JSON
 journal records `preparing`, `unregisterSubmitted`, `removed`, or `registering`,
 the install/remove goal, target digest, boot UUID, and lifetime-barrier contract.
-Every transition is written by atomic rename and fsynced with its directory
-before the corresponding side effect. A per-user `flock` protects that user's
-journal. In addition, the root helper creates a stable root-owned `0644` inode
+Each transition uses atomic rename and file/directory fsync before its side
+effect. A per-user `flock` protects the journal. In addition, the root helper
+creates a stable root-owned `0644` inode
 under `/var/run`; every app user opens it read-only and holds one exclusive
 kernel `flock` across the complete asynchronous SMAppService transaction. This
 is the machine-wide single-writer barrier across Fast User Switching, and the
@@ -117,7 +117,8 @@ acquire/renew without a wall-clock expiry, and restores and reads back only the
 setting Detach owns.
 
 The helper takes an exclusive, root-owned lifetime `flock` before its listener
-can answer prepare and holds it until process exit. The app writes
+can answer prepare and holds it until process exit. An enabled job with no
+lifetime barrier this boot is dead; unregister may proceed. The app writes
 `unregisterSubmitted` only after observing that lock. A fresh successful async
 SMAppService callback is the normal process-reaped barrier. If a crash loses the
 callback, exact `notRegistered` status plus acquisition of the released lifetime
