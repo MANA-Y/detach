@@ -42,6 +42,23 @@ final class PowerHelperSystemHandoffLockTests: XCTestCase {
             }
     }
 
+    func testAppProbeRejectsSymlinkSystemLock() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let target = fixture.root.appendingPathComponent("target")
+        try Data().write(to: target)
+        try FileManager.default.createSymbolicLink(
+            at: fixture.fileURL, withDestinationURL: target)
+
+        XCTAssertThrowsError(try PowerHelperSystemHandoffLock(
+            fileURL: fixture.fileURL,
+            expectedOwner: fixture.owner).acquire()) { error in
+                XCTAssertEqual(
+                    error as? PowerHelperPlatformError,
+                    .insecureSystemHandoffLock)
+            }
+    }
+
     private func makeFixture() throws -> (
         root: URL,
         fileURL: URL,
