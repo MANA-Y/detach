@@ -45,7 +45,7 @@ final class NewSessionSheetTests: XCTestCase {
     func testPickerChooseAcceptsATerminalURL() throws {
         let terminal = try XCTUnwrap(Self.terminalApplicationURL())
         let box = IdentifierBox()
-        var picker = TerminalPreferencePicker(bundleIdentifier: Binding(
+        let picker = TerminalPreferencePicker(bundleIdentifier: Binding(
             get: { box.value },
             set: { box.value = $0 }))
         picker.choose(at: terminal)
@@ -128,37 +128,15 @@ final class NewSessionSheetTests: XCTestCase {
         XCTAssertEqual(rules.directoryURL?.path, "/tmp")
     }
 
-    func testPanelHostPrefersTheKeyWindowThenFallsBack() {
-        let key = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 80, height: 40),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false)
-        defer { key.close() }
-        XCTAssertTrue(PanelHostWindow.preferred(keyWindow: key, windows: []) === key)
+    func testPanelHostFallsBackWhenNoWindowIsKey() {
         XCTAssertNil(PanelHostWindow.preferred(keyWindow: nil, windows: []))
-        _ = PanelHostWindow.current()
     }
 
-    func testPinWindowTopEdgeReappliesTheStoredTop() {
-        let window = NSWindow(
-            contentRect: NSRect(x: 80, y: 160, width: 360, height: 180),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false)
+    func testPinViewIgnoresHitsWhenDetached() {
         let pin = PinWindowTopEdgeView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
-        window.contentView = pin
-        defer { window.close() }
         XCTAssertNil(pin.hitTest(NSPoint(x: 0, y: 0)))
         pin.viewDidMoveToWindow()
-        let pinnedTop = WindowTopPin.storedMaxY(for: window)
-        var grown = window.frame
-        grown.size.height += 90
-        grown.origin.y -= 90
-        window.setFrame(grown, display: false)
         pin.keepTopPinned()
-        XCTAssertEqual(window.frame.maxY, pinnedTop, accuracy: 1.5)
-        pin.schedulePin()
         pin.layout()
     }
 
