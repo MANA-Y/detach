@@ -336,8 +336,8 @@ run_app_scenario main sessions 24 \
   safe-action-reaches-fake-cli \
   finished-selection-clears-scrollbar \
   bulk-delete-reaches-fake-cli \
-  new-session-advanced-keeps-top-edge \
   new-session-hosts-terminal-picker \
+  new-session-advanced-keeps-top-edge \
   new-session-sheet-semantics \
   empty-dashboard-state \
   actionable-failure-presentation \
