@@ -87,6 +87,41 @@ QUALITY_TEST_BINARY = (
 QUALITY_UI_BINARY = Path(
     "app/.build/quality-ui-release/arm64-apple-macosx/release/DetachApp"
 )
+PROVIDER_TEST_PARTS = {
+    "codex": (
+        "preflight",
+        "lifecycle",
+        "recovery",
+        "resume",
+        "identity",
+        "crash",
+    ),
+    "claude": (
+        "lifecycle",
+        "recovery",
+        "history",
+    ),
+}
+PROVIDER_PART_SCENARIOS = {
+    "codex": {
+        "lifecycle": (
+            "SC-SESSION-CREATE-CODEX",
+            "SC-SESSION-PERSIST-CODEX",
+            "SC-SESSION-STOP-CODEX",
+        ),
+        "recovery": ("SC-SESSION-RECOVER-CODEX",),
+        "identity": ("SC-SESSION-DELETE-CODEX",),
+    },
+    "claude": {
+        "lifecycle": (
+            "SC-SESSION-CREATE-CLAUDE",
+            "SC-SESSION-PERSIST-CLAUDE",
+            "SC-SESSION-STOP-CLAUDE",
+        ),
+        "recovery": ("SC-SESSION-RECOVER-CLAUDE",),
+        "history": ("SC-SESSION-DELETE-CLAUDE",),
+    },
+}
 
 
 class GateError(Exception):
@@ -310,7 +345,7 @@ class QualityGate:
         result_root = os.environ.get(
             "DETACH_QUALITY_GATE_RESULT_ROOT", str(ROOT / "app/build/quality-gates")
         )
-        self.result_root = Path(result_root)
+        self.result_root = Path(result_root).absolute()
         run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{os.getpid()}"
         self.run_dir = self.result_root / run_id
         self.summary = self.run_dir / "summary.tsv"
@@ -671,7 +706,10 @@ class QualityGate:
         self.write_static_files()
 
     def command_version(self, arguments: list[str], *, first_line: bool = False) -> str:
-        result = run(arguments, text=True, check=False)
+        try:
+            result = run(arguments, text=True, check=False)
+        except GateError:
+            return "unavailable"
         assert isinstance(result.stdout, str)
         value = result.stdout.strip()
         if first_line:
@@ -1870,6 +1908,95 @@ def run_exact_swift_stage(root: Path, run_dir: Path) -> int:
     )
 
 
+def run_provider_parts(
+    root: Path,
+    run_dir: Path,
+    stage: str,
+    environment: dict[str, str],
+) -> int:
+    parts = PROVIDER_TEST_PARTS.get(stage)
+    if parts is None:
+        print(f"quality-gate: no provider test partition for {stage}", file=sys.stderr)
+        return 2
+    part_root = run_dir / f"{stage}-parts"
+    if part_root.exists():
+        if not part_root.is_dir() or part_root.is_symlink():
+            print("quality-gate: provider part evidence root is unsafe", file=sys.stderr)
+            return 2
+        shutil.rmtree(part_root)
+    part_root.mkdir(mode=0o700)
+    artifact_value = environment.get("DETACH_PROVIDER_TEST_ARTIFACT_DIR", "")
+    artifact_root = Path(artifact_value) if artifact_value else None
+    variable = f"DETACH_{stage.upper()}_TEST_PART"
+    suite = root / ("tests/run.sh" if stage == "codex" else "tests/run-claude.sh")
+    scenario_owners = PROVIDER_PART_SCENARIOS.get(stage, {})
+    processes: list[
+        tuple[str, Path, subprocess.Popen[bytes], TextIO, float]
+    ] = []
+    try:
+        for part in parts:
+            for scenario_id in scenario_owners.get(part, ()):
+                record_scenario_event("begin", scenario_id)
+        for part in parts:
+            part_environment = environment.copy()
+            part_environment[variable] = part
+            part_environment["DETACH_QUALITY_PARTITIONED_PROVIDER"] = "1"
+            if artifact_root is not None:
+                part_environment["DETACH_PROVIDER_TEST_ARTIFACT_DIR"] = str(
+                    artifact_root / part
+                )
+            log = part_root / f"{part}.log"
+            output = log.open("w", encoding="utf-8")
+            log.chmod(0o600)
+            process = subprocess.Popen(
+                [str(suite)],
+                cwd=root,
+                env=part_environment,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+            )
+            processes.append((part, log, process, output, time.monotonic()))
+        pending = set(range(len(processes)))
+        statuses: dict[int, int] = {}
+        durations: dict[int, int] = {}
+        while pending:
+            for index in list(pending):
+                part, _, process, output, started = processes[index]
+                status = process.poll()
+                if status is None:
+                    continue
+                output.close()
+                statuses[index] = status
+                durations[index] = max(0, round(time.monotonic() - started))
+                if status == 0:
+                    for scenario_id in scenario_owners.get(part, ()):
+                        record_scenario_event("pass", scenario_id)
+                pending.remove(index)
+            if pending:
+                time.sleep(0.05)
+        for index, (part, log, _, _, _) in enumerate(processes):
+            status = statuses[index]
+            sys.stdout.write(log.read_text(encoding="utf-8", errors="replace"))
+            print(
+                f"quality-gate: {stage} part {part} completed in {durations[index]}s "
+                f"with exit {status}"
+            )
+        return next(
+            (statuses[index] for index in range(len(processes)) if statuses[index]),
+            0,
+        )
+    except OSError as error:
+        print(f"quality-gate: cannot run {stage} test parts: {error}", file=sys.stderr)
+        return 2
+    finally:
+        for _, _, process, output, _ in processes:
+            if process.poll() is None:
+                process.terminate()
+                process.wait()
+            if not output.closed:
+                output.close()
+
+
 def run_static_stage(root: Path, run_dir: Path, mode: str, resolved_base: str) -> int:
     static_file = run_dir / "static-files.z"
     try:
@@ -2515,8 +2642,9 @@ def run_stage_worker(stage: str) -> int:
                 ),
             }
         )
-        suite = "run.sh" if stage == "codex" else "run-claude.sh"
-        return child_run([str(root / "tests" / suite)], env=environment)
+        if stage in PROVIDER_TEST_PARTS:
+            return run_provider_parts(root, run_dir, stage, environment)
+        return child_run([str(root / "tests/run-claude.sh")], env=environment)
     commands = {
         "distribution": [[str(root / "tests/distribution.sh")]],
         "tmux-runtime": [[str(root / "tests/tmux-runtime.sh")]],

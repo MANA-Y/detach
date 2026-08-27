@@ -135,9 +135,13 @@ Every executable stage has a policy-owned process deadline. The GitHub workflow
 has a ten-minute deadline and cancels superseded work. The pull request feedback
 SLO is less than ten minutes.
 
-Pull-request CI validates its exact impact plan and runs static contracts before
-it downloads optional metrics or Swift data. The authoritative gate recomputes
-both results. This fail-fast pass is diagnostic only.
+Pull-request CI validates its exact impact plan and runs static contracts on a
+Linux control runner before it downloads optional metrics or Swift data. The
+macOS shards run every selected product check. The final Linux control runner
+recomputes the plan and validates the exact digest-bound shard set. These
+control runners do not execute or replace macOS product evidence. The early
+fail-fast pass is diagnostic only. A failed matrix shard cancels its peers; the
+final aggregate still fails when evidence is missing.
 
 Swift tests, the normal app, and the instrumented app use isolated scratch and
 module-cache paths. CI materializes their shared dependency cache once before
@@ -169,7 +173,10 @@ promoted `main` run can warm a missing key but emits no gate evidence. The
 packaged UI test uses a
 stripped process-private app, fake CLI, and private state. Provider tests use
 private state and socket roots plus the newly bundled `tmux` and
-`detach-state`. Tests do not use installed product state or ambient helpers.
+`detach-state`. Each provider part has private state, socket, log, and failure
+artifact roots. Parts run concurrently. Their parent writes scenario events in
+one order and fails the stage when any part fails. Tests do not use installed
+product state or ambient helpers.
 
 There are no quarantined tests. A future quarantine needs an owner, reason, and
 expiry. It cannot remove release evidence.
@@ -188,6 +195,7 @@ unknown path selects every functional stage and every release impact.
 | Quality policy or CI | static and gate self-contracts |
 | Swift source | Swift, metrics, app, packaged UI, and required dependencies |
 | CLI or session lifecycle | app, both providers, distribution, runtime, and dependencies |
+| One provider test | static and that provider; its shard verifies the exact app prerequisite |
 | Install or distribution | app, distribution, runtime, and dependencies |
 | Release or publication | app, preflights, workflow contracts, and dependencies |
 | Unknown path | full repository plan |

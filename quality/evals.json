@@ -77,6 +77,37 @@
       }
     },
     {
+      "id": "historical-provider-test",
+      "category": "historical-task",
+      "grader": "impact",
+      "paths": [
+        "tests/run.sh"
+      ],
+      "expected": {
+        "status": "known",
+        "stages": [
+          "static",
+          "codex",
+          "release-budget"
+        ],
+        "specs": [
+          "runtime"
+        ],
+        "capabilities": [
+          "session-lifecycle"
+        ],
+        "journeys": [
+          "J-SESSION-CREATE",
+          "J-SESSION-PERSIST",
+          "J-SESSION-RECOVER",
+          "J-SESSION-STOP",
+          "J-SESSION-DELETE"
+        ],
+        "release_gates": [],
+        "unknown": false
+      }
+    },
+    {
       "id": "historical-provider-cli",
       "category": "historical-task",
       "grader": "impact",

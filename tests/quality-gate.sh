@@ -23,6 +23,15 @@ grep -F 'run: scripts/quality-gate --mode repository --keep-going --without-rele
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'name: Validate and partition exact pull-request impact' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+quality_plan_job="$(sed -n '/^  quality-plan:/,/^  quality-shards:/p' \
+  "$ROOT/.github/workflows/quality-gates.yml")"
+printf '%s\n' "$quality_plan_job" | grep -F 'runs-on: ubuntu-latest' >/dev/null
+quality_gate_job="$(sed -n '/^  quality-gates:/,/^  quality-dashboard:/p' \
+  "$ROOT/.github/workflows/quality-gates.yml")"
+printf '%s\n' "$quality_gate_job" | \
+  grep -F "runs-on: \${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'macos-26' }}" \
+  >/dev/null
+grep -F 'fail-fast: true' "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'scripts/quality-shard plan --base "$BASE_SHA"' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'name: Run level-zero fail-fast contracts' \
@@ -267,6 +276,16 @@ setup_fixture docs-contract
 printf '%s\n' '# changed contract' >"$REPO/tests/docs-contract.sh"
 plan="$(gate --plan)"
 [[ "$plan" = *'stages=static' ]]
+
+setup_fixture codex-provider-test
+printf '%s\n' '#!/bin/bash' >"$REPO/tests/run.sh"
+plan="$(gate --plan)"
+[[ "$plan" = *'stages=static,codex,release-budget' ]]
+
+setup_fixture claude-provider-test
+printf '%s\n' '#!/bin/bash' >"$REPO/tests/run-claude.sh"
+plan="$(gate --plan)"
+[[ "$plan" = *'stages=static,claude,release-budget' ]]
 
 setup_fixture ignored-presentations
 clean_plan="$(gate --plan)"

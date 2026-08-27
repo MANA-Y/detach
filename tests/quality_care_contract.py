@@ -117,7 +117,8 @@ def main() -> int:
     result = json.loads(invoke(["evaluate", "--json"]).stdout)
     assert result["schema"] == 1
     assert result["status"] == "passed"
-    assert result["passed"] == result["total"] == 8
+    expected_total = len(json.loads(CORPUS.read_text(encoding="utf-8"))["cases"])
+    assert result["passed"] == result["total"] == expected_total
     assert set(result["categories"]) == {
         "escaped-defect", "historical-task", "policy-mutant", "scope-violation"
     }
