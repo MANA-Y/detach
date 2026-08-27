@@ -356,7 +356,7 @@ claude_scenario_event begin SC-SESSION-RECOVER-CLAUDE
 claude_scenario_event begin SC-SESSION-STOP-CLAUDE
 claude_scenario_event begin SC-SESSION-DELETE-CLAUDE
 reset_fake_claude_ready
-"$SCRIPT" claude --name "$human_label" --detach -- \
+LC_ALL=C "$SCRIPT" claude --name "$human_label" --detach -- \
   --name display-name "$literal_prompt" --add-dir "$TMP_ROOT/extra-a" "$TMP_ROOT/extra-b"
 
 wait_for_fake_claude_ready

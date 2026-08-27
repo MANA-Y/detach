@@ -479,7 +479,10 @@ struct SessionUUIDChip: View {
         copied = true
         resetTask?.cancel()
         resetTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            let feedbackDuration: UInt64 = AppSettings.uiE2E == nil
+                ? 1_500_000_000
+                : 400_000_000
+            try? await Task.sleep(nanoseconds: feedbackDuration)
             guard !Task.isCancelled else { return }
             copied = false
         }

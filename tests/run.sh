@@ -645,7 +645,7 @@ if codex_part_selected lifecycle; then
   codex_scenario_event begin SC-SESSION-RECOVER-CODEX
   codex_scenario_event begin SC-SESSION-STOP-CODEX
   codex_scenario_event begin SC-SESSION-DELETE-CODEX
-  run_codex --name integration --detach -- "$literal_prompt"
+  LC_ALL=C run_codex --name integration --detach -- "$literal_prompt"
 
 wait_for_tmux_option "$SESSION" @detach_status running
 tmux -L "$SOCKET" has-session -t "=$SESSION"

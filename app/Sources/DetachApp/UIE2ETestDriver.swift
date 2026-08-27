@@ -1043,7 +1043,7 @@ enum UIE2ETestDriver {
         for event in events {
             NSApp.postEvent(event, atStart: false)
         }
-        try await Task.sleep(nanoseconds: 200_000_000)
+        try await Task.sleep(nanoseconds: 100_000_000)
     }
 
     private static func keyPress(
