@@ -94,6 +94,7 @@
 "Complete Setup" = "Complete Setup";
 "Connect Codex or Claude" = "Connect Codex or Claude";
 "Copy session UUID" = "Copy session UUID";
+"Copied" = "Copied";
 "Could Not Complete Setup" = "Could Not Complete Setup";
 "Could not open Terminal" = "Could not open Terminal";
 "Could not delete some sessions" = "Could not delete some sessions";

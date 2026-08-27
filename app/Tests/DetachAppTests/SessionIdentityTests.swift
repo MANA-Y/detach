@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 import SwiftUI
 import DetachKit
@@ -85,6 +86,33 @@ final class SessionIdentityTests: XCTestCase {
                        accuracy: 0.001, file: file, line: line)
         XCTAssertEqual(actualRGB.alphaComponent, expectedRGB.alphaComponent,
                        accuracy: 0.001, file: file, line: line)
+    }
+}
+
+final class SessionUUIDPresentationTests: XCTestCase {
+    func testShortDisplayKeepsShortValuesAndTruncatesLongUUIDs() {
+        XCTAssertEqual(SessionUUIDPresentation.shortDisplay("abc"), "abc")
+        XCTAssertEqual(
+            SessionUUIDPresentation.shortDisplay("a9f58f1d-1234-5678-9abc-def012342ed9"),
+            "a9f58f1d…2ed9")
+    }
+
+    func testCopyWritesTheFullUUIDToThePasteboard() {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        XCTAssertTrue(
+            SessionUUIDPresentation.copy(
+                "a9f58f1d-1234-5678-9abc-def012342ed9",
+                to: pasteboard))
+        XCTAssertEqual(
+            pasteboard.string(forType: .string),
+            "a9f58f1d-1234-5678-9abc-def012342ed9")
+    }
+
+    @MainActor
+    func testChipBuildsTheWholeCopyControl() {
+        _ = SessionUUIDChip(
+            uuid: "a9f58f1d-1234-5678-9abc-def012342ed9").body
     }
 }
 

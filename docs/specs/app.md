@@ -77,20 +77,20 @@ states use label or system colors resolved at composite time. VoiceOver names
 the session state. The first menu line is `state · reason · freshness`.
 Protected counts working sessions. Allowed names all-waiting or an unprotected
 working session and never claims no sessions. The shared `checked_at` heartbeat
-reader and app-level session poller supply the glyph and words. UI never calls
-`pmset` or root XPC. Freshness uses the document timestamp, not file mtime. One
-`detach list --json` poller serves the window, notifications, and menu. It polls
-faster with a visible window, slower after it closes, and never stops. Closing
-the last window keeps the app and icon alive.
+reader and session poller supply the glyph and words. UI never calls `pmset` or
+root XPC. Freshness uses the document timestamp, not file mtime. One
+`detach list --json` poller serves the window, notifications, and menu. It runs
+faster with a window and slower without one. It never stops. Closing the last
+window keeps the app and icon.
 ⌘Q and Quit end the app while sessions, checkpoints, and protection continue.
 Settings → General owns both menu bar toggles. Settings → System keeps the only
 Mac Power status and approval controls. Temperature safety has its own warning
 shape and the text **Mac can sleep: temperature**.
 
-The dashboard keeps identity, status, and Mac Power separate. Identity uses a
-thin capsule and the tmux blend. Status uses a filled circle through one shared
-sidebar/detail color function. Power words use a neutral surface and semantic
-color.
+The dashboard shows identity, status, and Mac Power separately. Identity is a
+thin tmux-colored capsule. Status is a filled circle. Power has a neutral
+surface and semantic color. The UUID chip is one copy control. Any click copies
+the full UUID and shows **Copied**.
 
 **Finished** bulk Delete uses typed Delete, asks once, tolerates failures, and
 keeps provider transcripts. Select/Done has 12-point scroll clearance.

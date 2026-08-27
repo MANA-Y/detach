@@ -69,7 +69,7 @@ coverage-exclusion	business	app/Sources/DetachKit/DetachCLI.swift	SC-SESSION-CRE
 coverage-region	ui	app/Sources/DetachApp/NewSessionSheet.swift	ui-e2e-instrumentation	SC-UI-NEW-SESSION	The packaged journey covers test-only control geometry.
 coverage-region	ui	app/Sources/DetachApp/OnboardingView.swift	ui-e2e-instrumentation	SC-UI-ONBOARD-FIRST-RUN,SC-UI-ONBOARD-PROVIDER,SC-UI-ONBOARD-APPROVAL	Packaged onboarding journeys own their semantic locators and safe poller.
 coverage-region	ui	app/Sources/DetachApp/RootView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-ONBOARD-FIRST-RUN,SC-UI-ONBOARD-PROVIDER,SC-UI-ONBOARD-APPROVAL	Packaged journeys cover the test-only semantic bridge and route.
-coverage-region	ui	app/Sources/DetachApp/SessionDetailView.swift	ui-e2e-instrumentation	SC-UI-SESSION-STOP,SC-UI-SESSION-DELETE	The packaged journey covers action geometry and its negative control.
+coverage-region	ui	app/Sources/DetachApp/SessionDetailView.swift	ui-e2e-instrumentation	SC-UI-SESSION-STOP,SC-UI-SESSION-DELETE,SC-UI-SESSION-DETAIL	The packaged journey covers action geometry, UUID copy, and its negative control.
 coverage-region	ui	app/Sources/DetachApp/SettingsView.swift	ui-e2e-instrumentation	SC-UI-SETTINGS	The packaged Settings journey covers its semantic control.
 coverage-region	ui	app/Sources/DetachApp/SidebarView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-SESSION-DETAIL,SC-UI-SESSION-DELETE,SC-UI-FAILURE	Packaged journeys cover sidebar control geometry, bulk Delete, and failure status.
 route	1100	quality/policy.tsv	quality-core	safe	docs/specs/documentation.md
