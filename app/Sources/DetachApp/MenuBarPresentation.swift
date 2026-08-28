@@ -55,14 +55,14 @@ struct MenuBarPresentation: Equatable {
         now: Date = Date()
     ) {
         let state = heartbeat.effectivePowerState
-        let running = allSessions.filter { $0.effectiveStatus == .running }
-        let working = running.filter { !$0.isWaitingForUser }
+        let live = allSessions.filter(\.isLive)
+        let working = live.filter { !$0.isWaitingForUser }
         power = MacPowerSettingsPresentation(
             state: state,
             helperStatus: helperStatus,
             watchdogStatus: watchdogStatus,
             distributionMatchesBundle: distributionMatchesBundle,
-            activeSessionCount: running.count,
+            activeSessionCount: live.count,
             workingSessionCount: working.count)
         ageSeconds = heartbeat.healthy
             ? heartbeat.age(relativeTo: now).map { max(0, Int($0)) }
@@ -104,9 +104,9 @@ struct MenuBarPresentation: Equatable {
         case .attention, .lowBattery, .temperature:
             sessionDot = .none
         case .active, .canSleep, .unknown:
-            if running.contains(where: { $0.isWaitingForUser }) {
+            if live.contains(where: { $0.isWaitingForUser }) {
                 sessionDot = .answerReady
-            } else if running.isEmpty {
+            } else if live.isEmpty {
                 sessionDot = .none
             } else {
                 sessionDot = .working
@@ -114,7 +114,7 @@ struct MenuBarPresentation: Equatable {
         }
 
         // Sessions awaiting a reply outrank ones that are still working.
-        let ordered = running.sorted {
+        let ordered = live.sorted {
             if $0.isWaitingForUser != $1.isWaitingForUser {
                 return $0.isWaitingForUser
             }

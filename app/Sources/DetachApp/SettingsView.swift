@@ -64,7 +64,7 @@ struct MacPowerSettingsPresentation: Equatable {
             }
         case .allowed:
             // The heartbeat wins, but never claim "no sessions" while the
-            // session poller can see running ones.
+            // session poller can see live ones.
             if let activeSessionCount, activeSessionCount > 0 {
                 if workingSessionCount == 0 {
                     reason = .waitingSessions(activeSessionCount)
@@ -295,15 +295,18 @@ struct SettingsView: View {
         }
         .task(id: navigation.selectedTab) {
             guard navigation.selectedTab == .system else { return }
-            await storageStore.refresh()
+            installation.refreshPowerProtectionState()
+            async let storageRefresh: Void = storageStore.refresh()
             while !Task.isCancelled {
-                installation.refreshPowerProtectionState()
                 do {
                     try await Task.sleep(nanoseconds: 10_000_000_000)
                 } catch {
+                    await storageRefresh
                     return
                 }
+                installation.refreshPowerProtectionState()
             }
+            await storageRefresh
         }
         .onChange(of: fontPointSize) { _, value in
             let clamped = AppFontSize.clamped(value)
@@ -989,16 +992,14 @@ struct SettingsView: View {
     }
 
     private var macPowerPresentation: MacPowerSettingsPresentation {
-        let running = sessionStore.sessions.filter {
-            $0.effectiveStatus == .running
-        }
+        let live = sessionStore.sessions.filter(\.isLive)
         return MacPowerSettingsPresentation(
             state: installation.powerProtectionState,
             helperStatus: installation.powerHelperStatus,
             watchdogStatus: installation.watchdogStatus,
             distributionMatchesBundle: installation.distributionMatchesBundle,
-            activeSessionCount: running.count,
-            workingSessionCount: running.filter { !$0.isWaitingForUser }.count)
+            activeSessionCount: live.count,
+            workingSessionCount: live.filter { !$0.isWaitingForUser }.count)
     }
 
     private var macPowerHeroRow: some View {
