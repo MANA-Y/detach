@@ -209,9 +209,7 @@ public final class FilePowerRunActivityWatcher:
                 eventMask: [.write, .delete, .rename, .revoke],
                 queue: eventQueue)
             sourceEvents.setEventHandler {
-                guard sourceWatch.consumeEvent(from: sourceEvents) else {
-                    return
-                }
+                guard sourceWatch.consumeEvent(from: sourceEvents) else { return }
                 onStateChange(.working)
                 sourceEvents.cancel()
             }
