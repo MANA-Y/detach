@@ -325,6 +325,21 @@ grep -F 'install -m 0644 "$SWIFTTERM_LICENSE_SOURCE" "$SWIFTTERM_LICENSE"' \
   "$MAKE_APP" >/dev/null
 grep -F 'cmp -s "$SWIFTTERM_LICENSE_SOURCE" "$SWIFTTERM_LICENSE"' \
   "$VERIFY_APP" >/dev/null
+
+# The SwiftTerm resource bundle is required, never optional. The Metal
+# renderer probes Contents/Resources for exactly SwiftTerm_SwiftTerm.bundle,
+# so packaging fails closed when SwiftPM did not emit it, and verification
+# proves the shipped bundle carries the shader library or the shader source.
+grep -F 'SwiftPM did not produce SwiftTerm_SwiftTerm.bundle' "$MAKE_APP" >/dev/null
+grep -F 'ditto "$bundle" "$APP/Contents/Resources/SwiftTerm_SwiftTerm.bundle"' \
+  "$MAKE_APP" >/dev/null
+! grep -F '$bin_path/SwiftTerm.bundle' "$MAKE_APP" >/dev/null
+grep -F 'SWIFTTERM_BUNDLE="$APP/Contents/Resources/SwiftTerm_SwiftTerm.bundle"' \
+  "$VERIFY_APP" >/dev/null
+grep -F 'Missing bundled SwiftTerm resource bundle' "$VERIFY_APP" >/dev/null
+grep -F 'no Metal shader library or source' "$VERIFY_APP" >/dev/null
+grep -F "name '*.metallib'" "$VERIFY_APP" >/dev/null
+grep -F 'terminal_text_vertex' "$VERIFY_APP" >/dev/null
 grep -F 'thin_sparkle_to_arm64 "$FRAMEWORKS/Sparkle.framework"' "$MAKE_APP" >/dev/null
 for sparkle_path in \
   '$version_root/Sparkle' \

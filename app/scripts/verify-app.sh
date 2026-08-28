@@ -255,6 +255,24 @@ cmp -s "$SWIFTTERM_LICENSE_SOURCE" "$SWIFTTERM_LICENSE" || {
   printf 'Bundled SwiftTerm license notice must have mode 0644\n' >&2
   exit 1
 }
+# The Metal renderer probes Contents/Resources for exactly this bundle name
+# and needs the compiled shader library or the shader source inside it.
+SWIFTTERM_BUNDLE="$APP/Contents/Resources/SwiftTerm_SwiftTerm.bundle"
+[ -d "$SWIFTTERM_BUNDLE" ] && [ ! -L "$SWIFTTERM_BUNDLE" ] || {
+  printf 'Missing bundled SwiftTerm resource bundle\n' >&2
+  exit 1
+}
+SWIFTTERM_METALLIB="$(find "$SWIFTTERM_BUNDLE" -type f -name '*.metallib' -print -quit)"
+if [ -z "$SWIFTTERM_METALLIB" ]; then
+  [ -s "$SWIFTTERM_BUNDLE/Shaders.metal" ] || {
+    printf 'Bundled SwiftTerm resource bundle has no Metal shader library or source\n' >&2
+    exit 1
+  }
+  grep -F 'terminal_text_vertex' "$SWIFTTERM_BUNDLE/Shaders.metal" >/dev/null || {
+    printf 'Bundled SwiftTerm shader source is missing the terminal shaders\n' >&2
+    exit 1
+  }
+fi
 plutil -p "$TMUX_THIRD_PARTY/provenance.json" >/dev/null
 [ -x "$TMUX_BUILDER" ] || {
   printf 'Bundled tmux builder is unavailable for provenance verification\n' >&2

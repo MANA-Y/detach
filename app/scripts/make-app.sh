@@ -162,18 +162,16 @@ export DETACH_WATCHDOG_INFO_PLIST="$WATCHDOG_INFO_PLIST"
 
 install_swiftterm_resources() {
   local bin_path="$1"
-  local bundle name
+  local bundle="$bin_path/SwiftTerm_SwiftTerm.bundle"
 
-  # SwiftTerm 1.19.0 may emit a processed Metal shader bundle. Copy it when
-  # present so the packaged app keeps the same resources as the SwiftPM build.
-  for bundle in \
-    "$bin_path/SwiftTerm_SwiftTerm.bundle" \
-    "$bin_path/SwiftTerm.bundle"; do
-    [ -d "$bundle" ] || continue
-    name="$(basename "$bundle")"
-    ditto "$bundle" "$APP/Contents/Resources/$name"
-    return
-  done
+  # SwiftTerm 1.19.0 processes Apple/Metal/Shaders.metal into this resource
+  # bundle. Its Metal renderer probes Contents/Resources for exactly this
+  # bundle name, so packaging fails closed when SwiftPM did not emit it.
+  [ -d "$bundle" ] || {
+    printf 'SwiftPM did not produce SwiftTerm_SwiftTerm.bundle\n' >&2
+    exit 1
+  }
+  ditto "$bundle" "$APP/Contents/Resources/SwiftTerm_SwiftTerm.bundle"
 }
 
 find_sparkle_framework() {

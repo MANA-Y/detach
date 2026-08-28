@@ -899,6 +899,44 @@ tmux -L "$SOCKET" has-session -t "=$SESSION"
 tmux -L "$OUTER_SOCKET" has-session -t "=$outer_session"
 tmux -L "$OUTER_SOCKET" kill-server >/dev/null 2>&1 || true
 
+# Closing the in-app attach client kills only that client process. Attach
+# through the public CLI on a real PTY, kill the client, and prove the managed
+# session, its worker, and its provider survive the lost client.
+TERM=xterm-256color /usr/bin/script -q /dev/null \
+  "$DETACH" codex attach integration >/dev/null 2>&1 &
+attach_client_wrapper=$!
+attempts=0
+while ! tmux -L "$SOCKET" list-clients -F '#{client_session}' 2>/dev/null | \
+    grep -Fx "$SESSION" >/dev/null && [ "$attempts" -lt 50 ]; do
+  attempts=$((attempts + 1))
+  sleep 0.1
+done
+tmux -L "$SOCKET" list-clients -F '#{client_session}' | grep -Fx "$SESSION" >/dev/null
+attach_client_pid="$(tmux -L "$SOCKET" list-clients \
+  -F '#{client_pid} #{client_session}' | \
+  awk -v session="$SESSION" '$2 == session { print $1 }')"
+case "$attach_client_pid" in
+  ''|*[!0-9]*) printf 'attach client PID is missing\n' >&2; exit 1 ;;
+esac
+kill -KILL "$attach_client_pid"
+attempts=0
+while tmux -L "$SOCKET" list-clients -F '#{client_session}' 2>/dev/null | \
+    grep -Fx "$SESSION" >/dev/null && [ "$attempts" -lt 50 ]; do
+  attempts=$((attempts + 1))
+  sleep 0.1
+done
+! tmux -L "$SOCKET" list-clients -F '#{client_session}' 2>/dev/null | \
+  grep -Fx "$SESSION" >/dev/null
+wait "$attach_client_wrapper" 2>/dev/null || true
+tmux -L "$SOCKET" has-session -t "=$SESSION"
+kill -0 "$first_worker_pid"
+kill -0 "$provider_pid"
+attach_closed_json="$(run_codex list --json | grep -F "\"session_name\":\"$SESSION\"")"
+[ "$(printf '%s' "$attach_closed_json" | \
+  "$STATE_HELPER" meta get /dev/stdin effective_status)" = running ]
+[ "$(printf '%s' "$attach_closed_json" | \
+  "$STATE_HELPER" meta get /dev/stdin worker_pid)" = "$first_worker_pid" ]
+
 # Switching the public CLI while a worker is alive must not change that
 # worker's resolved core path. New invocations get the upgraded payload.
 upgraded_version="0.2.0"
