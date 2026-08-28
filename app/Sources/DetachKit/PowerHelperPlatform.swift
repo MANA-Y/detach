@@ -668,6 +668,39 @@ public final class SecureFilePowerHelperStateStore:
         return try decoder.decode(PowerHelperPersistentState.self, from: data)
     }
 
+    /// Moves an unloadable state file aside for later diagnosis and leaves
+    /// the state path empty so the helper starts from a clean state instead
+    /// of crash-looping. The rename acts on the path itself: a symlink is
+    /// moved aside, never followed.
+    public func quarantineUnreadableState() throws {
+        var metadata = stat()
+        guard Darwin.lstat(fileURL.path, &metadata) == 0 else {
+            let code = errno
+            if code == ENOENT { return }
+            throw PowerHelperPlatformError.fileSystem(
+                operation: "lstat", code: code)
+        }
+        let milliseconds = Int(Date().timeIntervalSince1970 * 1_000)
+        let quarantineURL = fileURL.appendingPathExtension(
+            "corrupt-\(milliseconds)")
+        guard Darwin.rename(fileURL.path, quarantineURL.path) == 0 else {
+            throw PowerHelperPlatformError.fileSystem(
+                operation: "rename", code: errno)
+        }
+        let directoryDescriptor = Darwin.open(
+            fileURL.deletingLastPathComponent().path,
+            O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard directoryDescriptor >= 0 else {
+            throw PowerHelperPlatformError.fileSystem(
+                operation: "open directory", code: errno)
+        }
+        defer { Darwin.close(directoryDescriptor) }
+        guard Darwin.fsync(directoryDescriptor) == 0 else {
+            throw PowerHelperPlatformError.fileSystem(
+                operation: "fsync directory", code: errno)
+        }
+    }
+
     public func save(_ state: PowerHelperPersistentState) throws {
         let directory = fileURL.deletingLastPathComponent()
         try ensurePrivateDirectory(directory)

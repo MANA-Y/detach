@@ -58,6 +58,13 @@ public struct PowerHelperPersistentState: Codable, Equatable, Sendable {
 public protocol PowerHelperStateStoring: AnyObject {
     func load() throws -> PowerHelperPersistentState?
     func save(_ state: PowerHelperPersistentState) throws
+    /// Moves an unloadable durable state file aside so the next launch does
+    /// not fail on it again. Ephemeral stores have nothing to quarantine.
+    func quarantineUnreadableState() throws
+}
+
+extension PowerHelperStateStoring {
+    public func quarantineUnreadableState() throws {}
 }
 
 public protocol PowerBatterySafetyReading {
@@ -155,7 +162,17 @@ public final class PowerHelperLeaseService: @unchecked Sendable {
         self.now = now
         self.leaseTimeout = max(1, leaseTimeout)
         self.thermalCooldown = max(0, thermalCooldown)
-        state = try store.load() ?? PowerHelperPersistentState()
+        do {
+            state = try store.load() ?? PowerHelperPersistentState()
+        } catch {
+            // A state file that cannot be loaded must not crash-loop the
+            // daemon under launchd demand relaunch. Move it aside for
+            // diagnosis and start clean. Ownership is never inferred from
+            // unreadable state, so a borrowed setting is never disabled;
+            // still-running providers recover through renew-as-reacquire.
+            try? store.quarantineUnreadableState()
+            state = PowerHelperPersistentState()
+        }
     }
 
     public func status() throws -> PowerProtectionStatus {
@@ -354,6 +371,14 @@ public final class PowerHelperLeaseService: @unchecked Sendable {
     private func reconcileLocked(
         requestDeadline: Date? = nil
     ) throws -> PowerProtectionStatus {
+        // Orderly shutdown restores the owned setting and deliberately
+        // retains live leases for the next helper generation. A
+        // reconciliation queued behind the shutdown hook must never
+        // re-persist ownership or turn the machine setting back on before
+        // the process exits.
+        guard !isTerminating else {
+            throw PowerHelperLeaseServiceError.serviceQuiescing
+        }
         let instant = now()
         try reconcileBootSessionLocked()
         let thermalState = thermalReader.thermalState()
@@ -479,9 +504,15 @@ public final class PowerHelperLeaseService: @unchecked Sendable {
                 assertionActive: assertionActive,
                 existingID: candidate.leases[index].id)
         } else {
-            guard candidate.leases.count < Self.maximumLeaseCount else {
+            // The cap applies to live leases only. Prune expired entries
+            // first so a table full of stale leases cannot reject a
+            // legitimate acquire before the next periodic reconciliation.
+            let liveLeases = PowerLeaseRegistry.liveLeases(
+                candidate.leases, now: renewedAt, timeout: leaseTimeout)
+            guard liveLeases.count < Self.maximumLeaseCount else {
                 throw PowerHelperLeaseServiceError.tooManyLeases
             }
+            candidate.leases = liveLeases
             candidate.leases.append(Self.lease(
                 identity, renewedAt: renewedAt,
                 assertionActive: assertionActive))
