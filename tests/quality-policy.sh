@@ -78,6 +78,7 @@ expect_route app/Sources/DetachKit/TerminalLauncher.swift runtime-source safe fa
 expect_route app/Sources/DetachApp/OnboardingView.swift onboarding-source install false
 expect_route app/Sources/DetachApp/FutureFlow.swift swift-source unknown true
 expect_route scripts/release-lid-probe release-tool lid false
+expect_route scripts/release-version release-tool lid false
 expect_route scripts/quality-metrics policy safe false
 expect_route scripts/quality-mutation policy safe false
 
