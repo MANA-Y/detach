@@ -1352,7 +1352,7 @@ printf '%s' "$storage_report" | grep -F '"symlink_count":1' >/dev/null
 checkpoint_lock="$DETACH_LOCKS_ROOT/checkpoint-$SESSION.lock"
 checkpoint_ready="$TMP_ROOT/checkpoint-lock-ready"
 /usr/bin/lockf -k "$checkpoint_lock" /bin/sh -c \
-  'touch "$1"; sleep 1; test -d "$2"' sh \
+  'touch "$1"; sleep 12; test -d "$2"' sh \
   "$checkpoint_ready" "$DETACH_CODEX_STATE_ROOT/sessions/$SESSION" &
 checkpoint_holder=$!
 attempts=0

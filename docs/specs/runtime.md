@@ -83,12 +83,12 @@ conversations. Public operations reject symlinked or foreign-owned mutable
 roots before traversal. Codex's integrity-checked SQLite backup is never
 restored automatically.
 
-Bulk cleanup may select only fully scanned `stopped` or `orphaned` sessions.
-Before deletion the app must re-read and match the displayed status and byte
-counts. Actual deletion continues through the provider command, holds the
-checkpoint lock, rechecks managed tmux liveness/ownership under that lock, and
-refuses symlinked or foreign-owned state/session directories. A partial failure
-must leave every failed session in place and continue reporting it explicitly.
+Bulk cleanup selects only fully scanned `stopped` or `orphaned` sessions.
+Before deletion, the app re-reads and matches the displayed status and byte
+counts. The provider command waits up to 30 seconds for the checkpoint lock,
+then rechecks managed tmux liveness and ownership. It rejects symlinked or
+foreign-owned state/session directories. A partial failure keeps each failed
+session and reports it explicitly.
 
 ### Session lifecycle and tmux
 
