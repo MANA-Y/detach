@@ -120,6 +120,39 @@ final class OnboardingLivePollerTests: XCTestCase {
         XCTAssertFalse(poller.heartbeatWaitIsLong)
     }
 
+    func testDoneTickRereadsHeartbeatFileWithoutMenuBarTimer() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "detach-onboarding-heartbeat-\(UUID().uuidString)",
+                isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = InstallationStore(
+            detachPath: "/tmp/detach-test",
+            powerStateRoot: root)
+        let poller = OnboardingLivePoller(store: store)
+
+        await poller.tick(.done)
+        XCTAssertFalse(poller.heartbeatHealthy)
+        XCTAssertFalse(store.watchdogHeartbeat.healthy)
+
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        try Data(
+            #"{"state":"ok","power_state":"protected","checked_at":"\#(stamp)"}"#
+                .utf8
+        ).write(
+            to: root.appendingPathComponent("watchdog-status.json"),
+            options: .atomic)
+        XCTAssertFalse(store.watchdogHeartbeat.healthy)
+
+        await poller.tick(.done)
+        XCTAssertTrue(store.watchdogHeartbeat.healthy)
+        XCTAssertTrue(poller.heartbeatHealthy)
+        XCTAssertFalse(poller.heartbeatWaitIsLong)
+    }
+
     func testInstalledCopyDetectionPublishes() async {
         var present = false
         let poller = makePoller(installedCopyExists: { present })
@@ -199,6 +232,7 @@ final class OnboardingLivePollerTests: XCTestCase {
         locate: @escaping () async -> ProviderAvailability = {
             ProviderAvailability()
         },
+        refreshHeartbeat: @escaping @MainActor () -> Void = {},
         heartbeatIsHealthy: @escaping @MainActor () -> Bool = { false },
         installedCopyExists: @escaping () -> Bool = { false },
         sleep: @escaping (UInt64) async throws -> Void = {
@@ -212,6 +246,7 @@ final class OnboardingLivePollerTests: XCTestCase {
             providerCheckPassed: providerCheckPassed,
             reconcile: reconcile,
             locate: locate,
+            refreshHeartbeat: refreshHeartbeat,
             heartbeatIsHealthy: heartbeatIsHealthy,
             installedCopyExists: installedCopyExists,
             sleep: sleep)
