@@ -34,9 +34,19 @@ printf '%s\n' "$quality_gate_job" | \
 grep -F 'fail-fast: true' "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'scripts/quality-shard plan --base "$BASE_SHA"' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+if grep -F 'github.event.pull_request.base.sha' \
+    "$ROOT/.github/workflows/quality-gates.yml" >/dev/null; then
+  printf 'quality workflow used the event base instead of the tested merge first parent\n' >&2
+  exit 1
+fi
+if [ "$(grep -Fc 'BASE_SHA="$(git rev-parse HEAD^1)"' \
+    "$ROOT/.github/workflows/quality-gates.yml")" -ne 4 ]; then
+  printf 'quality workflow did not derive every pull-request base from the tested merge\n' >&2
+  exit 1
+fi
 grep -F 'name: Run level-zero fail-fast contracts' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F 'run: scripts/quality-shard run --base "$BASE_SHA" --shard static' \
+grep -F 'scripts/quality-shard run --base "$BASE_SHA" --shard static' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'name: Aggregate authoritative pull-request evidence' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
