@@ -26,7 +26,11 @@ Each working session owns a separate helper lease. Outside the low-battery and
 thermal fail-safe states, the helper keeps the machine-wide closed-lid setting
 active while at least one working lease exists. Detach can permit normal sleep
 only after every live session is waiting or stopped. One waiting session must
-never release another working session's protection.
+never release another working session's protection. Acquire and renewal
+confirmation are scoped to the requesting lease. A staged assertion-inactive
+lease from another session must not fail an unrelated acquire or renewal. The
+low-battery and thermal fail-safe refusals still fail closed for every
+request.
 
 The root helper installs a listener-level Foundation code-signing requirement
 before accepting XPC or reconciling power state. It accepts only valid code
