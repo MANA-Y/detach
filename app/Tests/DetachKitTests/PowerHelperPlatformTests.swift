@@ -439,6 +439,179 @@ final class PowerHelperPlatformTests: XCTestCase {
         ) { XCTAssertTrue($0 is DecodingError) }
     }
 
+    func testSecureFileStoreQuarantineMovesUnreadableFileAside() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        let stateURL = root.appendingPathComponent("state.json")
+        let corrupt = Data("not-json".utf8)
+        try corrupt.write(to: stateURL)
+        let store = SecureFilePowerHelperStateStore(fileURL: stateURL)
+
+        try store.quarantineUnreadableState()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stateURL.path))
+        let quarantined = try XCTUnwrap(
+            try FileManager.default.contentsOfDirectory(atPath: root.path)
+                .first { $0.hasPrefix("state.json.corrupt-") })
+        XCTAssertEqual(
+            try Data(contentsOf: root.appendingPathComponent(quarantined)),
+            corrupt)
+        // The state path is free for a clean save after quarantine.
+        try store.save(PowerHelperPersistentState())
+        XCTAssertEqual(try store.load(), PowerHelperPersistentState())
+    }
+
+    func testSecureFileStoreQuarantineMovesSymlinkAsideWithoutFollowing() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        let target = root.appendingPathComponent("target")
+        let link = root.appendingPathComponent("state.json")
+        try Data("{}".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path, withDestinationPath: target.path)
+
+        try SecureFilePowerHelperStateStore(fileURL: link)
+            .quarantineUnreadableState()
+
+        XCTAssertEqual(try Data(contentsOf: target), Data("{}".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: link.path))
+        let quarantined = try XCTUnwrap(
+            try FileManager.default.contentsOfDirectory(atPath: root.path)
+                .first { $0.hasPrefix("state.json.corrupt-") })
+        let values = try root.appendingPathComponent(quarantined)
+            .resourceValues(forKeys: [.isSymbolicLinkKey])
+        XCTAssertTrue(values.isSymbolicLink == true)
+    }
+
+    func testSecureFileStoreQuarantineIgnoresMissingState() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        let store = SecureFilePowerHelperStateStore(
+            fileURL: root.appendingPathComponent("state.json"))
+
+        try store.quarantineUnreadableState()
+
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: root.path), [])
+    }
+
+    func testSecureFileStoreQuarantineSurfacesUnsearchableStateDirectory() throws {
+        try XCTSkipIf(
+            geteuid() == 0, "permission checks do not constrain the root user")
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        let stateURL = root.appendingPathComponent("state.json")
+        try Data("not-json".utf8).write(to: stateURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o000], ofItemAtPath: root.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: root.path)
+        }
+
+        XCTAssertThrowsError(
+            try SecureFilePowerHelperStateStore(fileURL: stateURL)
+                .quarantineUnreadableState()
+        ) { error in
+            XCTAssertEqual(
+                error as? PowerHelperPlatformError,
+                .fileSystem(operation: "lstat", code: EACCES))
+        }
+    }
+
+    func testSecureFileStoreQuarantineSurfacesRenameFailure() throws {
+        try XCTSkipIf(
+            geteuid() == 0, "permission checks do not constrain the root user")
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        let stateURL = root.appendingPathComponent("state.json")
+        try Data("not-json".utf8).write(to: stateURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o555], ofItemAtPath: root.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: root.path)
+        }
+
+        XCTAssertThrowsError(
+            try SecureFilePowerHelperStateStore(fileURL: stateURL)
+                .quarantineUnreadableState()
+        ) { error in
+            XCTAssertEqual(
+                error as? PowerHelperPlatformError,
+                .fileSystem(operation: "rename", code: EACCES))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stateURL.path))
+    }
+
+    func testSecureFileStoreQuarantineSurfacesDirectoryOpenFailure() throws {
+        try XCTSkipIf(
+            geteuid() == 0, "permission checks do not constrain the root user")
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        let stateURL = root.appendingPathComponent("state.json")
+        try Data("not-json".utf8).write(to: stateURL)
+        // A write+execute directory permits the rename but not the read open.
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o333], ofItemAtPath: root.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: root.path)
+        }
+
+        XCTAssertThrowsError(
+            try SecureFilePowerHelperStateStore(fileURL: stateURL)
+                .quarantineUnreadableState()
+        ) { error in
+            XCTAssertEqual(
+                error as? PowerHelperPlatformError,
+                .fileSystem(operation: "open directory", code: EACCES))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stateURL.path))
+    }
+
+    func testSecureFileStoreQuarantineSurfacesDirectorySyncFailure() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        let stateURL = root.appendingPathComponent("state.json")
+        try Data("not-json".utf8).write(to: stateURL)
+        let store = SecureFilePowerHelperStateStore(
+            fileURL: stateURL,
+            fileManager: .default,
+            directorySyncer: { _ in
+                errno = EIO
+                return -1
+            })
+
+        XCTAssertThrowsError(try store.quarantineUnreadableState()) { error in
+            XCTAssertEqual(
+                error as? PowerHelperPlatformError,
+                .fileSystem(operation: "fsync directory", code: EIO))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stateURL.path))
+    }
+
     func testSecureFileStoreRejectsInsecureDirectoryShapesOnSave() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
