@@ -13,6 +13,16 @@ public struct SessionDeletionFailure: Equatable, Sendable {
     }
 }
 
+public struct SessionStartResult: Equatable, Sendable {
+    public var sessionID: String?
+    public var message: String?
+
+    public init(sessionID: String? = nil, message: String? = nil) {
+        self.sessionID = sessionID
+        self.message = message
+    }
+}
+
 @Observable @MainActor
 public final class SessionStore {
     private enum Mutation {
@@ -138,6 +148,59 @@ public final class SessionStore {
         return result.message
     }
 
+    /// Starts a fresh managed run without an outer terminal. A successful
+    /// start refreshes typed state and returns the one unambiguous new session
+    /// for the selected provider and project.
+    public func startDetached(
+        provider: Provider,
+        projectDirectory: URL,
+        name: String?,
+        prompt: String?
+    ) async -> SessionStartResult {
+        let existingIDs = Set(sessions.map(\.id))
+        var arguments = [provider.rawValue]
+        if let name, !name.isEmpty {
+            arguments += ["--name", name]
+        }
+        arguments.append("--detach")
+        if let prompt, !prompt.isEmpty {
+            arguments += ["--", prompt]
+        }
+
+        do {
+            let result = try await cli.run(
+                arguments: arguments,
+                timeout: 120,
+                currentDirectoryURL: projectDirectory)
+            guard !result.timedOut else {
+                await refresh()
+                return SessionStartResult(
+                    message: L10n.string("detach start timed out"))
+            }
+            guard result.exitCode == 0 else {
+                let stderr = result.stderr.trimmingCharacters(
+                    in: .whitespacesAndNewlines)
+                return SessionStartResult(message: stderr.isEmpty
+                    ? L10n.format("detach exited with status %d", result.exitCode)
+                    : stderr)
+            }
+
+            await refresh()
+            let projectPath = Self.canonicalProjectPath(projectDirectory.path)
+            let candidates = sessions.filter {
+                !existingIDs.contains($0.id)
+                    && $0.provider == provider
+                    && $0.projectDir.map(Self.canonicalProjectPath) == projectPath
+            }
+            return SessionStartResult(
+                sessionID: candidates.count == 1 ? candidates[0].id : nil)
+        } catch {
+            return SessionStartResult(message: L10n.format(
+                "Could not run detach: %@",
+                error.localizedDescription))
+        }
+    }
+
     /// Starts Resume or Recover without an outer terminal. The provider starts
     /// detached; the app creates a separate attach-only PTY after this returns.
     public func prepareInteractive(
@@ -186,6 +249,12 @@ public final class SessionStore {
                 "Could not run detach: %@",
                 error.localizedDescription)
         }
+    }
+
+    private static func canonicalProjectPath(_ path: String) -> String {
+        URL(fileURLWithPath: path, isDirectory: true)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL.path
     }
 
     /// Deletes every selected finished session and reports failures without

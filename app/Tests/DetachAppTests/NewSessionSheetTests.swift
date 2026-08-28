@@ -7,45 +7,42 @@ import XCTest
 
 @MainActor
 final class NewSessionSheetTests: XCTestCase {
+    private func store() -> SessionStore {
+        SessionStore(cli: NewSessionNoopCLI())
+    }
+
     func testBuildsFormWithOptionalEmptyName() {
-        _ = NewSessionSheet(detachPath: "/tmp/detach").body
+        _ = NewSessionSheet(store: store()).body
     }
 
     func testBuildsFormWithHumanReadableName() {
         _ = NewSessionSheet(
-            detachPath: "/tmp/detach",
+            store: store(),
             initialName: "Rev (ai)").body
     }
 
     func testBuildsInlineValidationForOversizedName() {
         _ = NewSessionSheet(
-            detachPath: "/tmp/detach",
+            store: store(),
             initialName: String(repeating: "a", count: 101)).body
     }
 
     func testBuildsExpandedAdvancedSection() {
         _ = NewSessionSheet(
-            detachPath: "/tmp/detach",
+            store: store(),
             showsAdvanced: true).body
     }
 
     func testBuildsFormWithASelectedProject() {
         _ = NewSessionSheet(
-            detachPath: "/tmp/detach",
+            store: store(),
             initialProjectDir: URL(fileURLWithPath: "/tmp/proj", isDirectory: true)).body
     }
 
-    func testBuildsBothLaunchFailureBannerShapes() {
+    func testBuildsLaunchFailureBanner() {
         _ = NewSessionSheet(
-            detachPath: "/tmp/detach",
-            initialLaunchFailure: TerminalLaunchFailure(
-                message: "missing terminal",
-                reason: .terminalUnavailable)).body
-        _ = NewSessionSheet(
-            detachPath: "/tmp/detach",
-            initialLaunchFailure: TerminalLaunchFailure(
-                message: "open failed",
-                reason: .openFailed)).body
+            store: store(),
+            initialLaunchFailure: "start refused").body
     }
 
     func testPickerRefreshLoadsInstalledAndMissingSelections() {
@@ -98,27 +95,11 @@ final class NewSessionSheetTests: XCTestCase {
     func testLaunchPlanOmitsABlankPromptAndKeepsText() {
         XCTAssertNil(NewSessionLaunch.trimmedPrompt("  \n"))
         XCTAssertEqual(NewSessionLaunch.trimmedPrompt("  go\n"), "go")
-        let command = NewSessionLaunch.command(
-            detachPath: "/tmp/detach",
-            provider: .codex,
-            projectDir: "/tmp/proj",
-            name: "Rev",
-            prompt: "  review this  ")
-        XCTAssertTrue(command.contains("cd '/tmp/proj'"), command)
-        XCTAssertTrue(command.contains("--name 'Rev'"), command)
-        XCTAssertTrue(command.contains("-- 'review this'"), command)
-        let blank = NewSessionLaunch.command(
-            detachPath: "/tmp/detach",
-            provider: .claude,
-            projectDir: "/tmp/p",
-            name: nil,
-            prompt: "   ")
-        XCTAssertFalse(blank.contains(" -- "), blank)
     }
 
     func testLaunchLabelCoversBothIdleAndBusyStates() {
-        _ = NewSessionLaunch.label(isLaunching: false, terminalDisplayName: "iTerm")
-        _ = NewSessionLaunch.label(isLaunching: true, terminalDisplayName: "Terminal")
+        _ = NewSessionLaunch.label(isLaunching: false)
+        _ = NewSessionLaunch.label(isLaunching: true)
     }
 
     func testLaunchTitleAndDisplayNameUseTheSelectedTerminal() {
@@ -231,6 +212,15 @@ final class NewSessionSheetTests: XCTestCase {
         ]
         .map { URL(fileURLWithPath: $0, isDirectory: true) }
         .first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+}
+
+private struct NewSessionNoopCLI: DetachCLIRunning {
+    func run(
+        arguments: [String],
+        timeout: TimeInterval
+    ) async throws -> CLIResult {
+        CLIResult(exitCode: 0, stdout: "", stderr: "", timedOut: false)
     }
 }
 

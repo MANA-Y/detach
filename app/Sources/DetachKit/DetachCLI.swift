@@ -110,6 +110,21 @@ public struct CLIResult: Equatable, Sendable {
 
 public protocol DetachCLIRunning: Sendable {
     func run(arguments: [String], timeout: TimeInterval) async throws -> CLIResult
+    func run(
+        arguments: [String],
+        timeout: TimeInterval,
+        currentDirectoryURL: URL?
+    ) async throws -> CLIResult
+}
+
+public extension DetachCLIRunning {
+    func run(
+        arguments: [String],
+        timeout: TimeInterval,
+        currentDirectoryURL _: URL?
+    ) async throws -> CLIResult {
+        try await run(arguments: arguments, timeout: timeout)
+    }
 }
 
 public final class ProcessDetachCLI: DetachCLIRunning, Sendable {
@@ -182,13 +197,24 @@ public final class ProcessDetachCLI: DetachCLIRunning, Sendable {
     }
 
     public func run(arguments: [String], timeout: TimeInterval) async throws -> CLIResult {
+        try await run(
+            arguments: arguments,
+            timeout: timeout,
+            currentDirectoryURL: URL(
+                fileURLWithPath: FileManager.default.currentDirectoryPath,
+                isDirectory: true))
+    }
+
+    public func run(
+        arguments: [String],
+        timeout: TimeInterval,
+        currentDirectoryURL: URL?
+    ) async throws -> CLIResult {
         let request = BoundedProcessRequest(
             executableURL: executable,
             arguments: arguments,
             environment: environment,
-            currentDirectoryURL: URL(
-                fileURLWithPath: FileManager.default.currentDirectoryPath,
-                isDirectory: true),
+            currentDirectoryURL: currentDirectoryURL,
             timeout: timeout,
             terminationGrace: terminationGrace,
             outputDrainGrace: outputDrainGrace)

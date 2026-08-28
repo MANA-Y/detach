@@ -162,18 +162,18 @@ user-specific path. Native power protection requires no Apple Events or
 Automation entitlement.
 
 Bootstrap runs only from `/Applications`, not a DMG or App Translocation path.
-In-app Resume and Recover call `--detach`, then attach through an
-ephemeral PTY on `detach <provider> attach <session>`. Closing the view or app
-ends that client. `Ctrl-V` reaches provider image paste; Detach stores no
-image. Live views move typed Mac Power to metadata and omit the duplicate strip.
-An exited client offers Reconnect without an agent restart. The selected
-terminal remains an `NSWorkspace` `.command` fallback. Without one, a private
-`.zshenv` is the outer
-`ZDOTDIR` until payload removal restores the original.
+App Start runs the provider with `--detach` in its project, keeps an error in
+the sheet, refreshes state, and selects one unambiguous new
+session. Start, Resume, and Recover attach through an ephemeral PTY on
+`detach <provider> attach <session>`. Closing the view or app ends that client.
+`Ctrl-V` reaches provider image paste; Detach stores no image. Live views move
+typed Mac Power to metadata and omit the duplicate strip. An exited client
+offers Reconnect without an agent restart. The selected terminal remains an
+`NSWorkspace` `.command` fallback.
 The new-session sheet accepts an optional UTF-8 name up to 100 bytes. It rejects
 control characters, blocks launch, and passes one `--name`. The launch button
-names the selected terminal. Advanced holds terminal choice and the prompt and
-grows down, top fixed. The app uses `display_name` as the title, with
+starts inside Detach. Advanced holds the prompt and grows down, top fixed. The
+app uses `display_name` as the title, with
 the project/internal name fallback for old records.
 Notifications are opt-in. One poller deduplicates baseline and transitions.
 
