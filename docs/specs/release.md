@@ -51,7 +51,9 @@ change real power state, upload assets, or claim publication.
   Automated release tests cover install, repair, uninstall, update, CLI
   synchronization, and helper replacement paths.
 - `DETACH_RELEASE_TEST_MODE=1` relaxes selected local production-path checks
-  for hermetic tests. It refuses the push and publication stages.
+  for hermetic tests. It can simulate push and publication only after it proves
+  the exact fixture repository, local origin, empty hooks, placeholder name,
+  and fake external tools. This boundary never authorizes an external release.
 - The release entry point supplies the low-level publication confirmation after
   all selected gates pass. After upload, verification lists every remote asset
   name. A name outside the expected set fails closed. Every expected remote

@@ -203,9 +203,6 @@ validate_configuration() {
     die 'DETACH_RELEASE_TEST_MODE must be 0 or 1'
   [ "$IGNORE_TIMING" = 0 ] || [ "$IGNORE_TIMING" = 1 ] || \
     die 'DETACH_RELEASE_IGNORE_TIMING must be 0 or 1'
-  [ "${DETACH_RELEASE_TEST_ALLOW_PUBLISH:-0}" = 0 ] || \
-    [ "${DETACH_RELEASE_TEST_ALLOW_PUBLISH:-0}" = 1 ] || \
-    die 'DETACH_RELEASE_TEST_ALLOW_PUBLISH must be 0 or 1'
   if [ "$TEST_MODE" = 1 ]; then
     printf 'release-version: TEST MODE — production path checks are relaxed\n' >&2
   fi
@@ -716,16 +713,69 @@ remove_release_ci_branch() {
     die 'remote release CI branch still exists after cleanup'
 }
 
-refuse_test_mode_publication() {
+verify_test_mode_publication_boundary() {
+  local fixture_root fixture_repo fixture_origin fixture_bin fixture_hooks
+  local remote_url remote_push_url configured_hooks tool tool_path hook
+
   [ "$TEST_MODE" = 1 ] || return 0
-  [ "${DETACH_RELEASE_TEST_ALLOW_PUBLISH:-0}" = 1 ] || \
-    die 'DETACH_RELEASE_TEST_MODE refuses push and publication'
+  fixture_root="${DETACH_RELEASE_TEST_FIXTURE_ROOT:-}"
+  [ -n "$fixture_root" ] && [[ "$fixture_root" = /* ]] || \
+    die 'test-mode push and publication require an absolute hermetic fixture root'
+  [ -d "$fixture_root" ] && [ ! -L "$fixture_root" ] || \
+    die 'test-mode fixture root must be a non-symlink directory'
+  fixture_root="$(cd -P "$fixture_root" && pwd)"
+  fixture_repo="$fixture_root/repo"
+  fixture_origin="$fixture_root/origin.git"
+  fixture_bin="$fixture_root/bin"
+  fixture_hooks="$fixture_root/hooks"
+
+  [ -d "$fixture_repo" ] && [ ! -L "$fixture_repo" ] && \
+    [ "$(cd -P "$fixture_repo" && pwd)" = "$ROOT" ] || \
+    die 'test-mode fixture repository does not match the release root'
+  [ -d "$fixture_origin" ] && [ ! -L "$fixture_origin" ] && \
+    [ "$(cd -P "$fixture_origin" && pwd)" = "$fixture_origin" ] || \
+    die 'test-mode fixture origin must be a local non-symlink directory'
+  remote_url="$(git -C "$ROOT" remote get-url origin)"
+  remote_push_url="$(git -C "$ROOT" remote get-url --push origin)"
+  [[ "$remote_url" = /* ]] && [[ "$remote_push_url" = /* ]] && \
+    [ -d "$remote_url" ] && [ ! -L "$remote_url" ] && \
+    [ -d "$remote_push_url" ] && [ ! -L "$remote_push_url" ] && \
+    [ "$(cd -P "$remote_url" && pwd)" = "$fixture_origin" ] && \
+    [ "$(cd -P "$remote_push_url" && pwd)" = "$fixture_origin" ] || \
+    die 'test-mode fixture origin does not match the Git remote'
+  [ "$REPOSITORY" = example/detach ] || \
+    die 'test-mode publication requires the placeholder repository'
+
+  configured_hooks="$(git -C "$ROOT" config --get core.hooksPath || true)"
+  [ -d "$fixture_hooks" ] && [ ! -L "$fixture_hooks" ] && \
+    [ -z "$(find "$fixture_hooks" -mindepth 1 -maxdepth 1 -print -quit)" ] && \
+    [[ "$configured_hooks" = /* ]] && [ -d "$configured_hooks" ] && \
+    [ ! -L "$configured_hooks" ] && \
+    [ "$(cd -P "$configured_hooks" && pwd)" = "$fixture_hooks" ] || \
+    die 'test-mode fixture must use its empty hooks directory'
+  for hook in "$fixture_origin"/hooks/*; do
+    [ -e "$hook" ] || continue
+    case "$hook" in
+      *.sample) ;;
+      *) die 'test-mode fixture origin contains an active hook' ;;
+    esac
+  done
+
+  [ -d "$fixture_bin" ] && [ ! -L "$fixture_bin" ] || \
+    die 'test-mode fixture tool directory must be a non-symlink directory'
+  for tool in gh curl security xcrun hdiutil ditto open swift; do
+    tool_path="$(type -P "$tool" || true)"
+    [ -x "$tool_path" ] && [ ! -L "$tool_path" ] && \
+      [ "$(basename "$tool_path")" = "$tool" ] && \
+      [ "$(cd -P "$(dirname "$tool_path")" && pwd)" = "$fixture_bin" ] || \
+      die "test-mode fixture does not own the $tool command"
+  done
 }
 
 push_release_source() {
   local remote_ci remote_main remote_tag merge_output parents tag_commit tag_type
   local -a release_pr_args
-  refuse_test_mode_publication
+  verify_test_mode_publication_boundary
   if has_stage pushed; then
     RELEASE_HEAD="$(read_state_value release-head)" || die 'release head is missing'
     RELEASE_COMMIT="$(read_state_value release-commit)" || die 'release commit is missing'
@@ -1031,7 +1081,7 @@ run_publish_preflight() {
 }
 
 publish_release() {
-  refuse_test_mode_publication
+  verify_test_mode_publication_boundary
   if ! has_stage published; then
     release_api_status "$STATE_DIR/release-before-publish.json" >/dev/null
     run_publish_preflight

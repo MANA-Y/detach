@@ -39,7 +39,7 @@ setup_fixture() {
   PUBLISHED_MANIFEST="$FIXTURE/published-manifest.json"
   mkdir -p "$REPO/scripts" "$REPO/tests/quality-gate-fixtures" "$REPO/app/scripts" \
     "$REPO/app/.build/artifacts/sparkle/Sparkle/bin" "$REPO/quality" "$REPO/tools" \
-    "$BIN" "$APPS" \
+    "$BIN" "$APPS" "$FIXTURE/hooks" \
     "$REMOTE_ASSETS"
 
   install -m 0755 "$ROOT/scripts/release-version" "$REPO/scripts/release-version"
@@ -471,6 +471,7 @@ SH
   git -C "$REPO" tag -a v1.2.3 -m 'published fixture'
   git init -q --bare "$ORIGIN"
   git -C "$REPO" remote add origin "$ORIGIN"
+  git -C "$REPO" config core.hooksPath "$FIXTURE/hooks"
   git -C "$REPO" push -q -u origin main
   git -C "$REPO" push -q origin v1.2.3
 }
@@ -490,7 +491,7 @@ run_workflow() {
       FAKE_TARGET_TAG="$TARGET_TAG" \
       FAKE_DMG_APP="$REPO/app/build/fake-dmg/Detach.app" \
       DETACH_RELEASE_TEST_MODE=1 \
-      DETACH_RELEASE_TEST_ALLOW_PUBLISH="${DETACH_RELEASE_TEST_ALLOW_PUBLISH:-1}" \
+      DETACH_RELEASE_TEST_FIXTURE_ROOT="${DETACH_RELEASE_TEST_FIXTURE_ROOT-$FIXTURE}" \
       DETACH_QUALITY_GATE_TEST_MODE=1 \
       DETACH_RELEASE_TEST_APPLICATIONS_DIR="$APPS" \
       DETACH_RELEASE_TEST_LID_MIN_SECONDS=0 \
@@ -679,11 +680,11 @@ run_remote_hash_case() {
   [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-verified" ]
 }
 
-run_test_mode_refuses_publish_case() {
-  setup_fixture test-mode-refuses-publish
-  export DETACH_RELEASE_TEST_ALLOW_PUBLISH=0
-  expect_failure test-mode-refuses-publish \
-    'DETACH_RELEASE_TEST_MODE refuses push and publication' \
+run_test_mode_rejects_unproven_fixture_case() {
+  setup_fixture test-mode-rejects-unproven-fixture
+  export DETACH_RELEASE_TEST_FIXTURE_ROOT=
+  expect_failure test-mode-rejects-unproven-fixture \
+    'test-mode push and publication require an absolute hermetic fixture root' \
     run_workflow
   [ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-prepared" ]
   [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-pushed" ]
@@ -729,7 +730,7 @@ for release_case in \
   run_preflight_rejection_cases \
   run_hardware_rejection_case \
   run_remote_hash_case \
-  run_test_mode_refuses_publish_case \
+  run_test_mode_rejects_unproven_fixture_case \
   run_unexpected_remote_asset_case \
   run_post_push_main_rejection_case \
   run_invalid_resume_artifact_credentials_case; do
