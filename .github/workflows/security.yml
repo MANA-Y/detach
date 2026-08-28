@@ -142,37 +142,60 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           baseline_root="$(scripts/quality-baseline)"
-          printf 'root=%s\n' "$baseline_root" >>"$GITHUB_OUTPUT"
-          printf 'run_id=%s\n' "${baseline_root##*/}" >>"$GITHUB_OUTPUT"
+          {
+            echo 'root<<EOF'
+            printf '%s\n' "$baseline_root"
+            echo 'EOF'
+            echo 'run_id<<EOF'
+            printf '%s\n' "${baseline_root##*/}"
+            echo 'EOF'
+          } >>"$GITHUB_OUTPUT"
       - id: mutation-evidence
         name: Restore latest mutation score when available
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           summary="$(scripts/quality-mutation latest --optional)"
-          printf 'summary=%s\n' "$summary" >>"$GITHUB_OUTPUT"
+          {
+            echo 'summary<<EOF'
+            if [ -n "$summary" ]; then
+              printf '%s\n' "$summary"
+            fi
+            echo 'EOF'
+          } >>"$GITHUB_OUTPUT"
       - id: care-evidence
         name: Restore latest quality-care summary when available
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           summary="$(scripts/quality-care latest --optional)"
-          printf 'summary=%s\n' "$summary" >>"$GITHUB_OUTPUT"
+          {
+            echo 'summary<<EOF'
+            if [ -n "$summary" ]; then
+              printf '%s\n' "$summary"
+            fi
+            echo 'EOF'
+          } >>"$GITHUB_OUTPUT"
       - name: Generate dashboard with security result
+        env:
+          MUTATION_SUMMARY: ${{ steps.mutation-evidence.outputs.summary }}
+          CARE_SUMMARY: ${{ steps.care-evidence.outputs.summary }}
+          MAIN_EVIDENCE_ROOT: ${{ steps.main-evidence.outputs.root }}
+          DASHBOARD_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ steps.main-evidence.outputs.run_id }}
         run: |
           mutation_args=()
           care_args=()
-          if [ -n "${{ steps.mutation-evidence.outputs.summary }}" ]; then
-            mutation_args+=(--mutation-summary "${{ steps.mutation-evidence.outputs.summary }}")
+          if [ -n "$MUTATION_SUMMARY" ]; then
+            mutation_args+=(--mutation-summary "$MUTATION_SUMMARY")
           fi
-          if [ -n "${{ steps.care-evidence.outputs.summary }}" ]; then
-            care_args+=(--care-summary "${{ steps.care-evidence.outputs.summary }}")
+          if [ -n "$CARE_SUMMARY" ]; then
+            care_args+=(--care-summary "$CARE_SUMMARY")
           fi
           scripts/quality-dashboard generate \
-            --result-root "${{ steps.main-evidence.outputs.root }}" \
+            --result-root "$MAIN_EVIDENCE_ROOT" \
             --output app/build/quality-dashboard \
             --security-summary app/build/quality-security/summary.json \
-            --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ steps.main-evidence.outputs.run_id }}" \
+            --run-url "$DASHBOARD_RUN_URL" \
             "${mutation_args[@]}" \
             "${care_args[@]}"
       - name: Configure Pages
