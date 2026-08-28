@@ -2,6 +2,7 @@
 
 set -eu
 set -o pipefail
+set -E
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
 PROJECT_LABEL="${ROOT##*/}"
@@ -13,6 +14,7 @@ SOCKET="detach-claude-test-$$"
 SOCKET_PATH="$TMUX_SOCKET_ROOT/$SOCKET.sock"
 ARTIFACT_DIR="${DETACH_PROVIDER_TEST_ARTIFACT_DIR:-}"
 FAILURE_LINE=""
+FAILURE_COMMAND=""
 CLAUDE_TEST_PART="${DETACH_CLAUDE_TEST_PART:-all}"
 
 case "$CLAUDE_TEST_PART" in
@@ -103,6 +105,10 @@ preserve_failure_diagnostics() {
     printf 'temporary_state_present\t%s\n' "$([ -d "$TMP_ROOT" ] && printf true || printf false)"
   } >"$ARTIFACT_DIR/diagnostics.tsv"
   chmod 0600 "$ARTIFACT_DIR/diagnostics.tsv"
+  if [ -n "$FAILURE_COMMAND" ]; then
+    printf '%s\n' "$FAILURE_COMMAND" >"$ARTIFACT_DIR/failure-command.txt"
+    chmod 0600 "$ARTIFACT_DIR/failure-command.txt"
+  fi
   find "$TMP_ROOT" -maxdepth 3 -type f -print 2>/dev/null | \
     sed "s#^$TMP_ROOT#TMP_ROOT#" | LC_ALL=C sort >"$ARTIFACT_DIR/file-inventory.txt"
   chmod 0600 "$ARTIFACT_DIR/file-inventory.txt"
@@ -113,6 +119,7 @@ preserve_failure_diagnostics() {
 record_failure() {
   local status="$?"
   FAILURE_LINE="$1"
+  FAILURE_COMMAND="$2"
   return "$status"
 }
 
@@ -129,7 +136,7 @@ cleanup() {
     rm -rf "$TMP_ROOT"
   fi
 }
-trap 'record_failure "$LINENO"' ERR
+trap 'record_failure "$LINENO" "$BASH_COMMAND"' ERR
 trap 'cleanup $?' EXIT
 
 export DETACH_STATE_ROOT="$TMP_ROOT/detach-state"
@@ -249,6 +256,34 @@ wait_for_file_text() {
   return 1
 }
 
+wait_for_tmux_option() {
+  local session="$1" option="$2" expected="$3" attempts=0 actual=""
+  while [ "$attempts" -lt 80 ]; do
+    actual="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" "$option" 2>/dev/null || true)"
+    [ "$actual" != "$expected" ] || return 0
+    attempts=$((attempts + 1))
+    sleep 0.1
+  done
+  printf 'timed out waiting for %s %s=%s (actual=%s)\n' \
+    "$session" "$option" "$expected" "$actual" >&2
+  return 1
+}
+
+wait_for_tmux_option_text() {
+  local session="$1" option="$2" expected="$3" attempts=0 actual=""
+  while [ "$attempts" -lt 80 ]; do
+    actual="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" "$option" 2>/dev/null || true)"
+    if printf '%s' "$actual" | grep -F "$expected" >/dev/null; then
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.1
+  done
+  printf 'timed out waiting for %s %s to contain %s (actual=%s)\n' \
+    "$session" "$option" "$expected" "$actual" >&2
+  return 1
+}
+
 human_label='Rev (ai)'
 human_digest="$(printf '%s' "$human_label" | shasum -a 256 | \
   awk '{print substr($1, 1, 12)}')"
@@ -360,6 +395,10 @@ LC_ALL=C "$SCRIPT" claude --name "$human_label" --detach -- \
   --name display-name "$literal_prompt" --add-dir "$TMP_ROOT/extra-a" "$TMP_ROOT/extra-b"
 
 wait_for_fake_claude_ready
+wait_for_tmux_option "$human_session" @detach_status running
+wait_for_tmux_option "$human_session" set-titles on
+wait_for_tmux_option "$human_session" set-titles-string "Detach · $PROJECT_LABEL"
+wait_for_tmux_option_text "$human_session" status-left RUNNING
 grep -Fx -- "$literal_prompt" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 grep -Fx -- '--session-id' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 grep -Fx -- '--name' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
