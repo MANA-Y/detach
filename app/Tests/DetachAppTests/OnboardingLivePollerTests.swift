@@ -5,13 +5,20 @@ import XCTest
 
 @MainActor
 final class OnboardingLivePollerTests: XCTestCase {
-    func testProductionWiringConstructsAnIdlePoller() {
-        let store = InstallationStore(detachPath: "/tmp/detach-test")
+    func testProductionWiringReadsServiceAndApplicationState() async throws {
+        let store = InstallationStore(
+            detachPath: "/tmp/detach-test",
+            watchdog: PollerWatchdogStub(),
+            powerHelper: PollerPowerHelperStub())
         let poller = OnboardingLivePoller(store: store)
 
         XCTAssertEqual(poller.providerAvailability, ProviderAvailability())
         XCTAssertFalse(poller.heartbeatHealthy)
         XCTAssertFalse(poller.installedCopyPresent)
+
+        await poller.tick(.permissions)
+        await poller.tick(.moveToApplications)
+        try await OnboardingLivePoller.defaultSleep(nanoseconds: 0)
     }
 
     func testEnableTransitionTriggersExactlyOneReconcile() async {
@@ -165,6 +172,27 @@ final class OnboardingLivePollerTests: XCTestCase {
             [3_000_000_000, 3_000_000_000, 5_000_000_000, 2_000_000_000])
     }
 
+    func testRunLoopRepeatsAndExitsAfterTaskCancellation() async {
+        var intervals: [UInt64] = []
+        var detections = 0
+        let poller = makePoller(
+            installedCopyExists: {
+                detections += 1
+                return true
+            },
+            sleep: { interval in
+                intervals.append(interval)
+                if intervals.count == 2 {
+                    withUnsafeCurrentTask { $0?.cancel() }
+                }
+            })
+
+        await poller.run(.moveToApplications, interval: 3_000_000_000)
+
+        XCTAssertEqual(detections, 2)
+        XCTAssertEqual(intervals, [3_000_000_000, 3_000_000_000])
+    }
+
     func testUpdateIsIdempotentAndStopRearmsTheSameStep() async {
         let sleeps = PollSleepRecorder()
         let poller = makePoller(
@@ -236,6 +264,28 @@ private actor PollSleepRecorder {
         intervals.append(interval)
         throw CancellationError()
     }
+}
+
+@MainActor
+private final class PollerWatchdogStub: InstallationWatchdogServicing {
+    var status: WatchdogStatus = .notRegistered
+
+    func reconcileAfterAppUpdate(forceReplacement: Bool) async throws {}
+    func enable() async throws {}
+    func disable() async throws {}
+    func openLoginItemsSettings() {}
+}
+
+@MainActor
+private final class PollerPowerHelperStub: InstallationPowerHelperServicing {
+    var status: PowerHelperRegistrationStatus = .notRegistered
+
+    func reconcileAfterAppUpdate() async throws -> PowerHelperReconciliationOutcome {
+        .complete
+    }
+    func enable() async throws {}
+    func disable() async throws {}
+    func openApprovalSettings() {}
 }
 
 final class OnboardingProviderLocatorTests: XCTestCase {
