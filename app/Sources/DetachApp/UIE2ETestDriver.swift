@@ -9,6 +9,32 @@ enum UIE2EControlFault {
     static var stopActionAttempts = 0
 }
 
+private final class UIE2EDeferredMouseUp: @unchecked Sendable {
+    private let application: NSApplication
+    private let event: NSEvent
+
+    init(application: NSApplication, event: NSEvent) {
+        self.application = application
+        self.event = event
+    }
+
+    func post() {
+        application.postEvent(event, atStart: false)
+    }
+}
+
+enum UIE2ECursorPositionResolver {
+    static func quartzPoint(
+        for appKitPoint: CGPoint,
+        screenFrame: CGRect,
+        displayBounds: CGRect
+    ) -> CGPoint {
+        CGPoint(
+            x: displayBounds.minX + appKitPoint.x - screenFrame.minX,
+            y: displayBounds.minY + screenFrame.maxY - appKitPoint.y)
+    }
+}
+
 @MainActor
 enum UIE2EEventWindowResolver {
     static func owner(
@@ -128,6 +154,7 @@ enum UIE2ETestDriver {
     private static var scenarioDeadline = TimeInterval.greatestFiniteMagnitude
     private static var nextMouseEventNumber = Int(
         ProcessInfo.processInfo.systemUptime * 1_000)
+    private static var cursorRestorePoint: CGPoint?
 
     static func runIfRequested(
         installation: InstallationStore,
@@ -162,6 +189,13 @@ enum UIE2ETestDriver {
         installation: InstallationStore,
         store: SessionStore
     ) async -> Report {
+        cursorRestorePoint = CGEvent(source: nil)?.location
+        defer {
+            if let cursorRestorePoint {
+                CGWarpMouseCursorPosition(cursorRestorePoint)
+            }
+            cursorRestorePoint = nil
+        }
         switch configuration.scenario {
         case "onboarding-first-run":
             return await runOnboardingFirstRun(
@@ -415,16 +449,61 @@ enum UIE2ETestDriver {
             try await click(newSession, name: "new session action")
             _ = try await measuredFrame(
                 identifier: "new-session-sheet", name: "new session sheet")
-            let launchFrame = try await measuredFrame(
-                identifier: "new-session-launch", name: "new session launch")
-            try await click(frame: launchFrame, name: "disabled new session launch")
+            guard UIE2EGeometryRegistry.frame(for: "new-session-prompt") == nil else {
+                throw Failure(message: "Advanced prompt is visible while collapsed")
+            }
+            let launchControl = try await element(identifier: "new-session-launch")
+            let expectedLaunch = TerminalLaunchPresentation.title(
+                terminalDisplayName: TerminalLaunchPresentation.displayName(
+                    for: TerminalCatalog.defaultBundleIdentifier))
+            guard label(launchControl) == expectedLaunch else {
+                throw Failure(
+                    message: "launch button is \(label(launchControl) ?? "nil"), expected \(expectedLaunch)")
+            }
+            guard !isEnabled(launchControl) else {
+                throw Failure(message: "new-session launch is enabled without a project")
+            }
+            guard let sheet = NSApp.windows.flatMap(\.sheets).first else {
+                throw Failure(message: "new-session sheet is missing")
+            }
+            trace("new-session sheet window \(sheet.frame)")
+            let pinnedTop = sheet.frame.maxY
+            let collapsedHeight = sheet.frame.height
+            let advanced = try await element(identifier: "new-session-advanced")
+            try requireSemanticControl(advanced, name: "new session Advanced")
+            try await click(advanced, name: "new session Advanced")
+            _ = try await measuredFrame(
+                identifier: "new-session-prompt", name: "new session prompt")
+            _ = try await measuredFrame(
+                identifier: "new-session-terminal", name: "new session terminal")
+            checks.append("new-session-hosts-terminal-picker")
+            var lastMaxY = pinnedTop
+            var lastFrame = sheet.frame
+            do {
+                try await waitUntil("new-session top edge stays fixed", attempts: 20) {
+                    guard let current = NSApp.windows.flatMap(\.sheets).first else {
+                        return false
+                    }
+                    lastFrame = current.frame
+                    lastMaxY = current.frame.maxY
+                    return lastFrame.height > collapsedHeight + 40
+                        && abs(lastMaxY - pinnedTop) < 24
+                }
+            } catch {
+                throw Failure(
+                    message: "new-session top edge moved from \(pinnedTop) to \(lastMaxY) frame=\(lastFrame)")
+            }
+            checks.append("new-session-advanced-keeps-top-edge")
+            try await clickMeasuredControl(
+                identifier: "new-session-launch",
+                name: "disabled new session launch")
             try await Task.sleep(nanoseconds: 200_000_000)
             guard NSApp.windows.contains(where: { !$0.sheets.isEmpty }) else {
                 throw Failure(message: "new-session launch is active without a project")
             }
-            let cancelFrame = try await measuredFrame(
-                identifier: "new-session-cancel", name: "new session cancel")
-            try await click(frame: cancelFrame, name: "new session cancel")
+            try await clickMeasuredControl(
+                identifier: "new-session-cancel",
+                name: "new session cancel")
             try await waitUntil("new-session sheet closes") {
                 NSApp.windows.allSatisfy(\.sheets.isEmpty)
             }
@@ -794,6 +873,7 @@ enum UIE2ETestDriver {
     private static func usesMeasuredGeometry(_ identifier: String) -> Bool {
         identifier == "new-session-button"
             || identifier == "settings-show-tips"
+            || identifier.hasPrefix("new-session-")
             || identifier.hasPrefix("onboarding-")
             || identifier.hasPrefix("session-row-")
             || identifier.hasPrefix("session-action-")
@@ -924,8 +1004,11 @@ enum UIE2ETestDriver {
         guard let view = target, let window = view.window else {
             throw Failure(message: "\(name) has no measured control view")
         }
-        let windowFrame = view.convert(view.bounds, to: nil)
-        var screen = window.convertToScreen(windowFrame)
+        view.publishFrame()
+        guard var screen = UIE2EGeometryRegistry.frame(for: identifier),
+              !screen.isEmpty else {
+            throw Failure(message: "\(name) has no published geometry")
+        }
         if let size {
             screen = CGRect(
                 x: screen.minX + offset.width,
@@ -998,6 +1081,7 @@ enum UIE2ETestDriver {
         trace(
             "clicking \(name) at \(screenPoint.x),\(screenPoint.y) "
                 + "in window \(windowName)")
+        try moveCursor(to: screenPoint, name: name)
         let windowPoint = window.convertPoint(fromScreen: screenPoint)
         if let contentView = window.contentView {
             let contentPoint = contentView.convert(windowPoint, from: nil)
@@ -1011,6 +1095,7 @@ enum UIE2ETestDriver {
         }
         var events: [NSEvent] = []
         let timestamp = ProcessInfo.processInfo.systemUptime
+        let clickInterval: TimeInterval = 0.03
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
             let eventNumber = nextMouseEventNumber
             nextMouseEventNumber += 1
@@ -1018,7 +1103,7 @@ enum UIE2ETestDriver {
                 with: type,
                 location: windowPoint,
                 modifierFlags: [],
-                timestamp: timestamp + Double(events.count) / 1_000,
+                timestamp: timestamp + Double(events.count) * clickInterval,
                 windowNumber: window.windowNumber,
                 context: nil,
                 eventNumber: eventNumber,
@@ -1030,11 +1115,43 @@ enum UIE2ETestDriver {
         guard events.count == 2 else {
             throw Failure(message: "cannot create mouse pair for \(name)")
         }
-        // Put the complete pair at the front in delivery order. The main event
-        // loop dispatches mouseDown and can consume mouseUp while it tracks.
-        NSApp.postEvent(events[1], atStart: true)
+        // AppKit permits postEvent from a subthread. Delay mouseUp so SwiftUI
+        // receives a physical-duration click even inside a tracking loop. Put
+        // mouseUp at the queue tail so a busy main thread cannot process it
+        // before the mouseDown event at the queue head.
+        let mouseUp = UIE2EDeferredMouseUp(application: NSApp, event: events[1])
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(
+            deadline: .now() + clickInterval
+        ) {
+            mouseUp.post()
+        }
         NSApp.postEvent(events[0], atStart: true)
         try await Task.sleep(nanoseconds: 100_000_000)
+    }
+
+    private static func moveCursor(
+        to screenPoint: CGPoint,
+        name: String
+    ) throws {
+        guard cursorRestorePoint != nil else {
+            throw Failure(message: "cannot preserve pointer position for \(name)")
+        }
+        guard let screen = NSScreen.screens.first(where: {
+            $0.frame.contains(screenPoint)
+        }),
+        let screenNumber = screen.deviceDescription[
+            NSDeviceDescriptionKey("NSScreenNumber")
+        ] as? NSNumber
+        else {
+            throw Failure(message: "cannot resolve the display for \(name)")
+        }
+        let quartzPoint = UIE2ECursorPositionResolver.quartzPoint(
+            for: screenPoint,
+            screenFrame: screen.frame,
+            displayBounds: CGDisplayBounds(CGDirectDisplayID(screenNumber.uint32Value)))
+        guard CGWarpMouseCursorPosition(quartzPoint) == .success else {
+            throw Failure(message: "cannot position the pointer for \(name)")
+        }
     }
 
     private static func keyPress(
@@ -1061,10 +1178,11 @@ enum UIE2ETestDriver {
     }
 
     private static func activate(_ mainWindow: NSWindow) async throws {
-        NSApp.activate(ignoringOtherApps: true)
-        mainWindow.makeKeyAndOrderFront(nil)
         try await waitUntil("test app activation") {
-            NSApp.isActive && mainWindow.isKeyWindow
+            if NSApp.isActive && mainWindow.isKeyWindow { return true }
+            NSApp.activate(ignoringOtherApps: true)
+            mainWindow.makeKeyAndOrderFront(nil)
+            return false
         }
     }
 

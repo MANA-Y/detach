@@ -2,6 +2,7 @@
 
 set -eu
 set -o pipefail
+set -E
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
 PROJECT_LABEL="${ROOT##*/}"
@@ -13,10 +14,11 @@ SOCKET="detach-claude-test-$$"
 SOCKET_PATH="$TMUX_SOCKET_ROOT/$SOCKET.sock"
 ARTIFACT_DIR="${DETACH_PROVIDER_TEST_ARTIFACT_DIR:-}"
 FAILURE_LINE=""
+FAILURE_COMMAND=""
 CLAUDE_TEST_PART="${DETACH_CLAUDE_TEST_PART:-all}"
 
 case "$CLAUDE_TEST_PART" in
-  all|session|lifecycle|recovery|history) ;;
+  all|session|lifecycle|lifecycle-guardrails|recovery-guardrails|recovery|history) ;;
   *)
     printf 'unknown Claude test part: %s\n' "$CLAUDE_TEST_PART" >&2
     exit 2
@@ -25,6 +27,7 @@ esac
 
 claude_part_selected() {
   [ "$CLAUDE_TEST_PART" = all ] || [ "$CLAUDE_TEST_PART" = "$1" ] || {
+    [ "$CLAUDE_TEST_PART" = lifecycle-guardrails ] && [ "$1" = lifecycle ] ||
     [ "$CLAUDE_TEST_PART" = session ] && {
       case "$1" in lifecycle|recovery) return 0 ;; esac
       return 1
@@ -103,6 +106,10 @@ preserve_failure_diagnostics() {
     printf 'temporary_state_present\t%s\n' "$([ -d "$TMP_ROOT" ] && printf true || printf false)"
   } >"$ARTIFACT_DIR/diagnostics.tsv"
   chmod 0600 "$ARTIFACT_DIR/diagnostics.tsv"
+  if [ -n "$FAILURE_COMMAND" ]; then
+    printf '%s\n' "$FAILURE_COMMAND" >"$ARTIFACT_DIR/failure-command.txt"
+    chmod 0600 "$ARTIFACT_DIR/failure-command.txt"
+  fi
   find "$TMP_ROOT" -maxdepth 3 -type f -print 2>/dev/null | \
     sed "s#^$TMP_ROOT#TMP_ROOT#" | LC_ALL=C sort >"$ARTIFACT_DIR/file-inventory.txt"
   chmod 0600 "$ARTIFACT_DIR/file-inventory.txt"
@@ -113,6 +120,7 @@ preserve_failure_diagnostics() {
 record_failure() {
   local status="$?"
   FAILURE_LINE="$1"
+  FAILURE_COMMAND="$2"
   return "$status"
 }
 
@@ -129,7 +137,7 @@ cleanup() {
     rm -rf "$TMP_ROOT"
   fi
 }
-trap 'record_failure "$LINENO"' ERR
+trap 'record_failure "$LINENO" "$BASH_COMMAND"' ERR
 trap 'cleanup $?' EXIT
 
 export DETACH_STATE_ROOT="$TMP_ROOT/detach-state"
@@ -249,6 +257,34 @@ wait_for_file_text() {
   return 1
 }
 
+wait_for_tmux_option() {
+  local session="$1" option="$2" expected="$3" attempts=0 actual=""
+  while [ "$attempts" -lt 80 ]; do
+    actual="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" "$option" 2>/dev/null || true)"
+    [ "$actual" != "$expected" ] || return 0
+    attempts=$((attempts + 1))
+    sleep 0.1
+  done
+  printf 'timed out waiting for %s %s=%s (actual=%s)\n' \
+    "$session" "$option" "$expected" "$actual" >&2
+  return 1
+}
+
+wait_for_tmux_option_text() {
+  local session="$1" option="$2" expected="$3" attempts=0 actual=""
+  while [ "$attempts" -lt 80 ]; do
+    actual="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" "$option" 2>/dev/null || true)"
+    if printf '%s' "$actual" | grep -F "$expected" >/dev/null; then
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.1
+  done
+  printf 'timed out waiting for %s %s to contain %s (actual=%s)\n' \
+    "$session" "$option" "$expected" "$actual" >&2
+  return 1
+}
+
 human_label='Rev (ai)'
 human_digest="$(printf '%s' "$human_label" | shasum -a 256 | \
   awk '{print substr($1, 1, 12)}')"
@@ -360,6 +396,11 @@ LC_ALL=C "$SCRIPT" claude --name "$human_label" --detach -- \
   --name display-name "$literal_prompt" --add-dir "$TMP_ROOT/extra-a" "$TMP_ROOT/extra-b"
 
 wait_for_fake_claude_ready
+wait_for_tmux_option "$human_session" @detach_status running
+wait_for_tmux_option "$human_session" set-titles on
+LC_ALL=C.UTF-8 wait_for_tmux_option \
+  "$human_session" set-titles-string "Detach · $PROJECT_LABEL"
+wait_for_tmux_option_text "$human_session" status-left RUNNING
 grep -Fx -- "$literal_prompt" "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 grep -Fx -- '--session-id' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 grep -Fx -- '--name' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
@@ -396,9 +437,6 @@ run_token="$("$STATE_HELPER" meta get "$meta" run_token)"
 tmux -L "$SOCKET" has-session -t "=$session"
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach)" = "1" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_provider)" = "claude" ]
-[ "$(tmux -L "$SOCKET" show-options -qv -t "=$session:" set-titles)" = "on" ]
-[ "$(tmux -L "$SOCKET" show-options -qv -t "=$session:" set-titles-string)" = \
-  "Detach · $PROJECT_LABEL" ]
 live_pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" @detach_pane_id)"
 # The start command (and therefore its creator process) has returned, yet the
 # private tmux server and provider worker continue without an attached client.
@@ -648,10 +686,13 @@ fi
 
 # Simulate losing primary metadata during a power failure. Recovery must use
 # checkpoint metadata and resume the exact Claude session UUID.
-if claude_part_selected recovery; then
-if [ "$CLAUDE_TEST_PART" = recovery ]; then
+if claude_part_selected recovery || [ "$CLAUDE_TEST_PART" = recovery-guardrails ] || \
+   [ "$CLAUDE_TEST_PART" = lifecycle-guardrails ]; then
+case "$CLAUDE_TEST_PART" in
+recovery|recovery-guardrails)
   bootstrap_claude_checkpoint
-fi
+  ;;
+esac
 "$STATE_HELPER" meta patch "$checkpoint/meta.json" --string status running --null exit_status
 rm -f "$meta"
 printf '{damaged transcript\n' >"$CLAUDE_CONFIG_DIR/projects/fake/$session_id.jsonl"
@@ -670,6 +711,9 @@ export FAKE_CLAUDE_EXPECT_RESTORED=1
 # CLAUDE_CONFIG_DIR itself may be a symlink, but no descendant on a restore
 # destination may be one. Recovery must validate every destination before it
 # replaces even the transcript, and it must never write through that symlink.
+if [ "$CLAUDE_TEST_PART" = all ] || [ "$CLAUDE_TEST_PART" = session ] || \
+   [ "$CLAUDE_TEST_PART" = recovery-guardrails ] || \
+   [ "$CLAUDE_TEST_PART" = lifecycle-guardrails ]; then
 unsafe_claude_outside="$TMP_ROOT/unsafe-claude-restore-target"
 mkdir -p "$unsafe_claude_outside"
 printf 'outside sentinel\n' >"$unsafe_claude_outside/sentinel"
@@ -705,6 +749,10 @@ grep -Fx '{damaged transcript' \
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
 mv -f "$good_claude_archive" "$checkpoint/claude-session.tar"
 rm -rf "$malicious_claude_stage"
+fi
+
+if [ "$CLAUDE_TEST_PART" != recovery-guardrails ] && \
+   [ "$CLAUDE_TEST_PART" != lifecycle-guardrails ]; then
 
 # Stable publish siblings make an interrupted directory replacement
 # recoverable. `.old` is rolled back first and `.tmp` is discarded safely;
@@ -807,6 +855,7 @@ grep -Fx 'outside sentinel' "$outside" >/dev/null
 "$SCRIPT" claude delete --force "$human_label"
 [ ! -d "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" ]
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
+fi
 fi
 
 if claude_part_selected history; then

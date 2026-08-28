@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 import DetachKit
 
 struct NewSessionSheet: View {
@@ -15,13 +14,23 @@ struct NewSessionSheet: View {
     @State private var provider: Provider = .claude
     @State private var name = ""
     @State private var prompt = ""
-    @State private var showPicker = false
+    @State private var showAdvanced = false
+    @FocusState private var promptFocused: Bool
     @State private var launchFailure: TerminalLaunchFailure?
     @State private var isLaunching = false
 
-    init(detachPath: String, initialName: String = "") {
+    init(
+        detachPath: String,
+        initialName: String = "",
+        showsAdvanced: Bool = false,
+        initialProjectDir: URL? = nil,
+        initialLaunchFailure: TerminalLaunchFailure? = nil
+    ) {
         self.detachPath = detachPath
         _name = State(initialValue: initialName)
+        _showAdvanced = State(initialValue: showsAdvanced)
+        _projectDir = State(initialValue: initialProjectDir)
+        _launchFailure = State(initialValue: initialLaunchFailure)
     }
 
     private var normalizedName: String? {
@@ -32,66 +41,230 @@ struct NewSessionSheet: View {
         SessionNameValidator.isValidInput(name, provider: provider)
     }
 
+    private var canLaunch: Bool {
+        projectDir != nil && isNameValid && !isLaunching
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.string("New session")).appFont(.title3, weight: .bold)
+        VStack(alignment: .leading, spacing: 14) {
+            header
+            projectWell
+            providerAndName
+            advancedOptions
+            launchFailureBanner
+            footer
+        }
+        .padding(22)
+        .frame(width: max(520, fontPointSize * 34))
+        .overlay(alignment: .topLeading) {
+            PinWindowTopEdge()
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("new-session-sheet")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+        .background {
+            uiE2EGeometryProbe(identifier: "new-session-sheet")
+        }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
+    }
 
-            Grid(alignment: .leadingFirstTextBaseline,
-                 horizontalSpacing: 12, verticalSpacing: 12) {
-                GridRow {
-                    Text(L10n.string("Project"))
-                    HStack {
-                        Text(projectDir?.path ?? L10n.string("not selected"))
-                            .foregroundStyle(projectDir == nil ? .secondary : .primary)
-                            .lineLimit(1).truncationMode(.middle)
-                        Spacer()
-                        Button(L10n.string("Choose…")) { showPicker = true }
-                    }
-                }
-                GridRow {
-                    Text(L10n.string("Provider"))
-                    Picker("", selection: $provider) {
-                        ForEach(Provider.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .gridCellAnchor(.leading)
-                }
-                GridRow {
-                    Text(L10n.string("Name"))
-                    VStack(alignment: .leading, spacing: 4) {
-                        TextField(L10n.string("optional, for example Rev (ai)"), text: $name)
-                            .accessibilityIdentifier("new-session-name")
-                        if !isNameValid {
-                            Text(L10n.string(
-                                "Use printable text up to 100 UTF-8 bytes."))
-                                .appFont(.caption)
-                                .foregroundStyle(.red)
-                                .accessibilityIdentifier("new-session-name-validation")
-                        }
-                    }
-                }
-            }
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L10n.string("New session"))
+                .appFont(.title3, weight: .bold)
+            Text(L10n.string("Start a managed run in your terminal."))
+                .appFont(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
 
-            Text(L10n.string("Initial prompt (optional)"))
-                .appFont(.caption).foregroundStyle(.secondary)
-            TextEditor(text: $prompt)
+    private var projectWell: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            fieldLabel(L10n.string("Project"))
+            Button { presentProjectChooser() } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: projectDir == nil
+                          ? "folder.badge.plus"
+                          : "folder.fill")
+                        .foregroundStyle(projectDir == nil
+                                         ? .secondary
+                                         : Brand.tint(for: provider))
+                        .frame(width: 16)
+                        .accessibilityHidden(true)
+                    Text(projectDir?.lastPathComponent ?? L10n.string("not selected"))
+                        .foregroundStyle(projectDir == nil ? .secondary : .primary)
+                        .lineLimit(1)
+                    Text(projectDir?.path
+                         ?? L10n.string("The agent starts in this folder."))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 8)
+                    Text(L10n.string("Choose…"))
+                        .foregroundStyle(.secondary)
+                }
                 .appFont(.body)
-                .frame(height: max(70, fontPointSize * 5.5))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color(nsColor: .textBackgroundColor)))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(.quaternary, lineWidth: 1)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
 
-            if let launchFailure {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(launchFailure.message).appFont(.caption).foregroundStyle(.red)
-                    if launchFailure.requiresTerminalSelection {
-                        SettingsLink {
-                            Text(L10n.string("Choose another terminal"))
-                        }
+    private var selectedTerminalDisplayName: String {
+        TerminalLaunchPresentation.displayName(for: terminalBundleIdentifier)
+    }
+
+    private var providerAndName: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 5) {
+                fieldLabel(L10n.string("Provider"))
+                Picker("", selection: $provider) {
+                    ForEach(Provider.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .tint(Brand.tint(for: provider))
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                fieldLabel(L10n.string("Name"))
+                TextField(L10n.string("optional, for example Rev (ai)"), text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("new-session-name")
+                if !isNameValid {
+                    Text(L10n.string("Use printable text up to 100 UTF-8 bytes."))
                         .appFont(.caption)
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("new-session-name-validation")
+                }
+            }
+        }
+    }
+
+    private var advancedOptions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                promptFocused = false
+                showAdvanced.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .rotationEffect(.degrees(showAdvanced ? 90 : 0))
+                    Text(L10n.string("Advanced"))
+                }
+                .appFont(.caption, weight: .semibold)
+                .foregroundStyle(.secondary)
+                .frame(minHeight: 24)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("new-session-advanced")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+            .background {
+                uiE2EGeometryProbe(
+                    identifier: "new-session-advanced",
+                    semanticLabel: L10n.string("Advanced"),
+                    semanticRole: .button)
+            }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
+
+            if showAdvanced {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel(L10n.string("Terminal"))
+                        TerminalPreferencePicker(
+                            bundleIdentifier: $terminalBundleIdentifier,
+                            accessibilityIdentifier: "new-session-terminal")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                            .background {
+                                uiE2EGeometryProbe(identifier: "new-session-terminal")
+                            }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
+                    }
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel(L10n.string("Initial prompt (optional)"))
+                        ZStack(alignment: .topLeading) {
+                            TextEditor(text: $prompt)
+                                .appFont(.body)
+                                .scrollContentBackground(.hidden)
+                                .focused($promptFocused)
+                                .padding(.horizontal, 6)
+                                .padding(.top, 6)
+                                .padding(.bottom, 10)
+                                .frame(height: max(84, fontPointSize * 5.4))
+                                .accessibilityIdentifier("new-session-prompt")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                                .background {
+                                    uiE2EGeometryProbe(identifier: "new-session-prompt")
+                                }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
+                            if prompt.isEmpty && !promptFocused {
+                                Text(L10n.string("Leave empty and type in the terminal."))
+                                    .appFont(.body)
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color(nsColor: .textBackgroundColor)))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(.quaternary, lineWidth: 1)
+                        }
                     }
                 }
             }
+        }
+    }
 
+    @ViewBuilder
+    private var launchFailureBanner: some View {
+        if let launchFailure {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(launchFailure.message).appFont(.caption).foregroundStyle(.red)
+                if launchFailure.requiresTerminalSelection {
+                    SettingsLink {
+                        Text(L10n.string("Choose another terminal"))
+                    }
+                    .appFont(.caption)
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.red.opacity(0.08)))
+        }
+    }
+
+    private var footer: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            if !canLaunch, !isLaunching, projectDir == nil, isNameValid {
+                Text(L10n.string("Choose a project to launch."))
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
             HStack {
                 Spacer()
                 Button(L10n.string("Cancel")) { dismiss() }
@@ -104,60 +277,82 @@ struct NewSessionSheet: View {
                     }
 #endif
 // quality-coverage:end ui-e2e-instrumentation
-                Button(L10n.string("Launch in Terminal")) {
+                Button {
                     Task { await launch() }
+                } label: {
+                    NewSessionLaunch.label(
+                        isLaunching: isLaunching,
+                        terminalDisplayName: selectedTerminalDisplayName)
                 }
                     .buttonStyle(.borderedProminent)
-                    .tint(Brand.indigo)
-                    .disabled(projectDir == nil || !isNameValid || isLaunching)
+                    .tint(Brand.tint(for: provider))
+                    .disabled(!canLaunch)
                     .accessibilityIdentifier("new-session-launch")
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
                     .background {
-                        uiE2EGeometryProbe(identifier: "new-session-launch")
+                        uiE2EGeometryProbe(
+                            identifier: "new-session-launch",
+                            semanticLabel: TerminalLaunchPresentation.title(
+                                terminalDisplayName: selectedTerminalDisplayName),
+                            semanticRole: .button,
+                            semanticEnabled: canLaunch)
                     }
 #endif
 // quality-coverage:end ui-e2e-instrumentation
             }
         }
-        .padding(20)
-        .frame(width: max(460, fontPointSize * 32))
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("new-session-sheet")
-// quality-coverage:begin ui-e2e-instrumentation
-#if !DEBUG
-        .background {
-            uiE2EGeometryProbe(identifier: "new-session-sheet")
-        }
-#endif
-// quality-coverage:end ui-e2e-instrumentation
-        .fileImporter(isPresented: $showPicker, allowedContentTypes: [.folder]) { result in
-            if case .success(let url) = result { projectDir = url }
-        }
+    }
+
+    private func fieldLabel(_ title: String) -> some View {
+        Text(title)
+            .appFont(.caption, weight: .semibold)
+            .foregroundStyle(.secondary)
     }
 
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
     @ViewBuilder
-    private func uiE2EGeometryProbe(identifier: String) -> some View {
+    private func uiE2EGeometryProbe(
+        identifier: String,
+        semanticLabel: String? = nil,
+        semanticRole: NSAccessibility.Role? = nil,
+        semanticEnabled: Bool = true
+    ) -> some View {
         if AppSettings.uiE2E != nil {
-            UIE2EGeometryProbe(identifier: identifier)
+            UIE2EGeometryProbe(
+                identifier: identifier,
+                semanticLabel: semanticLabel,
+                semanticRole: semanticRole,
+                semanticEnabled: semanticEnabled)
         }
     }
 #endif
 // quality-coverage:end ui-e2e-instrumentation
+
+// quality-coverage:begin sheet-appkit
+    @MainActor
+    private func presentProjectChooser() {
+        ProjectDirectoryChooser.present(
+            from: PanelHostWindow.current(),
+            selectedProject: projectDir
+        ) { url in
+            guard let url else { return }
+            projectDir = url
+        }
+    }
 
     @MainActor
     private func launch() async {
         guard !isLaunching, isNameValid, let projectDir else { return }
         isLaunching = true
         defer { isLaunching = false }
-        let command = TerminalCommand.start(
+        let command = NewSessionLaunch.command(
             detachPath: detachPath,
             provider: provider,
             projectDir: projectDir.path,
             name: normalizedName,
-            prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : prompt)
+            prompt: prompt)
         launchFailure = nil
         let failure = await TerminalLauncher.open(
             command: command,
@@ -166,6 +361,44 @@ struct NewSessionSheet: View {
             launchFailure = failure
         } else {
             dismiss()
+        }
+    }
+}
+// quality-coverage:end sheet-appkit
+
+enum NewSessionLaunch {
+    static func trimmedPrompt(_ prompt: String) -> String? {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func command(
+        detachPath: String,
+        provider: Provider,
+        projectDir: String,
+        name: String?,
+        prompt: String
+    ) -> String {
+        TerminalCommand.start(
+            detachPath: detachPath,
+            provider: provider,
+            projectDir: projectDir,
+            name: name,
+            prompt: trimmedPrompt(prompt))
+    }
+
+    @ViewBuilder
+    static func label(isLaunching: Bool, terminalDisplayName: String) -> some View {
+        HStack(spacing: 7) {
+            if isLaunching {
+                ProgressView()
+                    .controlSize(.small)
+                Text(L10n.string("Launching…"))
+            } else {
+                Image(systemName: "terminal")
+                Text(TerminalLaunchPresentation.title(
+                    terminalDisplayName: terminalDisplayName))
+            }
         }
     }
 }

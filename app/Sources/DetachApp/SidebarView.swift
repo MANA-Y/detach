@@ -35,41 +35,40 @@ struct SidebarView: View {
     }
 
     var body: some View {
-        List(selection: $selectedID) {
-            ForEach(SessionSection.allCases, id: \.self) { section in
-                let items = sessions(in: section)
-                if !items.isEmpty {
-                    Section {
-                        ForEach(items) { session in
-                            sessionRow(session)
+        VStack(spacing: 0) {
+            List(selection: $selectedID) {
+                ForEach(SessionSection.allCases, id: \.self) { section in
+                    let items = sessions(in: section)
+                    if !items.isEmpty {
+                        Section {
+                            ForEach(items) { session in
+                                sessionRow(session)
+                            }
+                        } header: {
+                            sectionHeader(section, count: items.count)
                         }
-                    } header: {
-                        sectionHeader(section, count: items.count)
                     }
                 }
             }
-        }
-        .overlay {
-            if store.sessions.isEmpty && store.state == .ok {
-                ContentUnavailableView {
-                    Label {
-                        Text(L10n.string("No sessions yet"))
-                    } icon: {
-                        Image(systemName: "terminal").foregroundStyle(Brand.gradient)
+            .overlay {
+                if store.sessions.isEmpty && store.state == .ok {
+                    ContentUnavailableView {
+                        Label {
+                            Text(L10n.string("No sessions yet"))
+                        } icon: {
+                            Image(systemName: "terminal")
+                                .foregroundStyle(Brand.gradient)
+                        }
+                    } description: {
+                        Text(L10n.string("Launch Codex or Claude in Terminal"))
                     }
-                } description: {
-                    Text(L10n.string("Launch Codex or Claude in Terminal"))
                 }
             }
-        }
-        .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 0) {
-                if isSelectingFinished {
-                    finishedSelectionBar
-                    Divider()
-                }
-                StatusBar(store: store)
+            if isSelectingFinished {
+                finishedSelectionBar
+                Divider()
             }
+            StatusBar(store: store)
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -454,7 +453,7 @@ struct StatusBar: View {
         .padding(.horizontal, 12)
         .padding(.top, 4)
         .padding(.bottom, 8)
-        // No backing material: the sidebar List already ends above this inset,
+        // No backing material: the sidebar List already ends above this bar,
         // and an opaque bar reads as a stray strip over the sidebar glass.
     }
 }

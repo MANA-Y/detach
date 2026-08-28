@@ -136,11 +136,11 @@ RESULT="$TEST_ROOT/result.json"
 BREACH="$TEST_ROOT/production-cli-breach"
 APP_LOG="$TEST_ROOT/app.log"
 IDENTIFIER="dev.tsarev.detach.ui-e2e.$$"
-UI_E2E_DEADLINE=$((SECONDS + 38))
+UI_E2E_DEADLINE=$((SECONDS + 50))
 
 mkdir -p "$TEST_HOME/.local/bin" "$TEST_HOME/Library/Preferences" \
   "$TEST_ROOT/state" "$TEST_ROOT/power" "$FAKE_DIR"
-ditto "$SOURCE_APP" "$TEST_APP"
+cp -cR "$SOURCE_APP" "$TEST_APP"
 
 if [ -n "$COVERAGE_BINARY" ]; then
   install -m 0755 "$COVERAGE_BINARY" "$TEST_APP/Contents/MacOS/Detach"
@@ -239,7 +239,7 @@ run_app_scenario() {
       && [ "$SECONDS" -lt "$UI_E2E_DEADLINE" ]; do
     [ ! -f "$RESULT" ] || break
     if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi
-    sleep 0.1
+    sleep 0.05
   done
   if [ ! -f "$RESULT" ]; then
     kill -TERM "$APP_PID" 2>/dev/null || true
@@ -256,7 +256,7 @@ run_app_scenario() {
   for _ in $(seq 1 10); do
     if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi
     [ "$SECONDS" -lt "$UI_E2E_DEADLINE" ] || break
-    sleep 0.1
+    sleep 0.05
   done
   if kill -0 "$APP_PID" 2>/dev/null; then
     kill -TERM "$APP_PID" 2>/dev/null || true
@@ -301,7 +301,9 @@ run_app_scenario() {
       finished-selection-clears-scrollbar|session-uuid-copies-from-text-side|\
       live-session-hosts-attach-client|\
       settings-window-stays-on-screen|\
-      settings-system-reveals-storage-and-installation) ;;
+      settings-system-reveals-storage-and-installation|\
+      new-session-advanced-keeps-top-edge|\
+      new-session-hosts-terminal-picker) ;;
       dashboard-accessible) pass=SC-UI-DASHBOARD ;;
       sidebar-selects-completed-session) ;;
       bulk-delete-reaches-fake-cli) pass=SC-UI-SESSION-DELETE ;;
@@ -326,7 +328,7 @@ run_app_scenario() {
   printf 'UI e2e: %s passed in %ss\n' "$scenario" "$((SECONDS - scenario_started))"
 }
 
-run_app_scenario main sessions 24 \
+run_app_scenario main sessions 32 \
   background-app-starts-without-focus \
   dashboard-accessible \
   sidebar-selects-completed-session \
@@ -337,6 +339,8 @@ run_app_scenario main sessions 24 \
   safe-action-reaches-fake-cli \
   finished-selection-clears-scrollbar \
   bulk-delete-reaches-fake-cli \
+  new-session-hosts-terminal-picker \
+  new-session-advanced-keeps-top-edge \
   new-session-sheet-semantics \
   empty-dashboard-state \
   actionable-failure-presentation \

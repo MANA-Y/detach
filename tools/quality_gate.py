@@ -70,6 +70,7 @@ POST_UI_STAGES = (
 PROCESS_HEAVY_LIMIT = 2
 INTEGRATION_LANE_LIMIT = 1
 PROCESS_HEAVY_STAGES = {"gate-contract", "codex", "claude", "release-workflow"}
+EXCLUSIVE_PROCESS_HEAVY_STAGES = {"gate-contract", "release-workflow"}
 GATE_COMPATIBLE_INTEGRATION_STAGES = {
     "tmux-runtime",
     "release-preflight",
@@ -94,14 +95,22 @@ PROVIDER_TEST_PARTS = {
         "recovery",
         "resume",
         "identity",
+        "delete",
         "crash",
     ),
     "claude": (
-        "lifecycle",
+        "lifecycle-guardrails",
         "recovery",
         "history",
     ),
 }
+DISTRIBUTION_TEST_PARTS = ("runtime", "shells")
+DISTRIBUTION_SCENARIOS = (
+    "SC-INSTALL-CLEAN",
+    "SC-INSTALL-REPAIR",
+    "SC-DOCTOR-REPORT",
+    "SC-INSTALL-UNINSTALL",
+)
 COMPACT_CODEX_TEST_PARTS = (
     "guardrails",
     "lifecycle-recovery",
@@ -119,7 +128,7 @@ PROVIDER_PART_SCENARIOS = {
             "SC-SESSION-STOP-CODEX",
         ),
         "recovery": ("SC-SESSION-RECOVER-CODEX",),
-        "identity": ("SC-SESSION-DELETE-CODEX",),
+        "delete": ("SC-SESSION-DELETE-CODEX",),
         "lifecycle-recovery": (
             "SC-SESSION-CREATE-CODEX",
             "SC-SESSION-PERSIST-CODEX",
@@ -138,6 +147,11 @@ PROVIDER_PART_SCENARIOS = {
             "SC-SESSION-RECOVER-CLAUDE",
         ),
         "lifecycle": (
+            "SC-SESSION-CREATE-CLAUDE",
+            "SC-SESSION-PERSIST-CLAUDE",
+            "SC-SESSION-STOP-CLAUDE",
+        ),
+        "lifecycle-guardrails": (
             "SC-SESSION-CREATE-CLAUDE",
             "SC-SESSION-PERSIST-CLAUDE",
             "SC-SESSION-STOP-CLAUDE",
@@ -1410,7 +1424,13 @@ class QualityGate:
                 raise GateError(f"release stage budget must rank scheduled stage: {stage}")
             return int(value)
 
-        pending.sort(key=lambda stage: (-expected_seconds(stage), self.all_stages.index(stage)))
+        pending.sort(
+            key=lambda stage: (
+                stage != "gate-contract",
+                -expected_seconds(stage),
+                self.all_stages.index(stage),
+            )
+        )
         while pending or any(stage in self.active for stage in POST_UI_STAGES):
             while pending:
                 active_heavy = sum(
@@ -1426,6 +1446,14 @@ class QualityGate:
                         stage for stage in pending
                         if (
                             active_heavy < PROCESS_HEAVY_LIMIT
+                            and (
+                                active_heavy == 0
+                                if stage in EXCLUSIVE_PROCESS_HEAVY_STAGES
+                                else not any(
+                                    peer in self.active
+                                    for peer in EXCLUSIVE_PROCESS_HEAVY_STAGES
+                                )
+                            )
                             if stage in PROCESS_HEAVY_STAGES
                             else (
                                 active_integration < INTEGRATION_LANE_LIMIT
@@ -1970,29 +1998,33 @@ def run_provider_parts(
         for part in parts:
             for scenario_id in scenario_owners.get(part, ()):
                 record_scenario_event("begin", scenario_id)
-        for part in parts:
-            part_environment = environment.copy()
-            part_environment[variable] = part
-            part_environment["DETACH_QUALITY_PARTITIONED_PROVIDER"] = "1"
-            if artifact_root is not None:
-                part_environment["DETACH_PROVIDER_TEST_ARTIFACT_DIR"] = str(
-                    artifact_root / part
-                )
-            log = part_root / f"{part}.log"
-            output = log.open("w", encoding="utf-8")
-            log.chmod(0o600)
-            process = subprocess.Popen(
-                [str(suite)],
-                cwd=root,
-                env=part_environment,
-                stdout=output,
-                stderr=subprocess.STDOUT,
-            )
-            processes.append((part, log, process, output, time.monotonic()))
-        pending = set(range(len(processes)))
+        waiting = list(parts)
+        part_limit = min(len(parts), 3 if stage == "codex" else len(parts))
+        pending: set[int] = set()
         statuses: dict[int, int] = {}
         durations: dict[int, int] = {}
-        while pending:
+        while waiting or pending:
+            while waiting and len(pending) < part_limit:
+                part = waiting.pop(0)
+                part_environment = environment.copy()
+                part_environment[variable] = part
+                part_environment["DETACH_QUALITY_PARTITIONED_PROVIDER"] = "1"
+                if artifact_root is not None:
+                    part_environment["DETACH_PROVIDER_TEST_ARTIFACT_DIR"] = str(
+                        artifact_root / part
+                    )
+                log = part_root / f"{part}.log"
+                output = log.open("w", encoding="utf-8")
+                log.chmod(0o600)
+                process = subprocess.Popen(
+                    [str(suite)],
+                    cwd=root,
+                    env=part_environment,
+                    stdout=output,
+                    stderr=subprocess.STDOUT,
+                )
+                processes.append((part, log, process, output, time.monotonic()))
+                pending.add(len(processes) - 1)
             for index in list(pending):
                 part, _, process, output, started = processes[index]
                 status = process.poll()
@@ -2020,6 +2052,76 @@ def run_provider_parts(
         )
     except OSError as error:
         print(f"quality-gate: cannot run {stage} test parts: {error}", file=sys.stderr)
+        return 2
+    finally:
+        for _, _, process, output, _ in processes:
+            if process.poll() is None:
+                process.terminate()
+                process.wait()
+            if not output.closed:
+                output.close()
+
+
+def run_distribution_parts(root: Path, run_dir: Path) -> int:
+    part_root = run_dir / "distribution-parts"
+    if part_root.exists():
+        if not part_root.is_dir() or part_root.is_symlink():
+            print(
+                "quality-gate: distribution part evidence root is unsafe",
+                file=sys.stderr,
+            )
+            return 2
+        shutil.rmtree(part_root)
+    part_root.mkdir(mode=0o700)
+    suite = root / "tests/distribution.sh"
+    processes: list[
+        tuple[str, Path, subprocess.Popen[bytes], TextIO, float]
+    ] = []
+    try:
+        for scenario_id in DISTRIBUTION_SCENARIOS:
+            record_scenario_event("begin", scenario_id)
+        statuses: dict[int, int] = {}
+        durations: dict[int, int] = {}
+        for part in DISTRIBUTION_TEST_PARTS:
+            environment = os.environ.copy()
+            environment["DETACH_DISTRIBUTION_TEST_PART"] = part
+            environment["DETACH_QUALITY_PARTITIONED_DISTRIBUTION"] = "1"
+            log = part_root / f"{part}.log"
+            output = log.open("w", encoding="utf-8")
+            log.chmod(0o600)
+            process = subprocess.Popen(
+                [str(suite)],
+                cwd=root,
+                env=environment,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+            )
+            processes.append((part, log, process, output, time.monotonic()))
+            index = len(processes) - 1
+            statuses[index] = process.wait()
+            durations[index] = max(
+                0, round(time.monotonic() - processes[index][4])
+            )
+            output.close()
+        status = next(
+            (statuses[index] for index in range(len(processes)) if statuses[index]),
+            0,
+        )
+        if status == 0:
+            for scenario_id in DISTRIBUTION_SCENARIOS:
+                record_scenario_event("pass", scenario_id)
+        for index, (part, log, _, _, _) in enumerate(processes):
+            sys.stdout.write(log.read_text(encoding="utf-8", errors="replace"))
+            print(
+                f"quality-gate: distribution part {part} completed in "
+                f"{durations[index]}s with exit {statuses[index]}"
+            )
+        return status
+    except OSError as error:
+        print(
+            f"quality-gate: cannot run distribution test parts: {error}",
+            file=sys.stderr,
+        )
         return 2
     finally:
         for _, _, process, output, _ in processes:
@@ -2315,12 +2417,18 @@ def gate_orchestrator_limit(logical_cpus: int | None = None) -> int:
     return 3 if (available or 0) >= 8 else 2
 
 
+def gate_contract_process_limit(logical_cpus: int | None = None) -> int:
+    available = logical_cpus if logical_cpus is not None else os.cpu_count()
+    return max(2, min(4, available or 2))
+
+
 def include_gate_orchestrators(mode: str, diagnostic_stage: str) -> bool:
     return mode != "change" or bool(diagnostic_stage)
 
 
 def run_gate_contract_stage(root: Path, *, include_orchestrators: bool) -> int:
     orchestrator_limit = gate_orchestrator_limit()
+    process_limit = gate_contract_process_limit()
     contracts = gate_contract_definitions(
         root, include_orchestrators=include_orchestrators
     )
@@ -2334,6 +2442,8 @@ def run_gate_contract_stage(root: Path, *, include_orchestrators: bool) -> int:
         running_orchestrators = 0
         while waiting or running:
             for contract in list(waiting):
+                if len(running) >= process_limit:
+                    break
                 filename, command, additions, expected = contract
                 is_orchestrator = filename.startswith("orchestrator-")
                 if is_orchestrator and running_orchestrators >= orchestrator_limit:
@@ -2730,8 +2840,9 @@ def run_stage_worker(stage: str) -> int:
         if stage in PROVIDER_TEST_PARTS:
             return run_provider_parts(root, run_dir, stage, environment)
         return child_run([str(root / "tests/run-claude.sh")], env=environment)
+    if stage == "distribution":
+        return run_distribution_parts(root, run_dir)
     commands = {
-        "distribution": [[str(root / "tests/distribution.sh")]],
         "tmux-runtime": [[str(root / "tests/tmux-runtime.sh")]],
         "release-preflight": [[str(root / "tests/release-preflight.sh")]],
         "publish-preflight": [[str(root / "tests/publish-preflight.sh")]],

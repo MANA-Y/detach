@@ -17,7 +17,7 @@ stage	20	gate-contract	300	true
 stage	30	swift	1200	true
 stage	40	quality-contracts	1200	true
 stage	50	app	2400	true
-stage	60	ui-e2e	40	true
+stage	60	ui-e2e	55	true
 stage	70	codex	1200	true
 stage	80	claude	1200	true
 stage	90	distribution	1200	true
@@ -67,6 +67,9 @@ coverage-exclusion	business	app/Sources/DetachKit/BoundedProcessRunner.swift	SC-
 coverage-exclusion	business	app/Sources/DetachKit/ClamshellLockRunner.swift	SC-POWER-UNIT	Platform lock behavior uses its dedicated process scenario.
 coverage-exclusion	business	app/Sources/DetachKit/DetachCLI.swift	SC-SESSION-CREATE-CODEX,SC-SESSION-CREATE-CLAUDE	Provider integration scenarios exercise the real CLI process boundary.
 coverage-region	ui	app/Sources/DetachApp/NewSessionSheet.swift	ui-e2e-instrumentation	SC-UI-NEW-SESSION	The packaged journey covers test-only control geometry.
+coverage-region	ui	app/Sources/DetachApp/NewSessionSheet.swift	sheet-appkit	SC-UI-NEW-SESSION	The packaged journey owns launch and the project open panel.
+coverage-region	ui	app/Sources/DetachApp/TerminalPreferencePicker.swift	open-panel	SC-UI-NEW-SESSION	The packaged new-session journey owns the AppKit open-panel host.
+coverage-region	ui	app/Sources/DetachApp/TerminalPreferencePicker.swift	window-pin	SC-UI-NEW-SESSION	XCTest cannot host an NSWindow. The packaged journey keeps the sheet top edge.
 coverage-region	ui	app/Sources/DetachApp/OnboardingView.swift	ui-e2e-instrumentation	SC-UI-ONBOARD-FIRST-RUN,SC-UI-ONBOARD-PROVIDER,SC-UI-ONBOARD-APPROVAL	Packaged onboarding journeys own their semantic locators and safe poller.
 coverage-region	ui	app/Sources/DetachApp/RootView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-ONBOARD-FIRST-RUN,SC-UI-ONBOARD-PROVIDER,SC-UI-ONBOARD-APPROVAL	Packaged journeys cover the test-only semantic bridge and route.
 coverage-region	ui	app/Sources/DetachApp/SessionDetailView.swift	ui-e2e-instrumentation	SC-UI-SESSION-STOP,SC-UI-SESSION-DELETE,SC-UI-SESSION-DETAIL	The packaged journey covers action geometry, UUID copy, and its negative control.
@@ -158,6 +161,7 @@ route	870	app/Sources/DetachApp/EmptySessionsView.swift	swift-source	safe	docs/s
 route	870	app/Sources/DetachApp/LogTextView.swift	swift-source	safe	docs/specs/app.md
 route	870	app/Sources/DetachApp/MenuBar*.swift	swift-source	safe	docs/specs/app.md
 route	870	app/Sources/DetachApp/NewSessionSheet.swift	session-ui-source	safe	docs/specs/app.md
+route	870	app/Sources/DetachApp/TerminalPreferencePicker.swift	session-ui-source	safe	docs/specs/app.md
 route	870	app/Sources/DetachApp/Session*.swift	session-ui-source	safe	docs/specs/app.md
 route	870	app/Sources/DetachApp/SidebarView.swift	session-ui-source	safe	docs/specs/app.md
 route	870	app/Sources/DetachApp/TextSize.swift	swift-source	safe	docs/specs/app.md

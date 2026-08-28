@@ -2,6 +2,7 @@
 
 set -eu
 set -o pipefail
+set -E
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
 PROJECT_LABEL="${ROOT##*/}"
@@ -19,10 +20,11 @@ OUTER_SOCKET_PATH="$TMUX_SOCKET_ROOT/$OUTER_SOCKET.sock"
 SESSION="detach-codex-integration"
 ARTIFACT_DIR="${DETACH_PROVIDER_TEST_ARTIFACT_DIR:-}"
 FAILURE_LINE=""
+FAILURE_COMMAND=""
 CODEX_TEST_PART="${DETACH_CODEX_TEST_PART:-all}"
 
 case "$CODEX_TEST_PART" in
-  all|guardrails|preflight|configuration|lifecycle-recovery|resume-identity|lifecycle|recovery|restart|resume|identity|crash|history) ;;
+  all|guardrails|preflight|configuration|lifecycle-recovery|resume-identity|lifecycle|recovery|restart|resume|identity|delete|crash|history) ;;
   *)
     printf 'unknown Codex test part: %s\n' "$CODEX_TEST_PART" >&2
     exit 2
@@ -44,7 +46,7 @@ codex_part_selected() {
       return 1
     } ||
     [ "$CODEX_TEST_PART" = resume-identity ] && {
-      case "$1" in resume|identity) return 0 ;; esac
+      case "$1" in resume|identity|delete) return 0 ;; esac
       return 1
     }
   }
@@ -138,6 +140,10 @@ preserve_failure_diagnostics() {
     printf 'temporary_state_present\t%s\n' "$([ -d "$TMP_ROOT" ] && printf true || printf false)"
   } >"$ARTIFACT_DIR/diagnostics.tsv"
   chmod 0600 "$ARTIFACT_DIR/diagnostics.tsv"
+  if [ -n "$FAILURE_COMMAND" ]; then
+    printf '%s\n' "$FAILURE_COMMAND" >"$ARTIFACT_DIR/failure-command.txt"
+    chmod 0600 "$ARTIFACT_DIR/failure-command.txt"
+  fi
   find "$TMP_ROOT" -maxdepth 3 -type f -print 2>/dev/null | \
     sed "s#^$TMP_ROOT#TMP_ROOT#" | LC_ALL=C sort >"$ARTIFACT_DIR/file-inventory.txt"
   chmod 0600 "$ARTIFACT_DIR/file-inventory.txt"
@@ -148,6 +154,7 @@ preserve_failure_diagnostics() {
 record_failure() {
   local status="$?"
   FAILURE_LINE="$1"
+  FAILURE_COMMAND="$2"
   return "$status"
 }
 
@@ -166,7 +173,7 @@ cleanup() {
     rm -rf "$TMP_ROOT"
   fi
 }
-trap 'record_failure "$LINENO"' ERR
+trap 'record_failure "$LINENO" "$BASH_COMMAND"' ERR
 trap 'cleanup $?' EXIT
 
 process_group_exists() {
@@ -262,6 +269,21 @@ wait_for_tmux_option() {
     sleep 0.1
   done
   printf 'timed out waiting for %s %s=%s (actual=%s)\n' \
+    "$session" "$option" "$expected" "$actual" >&2
+  return 1
+}
+
+wait_for_tmux_option_text() {
+  local session="$1" option="$2" expected="$3" attempts=0 actual=""
+  while [ "$attempts" -lt 80 ]; do
+    actual="$(tmux -L "$SOCKET" show-options -qv -t "=$session:" "$option" 2>/dev/null || true)"
+    if printf '%s' "$actual" | grep -F "$expected" >/dev/null; then
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.1
+  done
+  printf 'timed out waiting for %s %s to contain %s (actual=%s)\n' \
     "$session" "$option" "$expected" "$actual" >&2
   return 1
 }
@@ -648,6 +670,10 @@ if codex_part_selected lifecycle; then
   LC_ALL=C run_codex --name integration --detach -- "$literal_prompt"
 
 wait_for_tmux_option "$SESSION" @detach_status running
+wait_for_tmux_option "$SESSION" set-titles on
+LC_ALL=C.UTF-8 wait_for_tmux_option \
+  "$SESSION" set-titles-string "Detach · $PROJECT_LABEL"
+wait_for_tmux_option_text "$SESSION" status-left RUNNING
 tmux -L "$SOCKET" has-session -t "=$SESSION"
 "$DETACH" list | grep -F 'codex' | grep -F "$SESSION" >/dev/null
 codex_scenario_event pass SC-SESSION-CREATE-CODEX
@@ -656,9 +682,6 @@ TMUX_TMPDIR="$TMP_ROOT/unrelated-tmux-tmpdir" \
   "$DETACH" list | grep -F 'codex' | grep -F "$SESSION" >/dev/null
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach)" = "1" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_provider)" = "codex" ]
-[ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" set-titles)" = "on" ]
-[ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" set-titles-string)" = \
-  "Detach · $PROJECT_LABEL" ]
 pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_pane_id)"
 # The creator CLI has already exited. The tmux server and worker must remain
 # alive without an attached client (the same lifecycle as closing Terminal or
@@ -1322,7 +1345,11 @@ printf '%s' "$json_line" | grep -F '"session_color":null' >/dev/null
 # safety assertion does not pass merely because the saved value is malformed.
 "$STATE_HELPER" meta patch "$meta" --string session_color "$session_color"
 
-# delete refuses a live session and removes a stopped one.
+# Delete refuses a live session and removes a stopped one. The fine-grained
+# local layout gives its intentional held-lock wait a separate parallel lane.
+fi
+
+if codex_part_selected delete; then
 run_codex --name integration --detach -- 'delete refusal coverage'
 wait_for_tmux_option "$SESSION" @detach_status running
 live_storage_plan="$("$DETACH" storage cleanup --dry-run --json)"
@@ -1352,7 +1379,7 @@ printf '%s' "$storage_report" | grep -F '"symlink_count":1' >/dev/null
 checkpoint_lock="$DETACH_LOCKS_ROOT/checkpoint-$SESSION.lock"
 checkpoint_ready="$TMP_ROOT/checkpoint-lock-ready"
 /usr/bin/lockf -k "$checkpoint_lock" /bin/sh -c \
-  'touch "$1"; sleep 1; test -d "$2"' sh \
+  'touch "$1"; sleep 12; test -d "$2"' sh \
   "$checkpoint_ready" "$DETACH_CODEX_STATE_ROOT/sessions/$SESSION" &
 checkpoint_holder=$!
 attempts=0

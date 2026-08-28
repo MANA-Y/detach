@@ -31,9 +31,9 @@ jobs:
       - id: impact
         name: Validate and partition exact pull-request impact
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           DETACH_QUALITY_AUTHORITY: ci-merge
         run: |
+          BASE_SHA="$(git rev-parse HEAD^1)"
           plan="$RUNNER_TEMP/quality-impact.json"
           scripts/quality-shard plan --base "$BASE_SHA" >"$plan"
           python3 - "$plan" "$GITHUB_OUTPUT" <<'PY'
@@ -55,9 +55,9 @@ jobs:
               output.write(f"has_shards={str(bool(later)).lower()}\n")
           PY
       - name: Run level-zero fail-fast contracts
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: scripts/quality-shard run --base "$BASE_SHA" --shard static --result-root app/build/quality-shards/static
+        run: |
+          BASE_SHA="$(git rev-parse HEAD^1)"
+          scripts/quality-shard run --base "$BASE_SHA" --shard static --result-root app/build/quality-shards/static
       - name: Upload level-zero evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -141,9 +141,9 @@ jobs:
           DETACH_QUALITY_APP_SCRATCH: 1
         run: app/scripts/make-app.sh
       - name: Run exact quality shard
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: scripts/quality-shard run --base "$BASE_SHA" --shard "${{ matrix.id }}" --result-root "app/build/quality-shards/${{ matrix.id }}"
+        run: |
+          BASE_SHA="$(git rev-parse HEAD^1)"
+          scripts/quality-shard run --base "$BASE_SHA" --shard "${{ matrix.id }}" --result-root "app/build/quality-shards/${{ matrix.id }}"
       - name: Upload shard evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -194,9 +194,9 @@ jobs:
           path: ${{ runner.temp }}/quality-shards
       - name: Aggregate authoritative pull-request evidence
         if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: scripts/quality-shard aggregate --base "$BASE_SHA" --input-root "$RUNNER_TEMP/quality-shards" --result-root app/build/quality-gates
+        run: |
+          BASE_SHA="$(git rev-parse HEAD^1)"
+          scripts/quality-shard aggregate --base "$BASE_SHA" --input-root "$RUNNER_TEMP/quality-shards" --result-root app/build/quality-gates
       - id: promoted-main
         name: Promote exact pull-request evidence
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
