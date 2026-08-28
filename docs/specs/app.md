@@ -47,9 +47,9 @@ signed marker. UI smoke uses a stripped private copy at
 power, state, and tmux payloads. Injections stay below its root. An escape,
 unsafe identity, build mismatch, or payload fails closed.
 
-Smoke restores focus and pointer position. It sends AppKit down/up pairs to measured
-SwiftUI controls; semantic locators have no actions. Row clicks select sessions
-even after preview text takes focus.
+Smoke restores focus and the pointer. It sends ordered AppKit down/up
+pairs to measured SwiftUI controls; semantic locators have no actions. Row
+clicks select sessions even after preview text takes focus.
 Each launch and stage stays within its deadline.
 Journeys cover main surfaces, Settings, onboarding, and focus. It disconnects
 Stop before proving that the real control invokes it.

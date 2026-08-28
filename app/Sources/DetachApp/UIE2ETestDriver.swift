@@ -19,7 +19,7 @@ private final class UIE2EDeferredMouseUp: @unchecked Sendable {
     }
 
     func post() {
-        application.postEvent(event, atStart: true)
+        application.postEvent(event, atStart: false)
     }
 }
 
@@ -1063,7 +1063,9 @@ enum UIE2ETestDriver {
             throw Failure(message: "cannot create mouse pair for \(name)")
         }
         // AppKit permits postEvent from a subthread. Delay mouseUp so SwiftUI
-        // receives a physical-duration click even inside a tracking loop.
+        // receives a physical-duration click even inside a tracking loop. Put
+        // mouseUp at the queue tail so a busy main thread cannot process it
+        // before the mouseDown event at the queue head.
         let mouseUp = UIE2EDeferredMouseUp(application: NSApp, event: events[1])
         DispatchQueue.global(qos: .userInitiated).asyncAfter(
             deadline: .now() + clickInterval
