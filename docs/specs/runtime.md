@@ -152,6 +152,13 @@ interactive Codex or Claude stop on terminal I/O. On provider exit, the worker
 records status, attempts a final checkpoint, and leaves the pane retained for
 logs and diagnosis.
 
+Stop resolves the pane process group through `/bin/ps` and revalidates the
+live pane identity immediately before it signals that group. Delete removes
+the retained tmux session and the state directory. A missing state directory
+does not prevent the removal of a retained tmux session. If state removal
+does not complete, the delete fails; Delete never reports success over
+leftover state.
+
 Closing Terminal or Detach.app only removes clients. The Detach tmux server,
 worker, provider, checkpoint loop, and power wrapper continue in the macOS user
 session. They do not promise survival across logout or reboot, and an explicit

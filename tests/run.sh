@@ -1439,6 +1439,62 @@ wait "$checkpoint_holder"
 ! run_codex list --json | grep -F "\"session_name\":\"$SESSION\"" >/dev/null
 codex_scenario_event pass SC-SESSION-DELETE-CODEX
 
+# A managed tmux session whose state directory was removed by hand is a
+# tmux-only remnant. Delete must still remove the remnant instead of dying
+# on the missing directory.
+remnant_name=delete-remnant
+remnant_session=detach-codex-delete-remnant
+FAKE_CODEX_INIT_DELAY=0 FAKE_CODEX_SLEEP=1 FAKE_CODEX_EXIT=0 \
+  run_codex --name "$remnant_name" --detach -- 'tmux-only remnant delete coverage'
+remnant_pane="$(tmux -L "$SOCKET" show-options -qv -t "=$remnant_session:" @detach_pane_id)"
+wait_for_pane_dead "$remnant_pane"
+tmux -L "$SOCKET" has-session -t "=$remnant_session"
+rm -rf "$DETACH_CODEX_STATE_ROOT/sessions/$remnant_session"
+run_codex delete --force "$remnant_name"
+! tmux -L "$SOCKET" has-session -t "=$remnant_session" 2>/dev/null
+
+# A delete that cannot remove every byte must fail loudly instead of
+# printing a misleading success over leftover state.
+stubborn_name=delete-stubborn
+stubborn_session=detach-codex-delete-stubborn
+FAKE_CODEX_INIT_DELAY=0 FAKE_CODEX_SLEEP=1 FAKE_CODEX_EXIT=0 \
+  run_codex --name "$stubborn_name" --detach -- 'partial delete failure coverage'
+stubborn_pane="$(tmux -L "$SOCKET" show-options -qv -t "=$stubborn_session:" @detach_pane_id)"
+wait_for_pane_dead "$stubborn_pane"
+stubborn_dir="$DETACH_CODEX_STATE_ROOT/sessions/$stubborn_session"
+mkdir -p "$stubborn_dir/nested"
+printf 'undeletable\n' >"$stubborn_dir/nested/keep"
+chmod 0555 "$stubborn_dir/nested"
+if run_codex delete --force "$stubborn_name" >"$TMP_ROOT/delete-stubborn.out" 2>&1; then
+  printf 'delete unexpectedly succeeded over an undeletable nested file\n' >&2
+  exit 1
+fi
+grep -F 'could not completely remove session state' "$TMP_ROOT/delete-stubborn.out" >/dev/null
+! grep -F "Deleted $stubborn_session" "$TMP_ROOT/delete-stubborn.out" >/dev/null
+grep -Fx 'undeletable' "$stubborn_dir/nested/keep" >/dev/null
+chmod 0755 "$stubborn_dir/nested"
+rm -rf "$stubborn_dir"
+! tmux -L "$SOCKET" has-session -t "=$stubborn_session" 2>/dev/null
+
+# Stop resolves the pane process group through /bin/ps. A failing ps first
+# on PATH must not replace it: a single-pid fallback TERM would leave the
+# HUP-ignoring provider running after kill-session and fail the stop, while
+# the revalidated group TERM still stops the whole managed group cleanly.
+shadow_name=delete-stop-shadow-ps
+shadow_session=detach-codex-delete-stop-shadow-ps
+shadow_bin="$TMP_ROOT/shadow-bin"
+mkdir -p "$shadow_bin"
+printf '%s\n' '#!/bin/bash' 'exit 1' >"$shadow_bin/ps"
+chmod 0755 "$shadow_bin/ps"
+DETACH_CODEX_BIN="$FAKE_CODEX_LONG_BIN" \
+  run_codex --name "$shadow_name" --detach -- 'stop PATH ps coverage'
+wait_for_tmux_option "$shadow_session" @detach_status running
+PATH="$shadow_bin:$PATH" run_codex stop "$shadow_name"
+! tmux -L "$SOCKET" has-session -t "=$shadow_session" 2>/dev/null
+[ "$("$STATE_HELPER" meta get \
+  "$DETACH_CODEX_STATE_ROOT/sessions/$shadow_session/meta.json" status)" = stopped ]
+run_codex delete --force "$shadow_name"
+
 # A start holds the install lock through its readiness wait (up to 35
 # seconds). A concurrent config write must wait for that holder instead of
 # failing spuriously on a shorter acquisition timeout.
