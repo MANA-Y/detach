@@ -57,9 +57,7 @@ final class OnboardingLivePoller {
         locate: @escaping () async -> ProviderAvailability,
         heartbeatIsHealthy: @escaping @MainActor () -> Bool,
         installedCopyExists: @escaping () -> Bool,
-        sleep: @escaping (UInt64) async throws -> Void = {
-            try await Task.sleep(nanoseconds: $0)
-        }
+        sleep: @escaping (UInt64) async throws -> Void = defaultSleep
     ) {
         self.refreshStatuses = refreshStatuses
         self.servicesEnabled = servicesEnabled
@@ -93,11 +91,18 @@ final class OnboardingLivePoller {
         case .autoSetup, .mainApp: return
         }
         task = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.tick(step)
-                guard let sleep = self?.sleep else { return }
-                do { try await sleep(interval) } catch { return }
-            }
+            await self?.run(step, interval: interval)
+        }
+    }
+
+    static func defaultSleep(nanoseconds: UInt64) async throws {
+        try await Task.sleep(nanoseconds: nanoseconds)
+    }
+
+    func run(_ step: OnboardingStep, interval: UInt64) async {
+        while !Task.isCancelled {
+            await tick(step)
+            do { try await sleep(interval) } catch { return }
         }
     }
 
