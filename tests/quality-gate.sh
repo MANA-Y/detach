@@ -318,6 +318,13 @@ printf '%s\n' 'struct Changed {}' >"$REPO/app/Sources/DetachKit/Changed.swift"
 plan="$(gate --plan)"
 [[ "$plan" = *'stages=static,swift,quality-contracts,app,ui-e2e,release-budget' ]]
 
+setup_fixture swift-test
+mkdir -p "$REPO/app/Tests/DetachKitTests"
+printf '%s\n' 'final class ChangedTests {}' \
+  >"$REPO/app/Tests/DetachKitTests/ChangedTests.swift"
+plan="$(gate --plan)"
+[[ "$plan" = *'stages=static,swift,quality-contracts,app,ui-e2e,release-budget' ]]
+
 setup_fixture typed-state-impact
 mkdir -p "$REPO/app/Sources/DetachKit"
 printf '%s\n' 'struct ChangedState {}' >"$REPO/app/Sources/DetachKit/DetachStateCommand.swift"

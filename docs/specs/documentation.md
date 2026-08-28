@@ -44,11 +44,11 @@ Hosted CI is the merge-readiness authority.
 - Resume evidence retains stage timing and digest-bound logs, binds its parent,
   requires the same authority, and cannot turn a prior time-budget regression
   into authoritative evidence.
-- Quality policy files contain only current version and state; Git is history.
+- Quality policy files contain current version and state; Git is history.
   Runtime tools do not decode old policy schemas. A last-green metrics artifact
-  can use an earlier policy number only with the current evidence schema. This
-  preserves continuity without old-policy decoding.
-- The quality policy registers each tracked durable spec exactly once. It has
+  can use an earlier policy number only with the current evidence schema,
+  preserving continuity without old-policy decoding.
+- Quality policy registers each tracked durable spec exactly once. It has
   no spec-history or lifecycle-status field. Each registered spec owns a route,
   a capability, and a requirement. Each requirement links to a user journey
   and at least one automated scenario. Generated JSON and Markdown views must
@@ -71,27 +71,28 @@ Hosted CI is the merge-readiness authority.
   packaged and runtime work on macOS. All selected levels are required.
 - Shards revalidate merge identity but have no merge authority. The final Linux
   job recomputes the plan and accepts only exact digest-bound shard evidence.
-  Evidence roots are absolute. Ambiguity fails closed. A failed shard cancels peers.
+  Evidence roots are absolute; ambiguity fails closed and a failed shard cancels peers.
 - CI keeps a ten-minute timing ratchet with no reference-Mac limit.
-- Gate contracts admit three heavy shards on eight CPUs and two on
-  fewer CPUs. Light contracts stay concurrent. Budgets expose overload.
-- Swift and release builds use separate caches and split at three CPUs.
-  Smaller hosts run in order. UI waits for app; metrics for both.
+- Gate contracts admit three heavy shards on eight CPUs and two on smaller
+  hosts; light contracts stay concurrent and budgets expose overload.
+- Swift and release builds use separate caches and split at three CPUs;
+  smaller hosts run in order. UI waits for app; metrics require both.
   Gate-contract and release-workflow exclude heavy peers. Gate-contract permits
   preflight and gates distribution. Other work uses two heavy and one
   integration lane.
 - Exact keys bind code, resources, scripts, version, and toolchain. `main` warms
-  only a missing app or executable product. CI verifies hits and rebuilds
-  misses. Warming is not evidence.
-- CI uses the newest green `main` artifact with measured metrics. A later run
-  without metrics does not replace it. Test identities, aggregate coverage,
-  and critical-source coverage cannot decrease. Changed Swift lines need 90
-  percent coverage. A person cannot raise floors. Policy-owned exclusions need
+  only missing products; CI verifies hits and rebuilds misses. Warming is not
+  evidence.
+- CI uses the newest green `main` artifact with metrics; a later run without
+  them does not replace it. Test identities and aggregate or critical-source
+  coverage cannot decrease. Changed Swift lines need 90 percent coverage; a
+  person cannot raise floors. Policy exclusions need
   scenario evidence and cannot cover critical sources. Named test-only regions
   stay in aggregate coverage but not changed-line metrics.
-- Authoritative coverage combines Swift tests and packaged-app journeys. CI
-  resolves one shared cache, then three builds use isolated paths. The
-  gate splits workers and verifies the normal bundle. Only the stripped private
+- Authoritative coverage combines Swift and packaged-app tests. Swift-test
+  changes run both, so metrics match the baseline. CI resolves one shared
+  cache, then three builds use isolated paths. The gate splits workers and
+  verifies the normal bundle. Only a stripped private
   copy gets the instrumented executable. Metrics merge profiles without a
   second test run.
 - `coverage-opportunities.json` is a separate digest-bound advisory artifact.

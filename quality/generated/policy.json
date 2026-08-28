@@ -705,7 +705,7 @@
     "mutation_timeout_seconds": 240,
     "pr_feedback_seconds": 600
   },
-  "policy": 50,
+  "policy": 51,
   "release_domains": [
     {
       "gates": "-",
@@ -3266,7 +3266,7 @@
     {
       "capabilities": "quality-system",
       "id": "swift-test",
-      "stages": "static,swift,quality-contracts,release-budget"
+      "stages": "static,swift,quality-contracts,app,release-budget"
     },
     {
       "capabilities": "installation,update",
