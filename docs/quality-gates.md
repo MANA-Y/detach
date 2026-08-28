@@ -274,7 +274,10 @@ that policy. The bounded care workflow can publish a validated attention
 result, then marks its run failed and opens one issue. A later deploy restores
 the newest valid care artifact for the current policy. The next healthy care
 run closes the issue. No workflow publishes pull request or local gate
-evidence.
+evidence. Hosted dashboard jobs pass downloaded summary and baseline paths
+through environment variables. They do not expand those paths with workflow
+expressions inside the shell. Producing steps write those paths with
+multiline-safe output delimiters.
 
 ## Definition of done
 

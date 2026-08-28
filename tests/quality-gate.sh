@@ -145,6 +145,20 @@ grep -F 'scripts/quality-care latest --optional' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'care_args+=(--care-summary' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'MUTATION_SUMMARY:' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F 'summary<<EOF' \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+if grep -F 'if [ -n "${{' \
+    "$ROOT/.github/workflows/quality-gates.yml" >/dev/null; then
+  printf 'quality dashboard interpolates step outputs into the shell\n' >&2
+  exit 1
+fi
+if grep -F "printf 'summary=%s\\n'" \
+    "$ROOT/.github/workflows/quality-gates.yml" >/dev/null; then
+  printf 'quality dashboard writes summary outputs without a delimiter\n' >&2
+  exit 1
+fi
 
 prepare_template() {
   local stage
