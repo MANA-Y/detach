@@ -228,17 +228,32 @@ struct SessionAttachTerminalView: NSViewRepresentable {
         func installKeyboardMonitor(for view: LocalProcessTerminalView) {
             removeKeyboardMonitor()
             keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
-                [weak view] event in
-                guard let view,
-                      event.window === view.window,
-                      Self.isFocused(view, in: event.window),
-                      SessionAttachKeyboard.routeProviderShortcut(
-                          from: event,
-                          send: view.send) else {
-                    return event
-                }
-                return nil
+                [weak self, weak view] event in
+                guard let self, let view else { return event }
+                return self.routeKeyboardEvent(
+                    event,
+                    window: event.window,
+                    firstResponder: event.window?.firstResponder,
+                    in: view,
+                    send: view.send)
             }
+        }
+
+        func routeKeyboardEvent(
+            _ event: NSEvent,
+            window: NSWindow?,
+            firstResponder: NSResponder?,
+            in view: LocalProcessTerminalView,
+            send: ([UInt8]) -> Void
+        ) -> NSEvent? {
+            guard window === view.window,
+                  Self.isFocused(view, firstResponder: firstResponder),
+                  SessionAttachKeyboard.routeProviderShortcut(
+                      from: event,
+                      send: send) else {
+                return event
+            }
+            return nil
         }
 
         func removeKeyboardMonitor() {
@@ -249,9 +264,9 @@ struct SessionAttachTerminalView: NSViewRepresentable {
 
         private static func isFocused(
             _ view: LocalProcessTerminalView,
-            in window: NSWindow?
+            firstResponder: NSResponder?
         ) -> Bool {
-            guard let responder = window?.firstResponder else { return false }
+            guard let responder = firstResponder else { return false }
             if responder === view { return true }
             return (responder as? NSView)?.isDescendant(of: view) == true
         }

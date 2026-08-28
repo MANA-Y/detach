@@ -378,6 +378,16 @@ enum UIE2ETestDriver {
                 find(identifier: "session-preview-terminal") != nil
             }
             checks.append("live-session-hosts-attach-client")
+            try await waitUntil("live terminal input readiness", attempts: 40) {
+                FileManager.default.fileExists(atPath: configuration.root
+                    .appendingPathComponent("fake/control-v-ready").path)
+            }
+            try await keyPress("v", keyCode: 9, modifiers: [.control])
+            try await waitUntil("raw control-V reaches attach PTY", attempts: 40) {
+                (try? Data(contentsOf: configuration.root
+                    .appendingPathComponent("fake/control-v.bin"))) == Data([0x16])
+            }
+            checks.append("live-terminal-routes-control-v")
             let identityMarker = try await measuredFrame(
                 identifier: "session-detail-identity-marker",
                 name: "session identity marker")

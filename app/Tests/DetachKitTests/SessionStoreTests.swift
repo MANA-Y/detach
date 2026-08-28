@@ -308,6 +308,45 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertNotNil(invalidActionError)
     }
 
+    func testPrepareInteractiveCoversRecoverTimeoutAndEmptyFailure() async throws {
+        let recoverCLI = FakeCLI()
+        let recoverable = line.replacingOccurrences(
+            of: #""effective_status":"running""#,
+            with: #""effective_status":"recoverable""#)
+        recoverCLI.responses["list --json"] = ok(recoverable)
+        recoverCLI.responses[
+            "codex recover --detach detach-codex-p-1"
+        ] = .success(CLIResult(
+            exitCode: 124,
+            stdout: "",
+            stderr: "",
+            timedOut: true))
+        let recoverStore = SessionStore(cli: recoverCLI)
+        await recoverStore.refresh()
+
+        let recoverError = await recoverStore.prepareInteractive(
+            .recover,
+            on: try XCTUnwrap(recoverStore.sessions.first))
+
+        XCTAssertEqual(recoverError, L10n.string("detach recover timed out"))
+
+        let failureCLI = FakeCLI()
+        failureCLI.responses["list --json"] = ok(line)
+        failureCLI.responses["resume --detach u1"] = .success(CLIResult(
+            exitCode: 23,
+            stdout: "",
+            stderr: " \n",
+            timedOut: false))
+        let failureStore = SessionStore(cli: failureCLI)
+        await failureStore.refresh()
+
+        let failure = await failureStore.prepareInteractive(
+            .resume,
+            on: try XCTUnwrap(failureStore.sessions.first))
+
+        XCTAssertEqual(failure, L10n.format("detach exited with status %d", 23))
+    }
+
     func testBulkFinishedDeleteContinuesAfterFailureAndRefreshesOnce() async throws {
         let cli = FakeCLI()
         let firstLine = line.replacingOccurrences(
@@ -434,6 +473,23 @@ final class SessionStoreTests: XCTestCase {
         await sleep.waitUntilCancelled()
 
         XCTAssertEqual(cli.calls, [["list", "--json"]])
+    }
+
+    func testForegroundPollingUsesTheBoundedBaseInterval() async {
+        let cli = FakeCLI()
+        cli.responses["list --json"] = ok(line)
+        let sleep = PollSleepProbe()
+        let store = SessionStore(
+            cli: cli,
+            pollSleep: { try await sleep.sleep(nanoseconds: $0) })
+
+        store.startPolling(interval: 0.01)
+        await sleep.waitUntilStarted()
+
+        let intervals = await sleep.intervals
+        XCTAssertEqual(intervals, [500_000_000])
+        store.stopPolling()
+        await sleep.waitUntilCancelled()
     }
 
     func testSnapshotObserverReceivesEverySuccessfulPoll() async {

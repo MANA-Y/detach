@@ -311,6 +311,42 @@ final class SessionAttachTerminalTests: XCTestCase {
         XCTAssertNil(SessionAttachKeyboard.providerInput(for: commandV))
     }
 
+    @MainActor
+    func testScopedKeyboardRouting() throws {
+        let terminal = LocalProcessTerminalView(frame: .zero)
+        let coordinator = SessionAttachTerminalView.Coordinator(
+            controller: SessionAttachController(invocation: Self.invocation()),
+            onTerminated: { _ in })
+
+        let controlV = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .control,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{16}",
+            charactersIgnoringModifiers: "v",
+            isARepeat: false,
+            keyCode: 9))
+        var received: [UInt8] = []
+
+        XCTAssertNil(coordinator.routeKeyboardEvent(
+            controlV,
+            window: nil,
+            firstResponder: terminal,
+            in: terminal,
+            send: { received = $0 }))
+        XCTAssertEqual(received, [0x16])
+
+        XCTAssertTrue(coordinator.routeKeyboardEvent(
+            controlV,
+            window: nil,
+            firstResponder: nil,
+            in: terminal,
+            send: { _ in }) === controlV)
+    }
+
     private func bufferText(_ terminal: HeadlessTerminal) -> String {
         String(data: terminal.terminal.getBufferAsData(), encoding: .utf8) ?? ""
     }

@@ -304,6 +304,7 @@ run_app_scenario() {
       background-app-starts-without-focus|disconnected-stop-blocks-action|\
       finished-selection-clears-scrollbar|session-uuid-copies-from-text-side|\
       live-session-hosts-attach-client|\
+      live-terminal-routes-control-v|\
       recover-and-reconnect-run-in-app-with-terminal-fallback|\
       resume-runs-in-app-with-terminal-fallback|\
       settings-window-stays-on-screen|\
@@ -342,6 +343,7 @@ run_app_scenario main sessions 32 \
   session-uuid-copies-from-text-side \
   resume-runs-in-app-with-terminal-fallback \
   live-session-hosts-attach-client \
+  live-terminal-routes-control-v \
   session-signals-stay-distinct \
   disconnected-stop-blocks-action \
   safe-action-reaches-fake-cli \

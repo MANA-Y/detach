@@ -145,12 +145,14 @@ public final class SessionStore {
         on session: Session
     ) async -> String? {
         let arguments: [String]
+        let timeoutMessage: String
         switch action {
         case .resume:
             guard let sessionID = session.agentSessionId, !sessionID.isEmpty else {
                 return L10n.string("The session has no provider UUID to resume.")
             }
             arguments = ["resume", "--detach", sessionID]
+            timeoutMessage = L10n.string("detach resume timed out")
         case .recover:
             arguments = [
                 session.provider.rawValue,
@@ -158,6 +160,7 @@ public final class SessionStore {
                 "--detach",
                 session.sessionName,
             ]
+            timeoutMessage = L10n.string("detach recover timed out")
         case .attach, .stop, .delete:
             return L10n.format(
                 "Internal error: %@ is not an in-app start action",
@@ -168,14 +171,7 @@ public final class SessionStore {
             let result = try await cli.run(arguments: arguments, timeout: 120)
             await refresh()
             if result.timedOut {
-                switch action {
-                case .resume:
-                    return L10n.string("detach resume timed out")
-                case .recover:
-                    return L10n.string("detach recover timed out")
-                case .attach, .stop, .delete:
-                    preconditionFailure("Unexpected in-app start action")
-                }
+                return timeoutMessage
             }
             guard result.exitCode == 0 else {
                 let stderr = result.stderr.trimmingCharacters(
