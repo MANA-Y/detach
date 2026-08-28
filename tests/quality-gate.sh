@@ -147,8 +147,15 @@ grep -F 'care_args+=(--care-summary' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'MUTATION_SUMMARY:' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F 'summary<<EOF' \
+grep -F 'delimiter="detach-$(uuidgen)"' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+grep -F "printf 'summary<<%s\\n' \"\$delimiter\"" \
+  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+if grep -F '<<EOF' \
+    "$ROOT/.github/workflows/quality-gates.yml" >/dev/null; then
+  printf 'quality dashboard uses a predictable output delimiter\n' >&2
+  exit 1
+fi
 if grep -F 'if [ -n "${{' \
     "$ROOT/.github/workflows/quality-gates.yml" >/dev/null; then
   printf 'quality dashboard interpolates step outputs into the shell\n' >&2

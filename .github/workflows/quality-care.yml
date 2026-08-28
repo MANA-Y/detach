@@ -117,13 +117,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           baseline_root="$(scripts/quality-baseline)"
+          delimiter="detach-$(uuidgen)"
           {
-            echo 'root<<EOF'
+            printf 'root<<%s\n' "$delimiter"
             printf '%s\n' "$baseline_root"
-            echo 'EOF'
-            echo 'run_id<<EOF'
+            printf '%s\n' "$delimiter"
+            printf 'run_id<<%s\n' "$delimiter"
             printf '%s\n' "${baseline_root##*/}"
-            echo 'EOF'
+            printf '%s\n' "$delimiter"
           } >>"$GITHUB_OUTPUT"
       - id: mutation-evidence
         name: Restore latest mutation score when available
@@ -131,12 +132,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           summary="$(scripts/quality-mutation latest --optional)"
+          delimiter="detach-$(uuidgen)"
           {
-            echo 'summary<<EOF'
+            printf 'summary<<%s\n' "$delimiter"
             if [ -n "$summary" ]; then
               printf '%s\n' "$summary"
             fi
-            echo 'EOF'
+            printf '%s\n' "$delimiter"
           } >>"$GITHUB_OUTPUT"
       - id: security-evidence
         name: Restore latest security result when available
@@ -144,12 +146,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           summary="$(scripts/quality-security latest --optional)"
+          delimiter="detach-$(uuidgen)"
           {
-            echo 'summary<<EOF'
+            printf 'summary<<%s\n' "$delimiter"
             if [ -n "$summary" ]; then
               printf '%s\n' "$summary"
             fi
-            echo 'EOF'
+            printf '%s\n' "$delimiter"
           } >>"$GITHUB_OUTPUT"
       - name: Generate dashboard with care evidence
         env:

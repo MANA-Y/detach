@@ -277,7 +277,7 @@ run closes the issue. No workflow publishes pull request or local gate
 evidence. Hosted dashboard jobs pass downloaded summary and baseline paths
 through environment variables. They do not expand those paths with workflow
 expressions inside the shell. Producing steps write those paths with
-multiline-safe output delimiters.
+unpredictable multiline output delimiters.
 
 ## Definition of done
 

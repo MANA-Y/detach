@@ -107,12 +107,15 @@ def main() -> int:
         "scripts/quality-care latest --optional",
         "care_args+=(--care-summary",
         "CARE_SUMMARY:",
-        "summary<<EOF",
+        'delimiter="detach-$(uuidgen)"',
+        "printf 'summary<<%s\\n'",
     ):
         if required not in workflow:
             fail(f"mutation workflow is missing: {required}")
     if 'if [ -n "${{' in workflow or "printf 'summary=%s\\n'" in workflow:
         fail("mutation dashboard interpolates downloaded paths into the shell")
+    if "<<EOF" in workflow:
+        fail("mutation dashboard uses a predictable output delimiter")
     if re.search(r"uses:\s+\S+@v[0-9]", workflow):
         fail("mutation workflow contains a mutable Action tag")
     with tempfile.TemporaryDirectory(prefix="detach-quality-mutation-") as raw:

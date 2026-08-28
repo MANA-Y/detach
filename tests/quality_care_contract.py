@@ -82,10 +82,16 @@ def assert_workflows() -> None:
     ):
         if required not in docs:
             raise AssertionError(f"documentation-care workflow is missing: {required}")
-    if "MUTATION_SUMMARY:" not in care or "summary<<EOF" not in care:
+    if (
+        "MUTATION_SUMMARY:" not in care
+        or 'delimiter="detach-$(uuidgen)"' not in care
+        or "printf 'summary<<%s\\n'" not in care
+    ):
         raise AssertionError(
             "quality-care dashboard does not pass downloaded paths through env"
         )
+    if "<<EOF" in care:
+        raise AssertionError("quality-care dashboard uses a predictable output delimiter")
     if 'if [ -n "${{' in care or "printf 'summary=%s\\n'" in care:
         raise AssertionError(
             "quality-care dashboard interpolates downloaded paths into the shell"

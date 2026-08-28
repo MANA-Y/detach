@@ -126,8 +126,11 @@ def main() -> None:
                     f"{path.name} does not preserve the latest security result")
         require("--security-summary" in pages_workflow,
                 f"{path.name} does not pass security evidence to the dashboard")
-        require("summary<<EOF" in pages_workflow,
-                f"{path.name} writes summary outputs without a delimiter")
+        require('delimiter="detach-$(uuidgen)"' in pages_workflow
+                and "printf 'summary<<%s\\n'" in pages_workflow,
+                f"{path.name} writes summary outputs without a safe delimiter")
+        require("<<EOF" not in pages_workflow,
+                f"{path.name} uses a predictable output delimiter")
         require('if [ -n "${{' not in pages_workflow
                 and "printf 'summary=%s\\n'" not in pages_workflow,
                 f"{path.name} interpolates downloaded paths into the shell")
