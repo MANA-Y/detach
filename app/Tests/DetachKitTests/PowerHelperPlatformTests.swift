@@ -482,6 +482,114 @@ final class PowerHelperPlatformTests: XCTestCase {
             try FileManager.default.contentsOfDirectory(atPath: root.path), [])
     }
 
+    func testSecureFileStoreQuarantineSurfacesUnsearchableStateDirectory() throws {
+        try XCTSkipIf(
+            geteuid() == 0, "permission checks do not constrain the root user")
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        let stateURL = root.appendingPathComponent("state.json")
+        try Data("not-json".utf8).write(to: stateURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o000], ofItemAtPath: root.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: root.path)
+        }
+
+        XCTAssertThrowsError(
+            try SecureFilePowerHelperStateStore(fileURL: stateURL)
+                .quarantineUnreadableState()
+        ) { error in
+            XCTAssertEqual(
+                error as? PowerHelperPlatformError,
+                .fileSystem(operation: "lstat", code: EACCES))
+        }
+    }
+
+    func testSecureFileStoreQuarantineSurfacesRenameFailure() throws {
+        try XCTSkipIf(
+            geteuid() == 0, "permission checks do not constrain the root user")
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        let stateURL = root.appendingPathComponent("state.json")
+        try Data("not-json".utf8).write(to: stateURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o555], ofItemAtPath: root.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: root.path)
+        }
+
+        XCTAssertThrowsError(
+            try SecureFilePowerHelperStateStore(fileURL: stateURL)
+                .quarantineUnreadableState()
+        ) { error in
+            XCTAssertEqual(
+                error as? PowerHelperPlatformError,
+                .fileSystem(operation: "rename", code: EACCES))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stateURL.path))
+    }
+
+    func testSecureFileStoreQuarantineSurfacesDirectoryOpenFailure() throws {
+        try XCTSkipIf(
+            geteuid() == 0, "permission checks do not constrain the root user")
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        let stateURL = root.appendingPathComponent("state.json")
+        try Data("not-json".utf8).write(to: stateURL)
+        // A write+execute directory permits the rename but not the read open.
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o333], ofItemAtPath: root.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: root.path)
+        }
+
+        XCTAssertThrowsError(
+            try SecureFilePowerHelperStateStore(fileURL: stateURL)
+                .quarantineUnreadableState()
+        ) { error in
+            XCTAssertEqual(
+                error as? PowerHelperPlatformError,
+                .fileSystem(operation: "open directory", code: EACCES))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stateURL.path))
+    }
+
+    func testSecureFileStoreQuarantineSurfacesDirectorySyncFailure() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        let stateURL = root.appendingPathComponent("state.json")
+        try Data("not-json".utf8).write(to: stateURL)
+        let store = SecureFilePowerHelperStateStore(
+            fileURL: stateURL,
+            fileManager: .default,
+            directorySyncer: { _ in
+                errno = EIO
+                return -1
+            })
+
+        XCTAssertThrowsError(try store.quarantineUnreadableState()) { error in
+            XCTAssertEqual(
+                error as? PowerHelperPlatformError,
+                .fileSystem(operation: "fsync directory", code: EIO))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stateURL.path))
+    }
+
     func testSecureFileStoreRejectsInsecureDirectoryShapesOnSave() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("detach-power-store-\(UUID().uuidString)")

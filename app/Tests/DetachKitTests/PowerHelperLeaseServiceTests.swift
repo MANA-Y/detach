@@ -35,6 +35,7 @@ final class PowerHelperLeaseServiceTests: XCTestCase {
         var state: PowerHelperPersistentState?
         var failNextSave = false
         var loadError: Error?
+        var quarantineError: Error?
         private(set) var loadCount = 0
         private(set) var saveCount = 0
         private(set) var quarantineCount = 0
@@ -63,6 +64,23 @@ final class PowerHelperLeaseServiceTests: XCTestCase {
 
         func quarantineUnreadableState() throws {
             quarantineCount += 1
+            if let quarantineError { throw quarantineError }
+        }
+    }
+
+    /// Store without a durable file: it relies on the protocol's default
+    /// no-op quarantine.
+    private final class MinimalStore: PowerHelperStateStoring {
+        var state: PowerHelperPersistentState?
+        var loadError: Error?
+
+        func load() throws -> PowerHelperPersistentState? {
+            if let loadError { throw loadError }
+            return state
+        }
+
+        func save(_ state: PowerHelperPersistentState) throws {
+            self.state = state
         }
     }
 
@@ -918,6 +936,40 @@ final class PowerHelperLeaseServiceTests: XCTestCase {
         let service = try makeService(store: store, backend: backend)
 
         XCTAssertEqual(store.quarantineCount, 1)
+        XCTAssertEqual(
+            try service.acquireLease(identity, assertionActive: true).state,
+            .protected)
+        XCTAssertEqual(store.state?.leases.count, 1)
+    }
+
+    func testQuarantineFailureDoesNotPreventACleanStart() throws {
+        let store = FakeStore()
+        store.loadError = ExpectedFailure.store
+        store.quarantineError = ExpectedFailure.store
+        let backend = FakeBackend(enabled: false)
+
+        let service = try makeService(store: store, backend: backend)
+
+        XCTAssertEqual(store.quarantineCount, 1)
+        XCTAssertEqual(
+            try service.acquireLease(identity, assertionActive: true).state,
+            .protected)
+        XCTAssertEqual(store.state?.leases.count, 1)
+    }
+
+    func testDefaultQuarantineIsANoOpForStoresWithoutDurableFiles() throws {
+        let store = MinimalStore()
+        store.loadError = ExpectedFailure.store
+        let backend = FakeBackend(enabled: false)
+
+        let service = try PowerHelperLeaseService(
+            store: store,
+            backend: backend,
+            batteryReader: FakeBatteryReader(lowBattery: false),
+            bootSessionReader: FakeBootSessionReader(identifier: "test-boot"),
+            now: { self.now },
+            leaseTimeout: 120)
+
         XCTAssertEqual(
             try service.acquireLease(identity, assertionActive: true).state,
             .protected)

@@ -642,13 +642,28 @@ public final class SecureFilePowerHelperStateStore:
 
     private let fileURL: URL
     private let fileManager: FileManager
+    private let directorySyncer: (Int32) -> Int32
 
-    public init(
+    public convenience init(
         fileURL: URL = SecureFilePowerHelperStateStore.defaultFileURL,
         fileManager: FileManager = .default
     ) {
+        self.init(
+            fileURL: fileURL,
+            fileManager: fileManager,
+            directorySyncer: Darwin.fsync)
+    }
+
+    /// Test seam for the directory-sync failure path, which hardware cannot
+    /// raise on demand.
+    init(
+        fileURL: URL,
+        fileManager: FileManager,
+        directorySyncer: @escaping (Int32) -> Int32
+    ) {
         self.fileURL = fileURL
         self.fileManager = fileManager
+        self.directorySyncer = directorySyncer
     }
 
     public func load() throws -> PowerHelperPersistentState? {
@@ -695,7 +710,7 @@ public final class SecureFilePowerHelperStateStore:
                 operation: "open directory", code: errno)
         }
         defer { Darwin.close(directoryDescriptor) }
-        guard Darwin.fsync(directoryDescriptor) == 0 else {
+        guard directorySyncer(directoryDescriptor) == 0 else {
             throw PowerHelperPlatformError.fileSystem(
                 operation: "fsync directory", code: errno)
         }
