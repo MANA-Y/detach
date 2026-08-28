@@ -20,6 +20,7 @@ QUALITY_APP_SCRATCH="${DETACH_QUALITY_APP_SCRATCH:-0}"
 SWIFTTERM_VERSION="${DETACH_SWIFTTERM_VERSION:-1.19.0}"
 SWIFTTERM_LICENSE_SOURCE="$APP_ROOT/Resources/ThirdParty/SwiftTerm/LICENSE.txt"
 SWIFTTERM_LICENSE_SHA256="0dc6bdd99b652c675586854efcacd59de21e2679d64fcaa20424aeb951df6856"
+SWIFTTERM_SHADER_SHA256="5f9f1d64f238821d11e4eda5f33c933d85d4e7f124a2c3bd8a930f8726b2fc12"
 APP="$APP_ROOT/build/Detach.app"
 PAYLOAD="$APP/Contents/Resources/DetachCLI"
 LAUNCH_AGENTS="$APP/Contents/Library/LaunchAgents"
@@ -163,12 +164,20 @@ export DETACH_WATCHDOG_INFO_PLIST="$WATCHDOG_INFO_PLIST"
 install_swiftterm_resources() {
   local bin_path="$1"
   local bundle="$bin_path/SwiftTerm_SwiftTerm.bundle"
+  local shader="$bundle/Shaders.metal"
 
-  # SwiftTerm 1.19.0 processes Apple/Metal/Shaders.metal into this resource
-  # bundle. Its Metal renderer probes Contents/Resources for exactly this
-  # bundle name, so packaging fails closed when SwiftPM did not emit it.
-  [ -d "$bundle" ] || {
+  [ -d "$bundle" ] && [ ! -L "$bundle" ] || {
     printf 'SwiftPM did not produce SwiftTerm_SwiftTerm.bundle\n' >&2
+    exit 1
+  }
+  [ -f "$shader" ] && [ ! -L "$shader" ] || {
+    printf 'SwiftPM did not produce the pinned SwiftTerm Metal shader\n' >&2
+    exit 1
+  }
+  [ "$(/usr/bin/shasum -a 256 "$shader" | /usr/bin/awk '{print $1}')" = \
+    "$SWIFTTERM_SHADER_SHA256" ] || {
+    printf 'SwiftTerm Metal shader does not match SwiftTerm %s\n' \
+      "$SWIFTTERM_VERSION" >&2
     exit 1
   }
   ditto "$bundle" "$APP/Contents/Resources/SwiftTerm_SwiftTerm.bundle"

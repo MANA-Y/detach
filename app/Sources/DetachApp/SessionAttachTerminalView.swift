@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import SwiftUI
 import SwiftTerm
 import DetachKit
@@ -26,7 +27,8 @@ final class SessionAttachController: NSObject, LocalProcessTerminalViewDelegate 
     }
 
     func terminateClient() {
-        terminalView?.terminate()
+        guard let terminalView else { return }
+        Self.terminate(process: terminalView.process)
     }
 
     func send(_ text: String) {
@@ -61,6 +63,29 @@ final class SessionAttachController: NSObject, LocalProcessTerminalViewDelegate 
 
     static func terminalFont(pointSize: CGFloat) -> NSFont {
         NSFont.monospacedSystemFont(ofSize: max(pointSize, 1), weight: .regular)
+    }
+
+    static func terminate(process: LocalProcess, timeout: TimeInterval = 1) {
+        let pid = process.shellPid
+        process.terminate()
+        guard pid > 0 else { return }
+
+        DispatchQueue.global(qos: .utility).async {
+            var status: Int32 = 0
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline {
+                let result = waitpid(pid, &status, WNOHANG)
+                if result == pid || (result == -1 && errno == ECHILD) {
+                    return
+                }
+                guard result == 0 else { return }
+                usleep(10_000)
+            }
+
+            guard waitpid(pid, &status, WNOHANG) == 0 else { return }
+            _ = Darwin.kill(pid, SIGKILL)
+            while waitpid(pid, &status, 0) == -1 && errno == EINTR {}
+        }
     }
 
 // quality-coverage:begin swiftterm-metal

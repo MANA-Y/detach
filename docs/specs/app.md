@@ -162,9 +162,9 @@ user-specific path. Native power protection requires no Apple Events or
 Automation entitlement.
 
 Distribution bootstrap runs only from `/Applications`, never a DMG or App
-Translocation path. A live managed session is interactive in Detach: an
-ephemeral PTY client runs `detach <provider> attach`. Closing
-the view or app ends only that client. Health and power stay typed. Open,
+Translocation path. A live managed session uses an ephemeral in-app PTY client
+on `detach <provider> attach <session>`. Closing the view or app ends only that
+client. Health and power stay typed. Open,
 Resume, and Recover use `NSWorkspace` and a `.command` file in a running
 selected terminal, or Terminal. Without one, a private `.zshenv` is the outer
 `ZDOTDIR` until payload removal restores the original.
@@ -175,12 +175,11 @@ grows down, top fixed. The app uses `display_name` as the title, with
 the project/internal name fallback for old records.
 Notifications are opt-in. One poller deduplicates baseline and transitions.
 
-Sparkle 2 and SwiftTerm 1.19.0 are pinned in `Package.resolved`. Sparkle is embedded with its symlink layout
-intact and signed inside-out before the outer app. Packaging requires
-`SwiftTerm_SwiftTerm.bundle` with the Metal shader library or source. Ad-hoc development builds
-alone use `com.apple.security.cs.disable-library-validation`; it must never
-appear in a Developer ID build. `UpdaterService` starts only for a packaged app
-in `/Applications` with a valid HTTPS feed URL and 32-byte Ed25519 public key.
+Sparkle 2 and SwiftTerm 1.19.0 are pinned. The exact SwiftTerm shader bundle is
+shipped and verified. Sparkle keeps its symlink layout and is signed inside-out.
+Only ad-hoc builds use `com.apple.security.cs.disable-library-validation`.
+`UpdaterService` starts only in `/Applications` with a valid HTTPS feed URL and
+32-byte Ed25519 public key.
 A generated or published appcast must contain exactly one arm64 hardware
 requirement so Intel clients are never offered the update.
 A Sparkle update replaces only the app; bootstrap atomically activates its new

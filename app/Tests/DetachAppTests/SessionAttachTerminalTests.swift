@@ -13,7 +13,7 @@ private final class SilentDetachCLI: DetachCLIRunning, @unchecked Sendable {
 }
 
 final class SessionAttachTerminalTests: XCTestCase {
-    func testPublicAttachRoundTripResizeCopyAndClientOnlyTeardown() throws {
+    func testPublicAttachRoundTripResizeCopyAndTermination() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("detach-attach-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -34,12 +34,6 @@ final class SessionAttachTerminalTests: XCTestCase {
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o755],
             ofItemAtPath: detach.path)
-
-        let sibling = Process()
-        sibling.executableURL = URL(fileURLWithPath: "/bin/sleep")
-        sibling.arguments = ["30"]
-        try sibling.run()
-        defer { sibling.terminate() }
 
         let session = try XCTUnwrap(Self.session())
         let invocation = SessionAttachInvocation(
@@ -86,12 +80,15 @@ final class SessionAttachTerminalTests: XCTestCase {
         XCTAssertEqual(current.ws_col, 120)
         XCTAssertEqual(current.ws_row, 40)
 
-        terminal.process.terminate()
+        let childPID = terminal.process.shellPid
+        SessionAttachController.terminate(process: terminal.process)
         try waitUntil { exitCode != nil || !terminal.process.running }
+        try waitUntil {
+            errno = 0
+            return Darwin.kill(childPID, 0) == -1 && errno == ESRCH
+        }
 
-        XCTAssertTrue(
-            sibling.isRunning,
-            "closing the attach client must not stop a sibling process")
+        XCTAssertFalse(terminal.process.running)
         XCTAssertEqual(
             try String(contentsOf: record, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines),

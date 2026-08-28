@@ -17,6 +17,7 @@ SPARKLE_LICENSE_SHA256="389a4e4e9a32f059775b13a06e25a591445ba229d2838d26dd3e7c0c
 SWIFTTERM_VERSION="${DETACH_SWIFTTERM_VERSION:-1.19.0}"
 SWIFTTERM_LICENSE_SOURCE="$APP_ROOT/Resources/ThirdParty/SwiftTerm/LICENSE.txt"
 SWIFTTERM_LICENSE_SHA256="0dc6bdd99b652c675586854efcacd59de21e2679d64fcaa20424aeb951df6856"
+SWIFTTERM_SHADER_SHA256="5f9f1d64f238821d11e4eda5f33c933d85d4e7f124a2c3bd8a930f8726b2fc12"
 REQUIRE_SPARKLE_CONFIG="${DETACH_REQUIRE_SPARKLE_CONFIG:-0}"
 VERIFY_PRODUCTION="${DETACH_VERIFY_PRODUCTION:-0}"
 FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
@@ -255,24 +256,22 @@ cmp -s "$SWIFTTERM_LICENSE_SOURCE" "$SWIFTTERM_LICENSE" || {
   printf 'Bundled SwiftTerm license notice must have mode 0644\n' >&2
   exit 1
 }
-# The Metal renderer probes Contents/Resources for exactly this bundle name
-# and needs the compiled shader library or the shader source inside it.
 SWIFTTERM_BUNDLE="$APP/Contents/Resources/SwiftTerm_SwiftTerm.bundle"
+SWIFTTERM_SHADER="$SWIFTTERM_BUNDLE/Shaders.metal"
 [ -d "$SWIFTTERM_BUNDLE" ] && [ ! -L "$SWIFTTERM_BUNDLE" ] || {
   printf 'Missing bundled SwiftTerm resource bundle\n' >&2
   exit 1
 }
-SWIFTTERM_METALLIB="$(find "$SWIFTTERM_BUNDLE" -type f -name '*.metallib' -print -quit)"
-if [ -z "$SWIFTTERM_METALLIB" ]; then
-  [ -s "$SWIFTTERM_BUNDLE/Shaders.metal" ] || {
-    printf 'Bundled SwiftTerm resource bundle has no Metal shader library or source\n' >&2
-    exit 1
-  }
-  grep -F 'terminal_text_vertex' "$SWIFTTERM_BUNDLE/Shaders.metal" >/dev/null || {
-    printf 'Bundled SwiftTerm shader source is missing the terminal shaders\n' >&2
-    exit 1
-  }
-fi
+[ -f "$SWIFTTERM_SHADER" ] && [ ! -L "$SWIFTTERM_SHADER" ] || {
+  printf 'Missing or unsafe SwiftTerm Metal shader\n' >&2
+  exit 1
+}
+[ "$(/usr/bin/shasum -a 256 "$SWIFTTERM_SHADER" | /usr/bin/awk '{print $1}')" = \
+  "$SWIFTTERM_SHADER_SHA256" ] || {
+  printf 'Bundled SwiftTerm Metal shader does not match SwiftTerm %s\n' \
+    "$SWIFTTERM_VERSION" >&2
+  exit 1
+}
 plutil -p "$TMUX_THIRD_PARTY/provenance.json" >/dev/null
 [ -x "$TMUX_BUILDER" ] || {
   printf 'Bundled tmux builder is unavailable for provenance verification\n' >&2
