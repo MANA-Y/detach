@@ -18,9 +18,11 @@ validates a recorded inode/mtime/size snapshot and starts an event watcher on th
 exact provider transcript. It then stages the helper lease as
 assertion-inactive, releases the IOKit assertion, and releases the helper lease.
 Any transcript change immediately means `working` and reacquires both layers;
-it does not wait for the idle runtime heartbeat. Missing, changed, or malformed
-handoff state stays `working`. Transition failures are surfaced and must not
-claim that sleep is safe. The provider continues while waiting.
+it does not wait for the idle runtime heartbeat. A transcript event belongs to
+the watch generation that delivered it: an event from a cancelled watch must
+not cancel its replacement or change the reported state. Missing, changed, or
+malformed handoff state stays `working`. Transition failures are surfaced and
+must not claim that sleep is safe. The provider continues while waiting.
 
 Each working session owns a separate helper lease. Outside the low-battery and
 thermal fail-safe states, the helper keeps the machine-wide closed-lid setting
