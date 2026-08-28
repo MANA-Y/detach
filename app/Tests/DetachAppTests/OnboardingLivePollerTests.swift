@@ -114,6 +114,22 @@ final class OnboardingLivePollerTests: XCTestCase {
         XCTAssertEqual(reconciles, 2)
     }
 
+    func testDoneTickUsesTheDefaultRefreshWhenNoneIsProvided() async {
+        let poller = OnboardingLivePoller(
+            refreshStatuses: {},
+            servicesEnabled: { false },
+            readinessConfirmed: { false },
+            providerCheckPassed: { false },
+            reconcile: { true },
+            locate: { ProviderAvailability() },
+            heartbeatIsHealthy: { true },
+            installedCopyExists: { false })
+
+        await poller.tick(.done)
+        XCTAssertTrue(poller.heartbeatHealthy)
+        XCTAssertFalse(poller.heartbeatWaitIsLong)
+    }
+
     func testHeartbeatGatePublishesHealth() async {
         var healthy = false
         let poller = makePoller(heartbeatIsHealthy: { healthy })
