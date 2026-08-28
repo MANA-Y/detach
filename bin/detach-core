@@ -4553,7 +4553,7 @@ delete_session() {
       *) die "aborted" ;;
     esac
   fi
-  "$LOCKF_BIN" -k -t 10 "$(checkpoint_lock_path "$session")" \
+  "$LOCKF_BIN" -k -t 30 "$(checkpoint_lock_path "$session")" \
     "$SELF" __delete_locked "$session"
 }
 
