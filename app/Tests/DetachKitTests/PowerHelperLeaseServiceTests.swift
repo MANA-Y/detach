@@ -430,6 +430,113 @@ final class PowerHelperLeaseServiceTests: XCTestCase {
         XCTAssertTrue(backend.writes.isEmpty)
     }
 
+    func testAcquireIgnoresAnotherSessionsStagedInactiveLease() throws {
+        let stagedLease = PowerLease(
+            id: "staged", sessionName: "claude-review", runToken: "run-9",
+            renewedAt: now, assertionActive: false)
+        let store = FakeStore(state: PowerHelperPersistentState(
+            leases: [stagedLease], bootSessionIdentifier: "test-boot"))
+        let backend = FakeBackend(enabled: false)
+        let service = try makeService(store: store, backend: backend)
+
+        let status = try service.acquireLease(identity, assertionActive: true)
+
+        XCTAssertEqual(status.state, .protected)
+        XCTAssertEqual(status.leaseCount, 2)
+        XCTAssertEqual(backend.writes, [true])
+        XCTAssertEqual(store.state?.leases.count, 2)
+        // The read-only snapshot keeps the honest global aggregate; only the
+        // acquire confirmation is scoped to the requesting identity.
+        let cached = try service.status()
+        XCTAssertEqual(cached.state, .unavailable)
+        XCTAssertFalse(cached.assertionActive)
+    }
+
+    func testRenewalIgnoresAnotherSessionsStagedInactiveLease() throws {
+        let store = FakeStore()
+        let backend = FakeBackend(enabled: false)
+        let service = try makeService(store: store, backend: backend)
+        let other = PowerLeaseIdentity(
+            sessionName: "claude-review", runToken: "run-9")
+        _ = try service.acquireLease(identity, assertionActive: true)
+        _ = try service.acquireLease(other, assertionActive: true)
+
+        // The wrapper stages its lease assertion-inactive before a waiting
+        // release; the staging report itself stays honest.
+        let staged = try service.renewLease(other, assertionActive: false)
+        XCTAssertEqual(staged.state, .unavailable)
+
+        let renewed = try service.renewLease(identity, assertionActive: true)
+
+        XCTAssertEqual(renewed.state, .protected)
+        XCTAssertEqual(renewed.leaseCount, 2)
+        XCTAssertEqual(backend.writes, [true])
+        XCTAssertEqual(store.state?.leases.count, 2)
+    }
+
+    func testLowBatteryStillRefusesAcquireDespiteAnotherStagedInactiveLease() throws {
+        let stagedLease = PowerLease(
+            id: "staged", sessionName: "claude-review", runToken: "run-9",
+            renewedAt: now, assertionActive: false)
+        let store = FakeStore(state: PowerHelperPersistentState(
+            leases: [stagedLease], bootSessionIdentifier: "test-boot"))
+        let backend = FakeBackend(enabled: false)
+        let service = try makeService(
+            store: store, backend: backend,
+            battery: FakeBatteryReader(lowBattery: true))
+
+        let status = try service.acquireLease(identity, assertionActive: true)
+
+        XCTAssertEqual(status.state, .lowBattery)
+        XCTAssertEqual(store.state?.leases, [stagedLease])
+        XCTAssertFalse(backend.enabled)
+        XCTAssertTrue(backend.writes.isEmpty)
+    }
+
+    func testThermalSafetyStillRefusesAcquireDespiteAnotherStagedInactiveLease() throws {
+        let stagedLease = PowerLease(
+            id: "staged", sessionName: "claude-review", runToken: "run-9",
+            renewedAt: now, assertionActive: false)
+        let store = FakeStore(state: PowerHelperPersistentState(
+            leases: [stagedLease], bootSessionIdentifier: "test-boot"))
+        let backend = FakeBackend(enabled: false)
+        let service = try PowerHelperLeaseService(
+            store: store,
+            backend: backend,
+            batteryReader: FakeBatteryReader(lowBattery: false),
+            thermalReader: MutableThermalReader(.serious),
+            bootSessionReader: FakeBootSessionReader(identifier: "test-boot"),
+            now: { self.now })
+
+        let status = try service.acquireLease(identity, assertionActive: true)
+
+        XCTAssertEqual(status.state, .temperature)
+        XCTAssertTrue(status.thermalSafetyActive)
+        XCTAssertEqual(store.state?.leases, [stagedLease])
+        XCTAssertTrue(backend.writes.isEmpty)
+    }
+
+    func testLowBatteryStillRefusesRenewalConfirmation() throws {
+        let store = FakeStore()
+        let backend = FakeBackend(enabled: false)
+        let battery = MutableBatteryReader()
+        let service = try PowerHelperLeaseService(
+            store: store,
+            backend: backend,
+            batteryReader: battery,
+            bootSessionReader: FakeBootSessionReader(identifier: "test-boot"),
+            now: { self.now },
+            leaseTimeout: 120)
+        _ = try service.acquireLease(identity, assertionActive: true)
+        battery.lowBattery = true
+
+        let status = try service.renewLease(identity, assertionActive: true)
+
+        XCTAssertEqual(status.state, .unavailable)
+        XCTAssertTrue(status.lowBattery)
+        XCTAssertEqual(backend.writes, [true, false])
+    }
+
     func testReleaseRestoresNormalSleepOnlyWhenDetachOwnedTheMutation() throws {
         let store = FakeStore()
         let backend = FakeBackend(enabled: false)
