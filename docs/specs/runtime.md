@@ -51,6 +51,9 @@ for example `__checkpoint_once_locked`, `__delete_locked`, and
 share a per-session operation lock so their whole state transitions serialize
 before narrower install/project/checkpoint locks. New shared mutations should
 keep the lock around the whole child process and preserve that lock order.
+The install lock covers the full start readiness wait. Its acquisition timeout
+stays above the worst-case wait, so an unrelated operation waits for the
+holder instead of failing spuriously.
 
 ### Typed state boundary
 

@@ -77,6 +77,11 @@ CONFIG_ROOT="${DETACH_CONFIG_ROOT:-${XDG_CONFIG_HOME:-$HOME/.config}/detach}"
 CONFIG_FILE="$CONFIG_ROOT/config"
 INSTALL_STATE_ROOT="${DETACH_INSTALL_STATE_ROOT:-$STATE_BASE_ROOT}"
 INSTALL_LOCK="$INSTALL_STATE_ROOT/install.lock"
+# A start holds the install lock through the provider readiness wait (up to
+# 350 x 0.1 seconds) plus bounded session-creation work. Size the acquisition
+# timeout above that worst-case hold so a concurrent start or config write
+# waits for the holder instead of failing spuriously.
+INSTALL_LOCK_TIMEOUT=90
 
 config_value() {
   local key="$1"
@@ -1476,7 +1481,8 @@ write_config_key_under_lock() {
   else
     mkdir -p "$INSTALL_STATE_ROOT" || die "cannot create install lock directory"
   fi
-  "$LOCKF_BIN" -k -t 30 "$INSTALL_LOCK" "$SELF" __write_config_key_locked "$key" "$value" || \
+  "$LOCKF_BIN" -k -t "$INSTALL_LOCK_TIMEOUT" "$INSTALL_LOCK" \
+    "$SELF" __write_config_key_locked "$key" "$value" || \
     die "could not update $label setting"
 }
 
@@ -3691,7 +3697,7 @@ start_under_install_lock() {
 
 start_under_project_lock() {
   mkdir -p "$INSTALL_STATE_ROOT" || die "cannot create install lock directory"
-  "$LOCKF_BIN" -k -t 30 "$INSTALL_LOCK" "$SELF" __start_under_install_lock "$@"
+  "$LOCKF_BIN" -k -t "$INSTALL_LOCK_TIMEOUT" "$INSTALL_LOCK" "$SELF" __start_under_install_lock "$@"
 }
 
 read_meta_field() {

@@ -1398,6 +1398,28 @@ wait "$checkpoint_holder"
 ! tmux -L "$SOCKET" has-session -t "=$SESSION" 2>/dev/null
 ! run_codex list --json | grep -F "\"session_name\":\"$SESSION\"" >/dev/null
 codex_scenario_event pass SC-SESSION-DELETE-CODEX
+
+# A start holds the install lock through its readiness wait (up to 35
+# seconds). A concurrent config write must wait for that holder instead of
+# failing spuriously on a shorter acquisition timeout.
+install_lock_ready="$TMP_ROOT/install-lock-ready"
+/usr/bin/lockf -k "$TEST_INSTALL_STATE_ROOT/install.lock" /bin/sh -c \
+  'touch "$1"; sleep 35' sh "$install_lock_ready" &
+install_holder=$!
+attempts=0
+while [ ! -f "$install_lock_ready" ]; do
+  attempts=$((attempts + 1))
+  [ "$attempts" -lt 40 ] || {
+    printf 'install lock holder did not start\n' >&2
+    exit 1
+  }
+  sleep 0.05
+done
+"$SCRIPT" config tmux-mouse off
+wait "$install_holder"
+[ "$("$SCRIPT" config tmux-mouse)" = "off" ]
+"$SCRIPT" config tmux-mouse on
+[ "$("$SCRIPT" config tmux-mouse)" = "on" ]
 fi
 
 # Killing the worker can leave its provider alive in a retained pane. Detach
