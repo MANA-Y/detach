@@ -21,10 +21,21 @@ final class SessionAttachTests: XCTestCase {
         XCTAssertFalse(invocation.environment.contains { $0.hasPrefix("TMUX=") })
         XCTAssertFalse(invocation.environment.contains { $0.hasPrefix("TMUX_PANE=") })
         XCTAssertTrue(invocation.environment.contains("TERM=xterm-256color"))
+        XCTAssertEqual(SessionAttachInvocation.termName, "xterm-256color")
         XCTAssertTrue(
             invocation.environment.contains {
                 $0.hasPrefix("PATH=") && $0.contains("/Users/me/.local/bin")
             })
+    }
+
+    func testAttachEnvironmentPreservesLocaleAndAcceptsAnExplicitTerminal() {
+        let environment = SessionAttachInvocation.environment(
+            from: ["LANG": "ru_RU.UTF-8"],
+            termName: "vt100")
+
+        XCTAssertTrue(environment.contains("LANG=ru_RU.UTF-8"))
+        XCTAssertTrue(environment.contains("TERM=vt100"))
+        XCTAssertFalse(environment.contains("LANG=en_US.UTF-8"))
     }
 
     func testClaudeAttachKeepsTheProviderAndInternalName() {

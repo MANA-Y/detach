@@ -95,6 +95,43 @@ final class SessionAttachTerminalTests: XCTestCase {
             "codex attach detach-codex-proj-abcd1234")
     }
 
+    func testTerminationEscalatesWhenTheClientIgnoresTerm() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "detach-attach-kill-\(UUID().uuidString)",
+                isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let ready = root.appendingPathComponent("ready")
+        let terminal = HeadlessTerminal { _ in }
+        terminal.process.startProcess(
+            executable: "/bin/sh",
+            args: [
+                "-c",
+                "trap '' TERM; : > '\(ready.path)'; exec /bin/sleep 5",
+            ],
+            environment: ["PATH=/bin:/usr/bin"],
+            currentDirectory: root.path)
+
+        try waitUntil {
+            FileManager.default.fileExists(atPath: ready.path)
+                && terminal.process.running
+        }
+        let childPID = terminal.process.shellPid
+        XCTAssertGreaterThan(childPID, 0)
+
+        SessionAttachController.terminate(
+            process: terminal.process,
+            timeout: 0.02)
+
+        try waitUntil {
+            errno = 0
+            return Darwin.kill(childPID, 0) == -1 && errno == ESRCH
+        }
+        XCTAssertFalse(terminal.process.running)
+    }
+
     func testIdleControllerDoesNotTouchATerminalView() {
         let controller = SessionAttachController(invocation: Self.invocation())
         controller.applyFont(pointSize: 12)
