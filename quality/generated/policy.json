@@ -216,6 +216,15 @@
     },
     {
       "group": "ui",
+      "path": "app/Sources/DetachApp/TerminalPreferencePicker.swift",
+      "region": "window-pin",
+      "scenarios": [
+        "SC-UI-NEW-SESSION"
+      ],
+      "summary": "XCTest cannot host an NSWindow. The packaged journey keeps the sheet top edge."
+    },
+    {
+      "group": "ui",
       "path": "app/Sources/DetachApp/OnboardingView.swift",
       "region": "ui-e2e-instrumentation",
       "scenarios": [

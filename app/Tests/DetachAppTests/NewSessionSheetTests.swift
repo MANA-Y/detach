@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 import XCTest
+import DetachKit
 @testable import DetachApp
 
 @MainActor
@@ -28,6 +29,25 @@ final class NewSessionSheetTests: XCTestCase {
             showsAdvanced: true).body
     }
 
+    func testBuildsFormWithASelectedProject() {
+        _ = NewSessionSheet(
+            detachPath: "/tmp/detach",
+            initialProjectDir: URL(fileURLWithPath: "/tmp/proj", isDirectory: true)).body
+    }
+
+    func testBuildsBothLaunchFailureBannerShapes() {
+        _ = NewSessionSheet(
+            detachPath: "/tmp/detach",
+            initialLaunchFailure: TerminalLaunchFailure(
+                message: "missing terminal",
+                reason: .terminalUnavailable)).body
+        _ = NewSessionSheet(
+            detachPath: "/tmp/detach",
+            initialLaunchFailure: TerminalLaunchFailure(
+                message: "open failed",
+                reason: .openFailed)).body
+    }
+
     func testPickerRefreshLoadsInstalledAndMissingSelections() {
         var installed = "com.apple.Terminal"
         _ = TerminalPreferencePicker(bundleIdentifier: Binding(
@@ -40,6 +60,15 @@ final class NewSessionSheetTests: XCTestCase {
                 get: { missing },
                 set: { missing = $0 }),
             accessibilityIdentifier: "new-session-terminal").body
+    }
+
+    func testPickerBodyShowsAChoiceError() {
+        let box = IdentifierBox()
+        let picker = TerminalPreferencePicker(bundleIdentifier: Binding(
+            get: { box.value },
+            set: { box.value = $0 }))
+        picker.choose(at: URL(fileURLWithPath: "/tmp"))
+        _ = picker.body
     }
 
     func testPickerChooseAcceptsATerminalURL() throws {
@@ -174,6 +203,17 @@ final class NewSessionSheetTests: XCTestCase {
 
     func testPanelHostFallsBackWhenNoWindowIsKey() {
         XCTAssertNil(PanelHostWindow.preferred(keyWindow: nil, windows: []))
+    }
+
+    func testPanelHostPrefersAProvidedKeyWindow() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 80, height: 60),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: true)
+        XCTAssertTrue(
+            PanelHostWindow.preferred(keyWindow: window, windows: []) === window)
+        XCTAssertNil(PanelHostWindow.preferred(keyWindow: nil, windows: [window]))
     }
 
     func testPinViewIgnoresHitsWhenDetached() {

@@ -22,11 +22,15 @@ struct NewSessionSheet: View {
     init(
         detachPath: String,
         initialName: String = "",
-        showsAdvanced: Bool = false
+        showsAdvanced: Bool = false,
+        initialProjectDir: URL? = nil,
+        initialLaunchFailure: TerminalLaunchFailure? = nil
     ) {
         self.detachPath = detachPath
         _name = State(initialValue: initialName)
         _showAdvanced = State(initialValue: showsAdvanced)
+        _projectDir = State(initialValue: initialProjectDir)
+        _launchFailure = State(initialValue: initialLaunchFailure)
     }
 
     private var normalizedName: String? {

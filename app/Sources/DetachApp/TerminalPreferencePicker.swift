@@ -185,6 +185,7 @@ final class PinWindowTopEdgeView: NSView {
         }
     }
 
+// quality-coverage:begin window-pin
     func startPinning() {
         guard let window else { return }
         observer = NotificationCenter.default.addObserver(
@@ -233,6 +234,7 @@ struct PinWindowTopEdge: NSViewRepresentable {
         nsView.schedulePin()
     }
 }
+// quality-coverage:end window-pin
 
 enum PanelHostWindow {
     static func preferred(keyWindow: NSWindow?, windows: [NSWindow]) -> NSWindow? {
