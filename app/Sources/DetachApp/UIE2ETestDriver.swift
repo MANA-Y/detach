@@ -445,16 +445,61 @@ enum UIE2ETestDriver {
             try await click(newSession, name: "new session action")
             _ = try await measuredFrame(
                 identifier: "new-session-sheet", name: "new session sheet")
-            let launchFrame = try await measuredFrame(
-                identifier: "new-session-launch", name: "new session launch")
-            try await click(frame: launchFrame, name: "disabled new session launch")
+            guard UIE2EGeometryRegistry.frame(for: "new-session-prompt") == nil else {
+                throw Failure(message: "Advanced prompt is visible while collapsed")
+            }
+            let launchControl = try await element(identifier: "new-session-launch")
+            let expectedLaunch = TerminalLaunchPresentation.title(
+                terminalDisplayName: TerminalLaunchPresentation.displayName(
+                    for: TerminalCatalog.defaultBundleIdentifier))
+            guard label(launchControl) == expectedLaunch else {
+                throw Failure(
+                    message: "launch button is \(label(launchControl) ?? "nil"), expected \(expectedLaunch)")
+            }
+            guard !isEnabled(launchControl) else {
+                throw Failure(message: "new-session launch is enabled without a project")
+            }
+            guard let sheet = NSApp.windows.flatMap(\.sheets).first else {
+                throw Failure(message: "new-session sheet is missing")
+            }
+            trace("new-session sheet window \(sheet.frame)")
+            let pinnedTop = sheet.frame.maxY
+            let collapsedHeight = sheet.frame.height
+            let advanced = try await element(identifier: "new-session-advanced")
+            try requireSemanticControl(advanced, name: "new session Advanced")
+            try await click(advanced, name: "new session Advanced")
+            _ = try await measuredFrame(
+                identifier: "new-session-prompt", name: "new session prompt")
+            _ = try await measuredFrame(
+                identifier: "new-session-terminal", name: "new session terminal")
+            checks.append("new-session-hosts-terminal-picker")
+            var lastMaxY = pinnedTop
+            var lastFrame = sheet.frame
+            do {
+                try await waitUntil("new-session top edge stays fixed", attempts: 20) {
+                    guard let current = NSApp.windows.flatMap(\.sheets).first else {
+                        return false
+                    }
+                    lastFrame = current.frame
+                    lastMaxY = current.frame.maxY
+                    return lastFrame.height > collapsedHeight + 40
+                        && abs(lastMaxY - pinnedTop) < 24
+                }
+            } catch {
+                throw Failure(
+                    message: "new-session top edge moved from \(pinnedTop) to \(lastMaxY) frame=\(lastFrame)")
+            }
+            checks.append("new-session-advanced-keeps-top-edge")
+            try await clickMeasuredControl(
+                identifier: "new-session-launch",
+                name: "disabled new session launch")
             try await Task.sleep(nanoseconds: 200_000_000)
             guard NSApp.windows.contains(where: { !$0.sheets.isEmpty }) else {
                 throw Failure(message: "new-session launch is active without a project")
             }
-            let cancelFrame = try await measuredFrame(
-                identifier: "new-session-cancel", name: "new session cancel")
-            try await click(frame: cancelFrame, name: "new session cancel")
+            try await clickMeasuredControl(
+                identifier: "new-session-cancel",
+                name: "new session cancel")
             try await waitUntil("new-session sheet closes") {
                 NSApp.windows.allSatisfy(\.sheets.isEmpty)
             }
@@ -824,6 +869,7 @@ enum UIE2ETestDriver {
     private static func usesMeasuredGeometry(_ identifier: String) -> Bool {
         identifier == "new-session-button"
             || identifier == "settings-show-tips"
+            || identifier.hasPrefix("new-session-")
             || identifier.hasPrefix("onboarding-")
             || identifier.hasPrefix("session-row-")
             || identifier.hasPrefix("session-action-")
@@ -954,8 +1000,11 @@ enum UIE2ETestDriver {
         guard let view = target, let window = view.window else {
             throw Failure(message: "\(name) has no measured control view")
         }
-        let windowFrame = view.convert(view.bounds, to: nil)
-        var screen = window.convertToScreen(windowFrame)
+        view.publishFrame()
+        guard var screen = UIE2EGeometryRegistry.frame(for: identifier),
+              !screen.isEmpty else {
+            throw Failure(message: "\(name) has no published geometry")
+        }
         if let size {
             screen = CGRect(
                 x: screen.minX + offset.width,

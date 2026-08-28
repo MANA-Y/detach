@@ -198,6 +198,33 @@
     },
     {
       "group": "ui",
+      "path": "app/Sources/DetachApp/NewSessionSheet.swift",
+      "region": "sheet-appkit",
+      "scenarios": [
+        "SC-UI-NEW-SESSION"
+      ],
+      "summary": "The packaged journey owns launch and the project open panel."
+    },
+    {
+      "group": "ui",
+      "path": "app/Sources/DetachApp/TerminalPreferencePicker.swift",
+      "region": "open-panel",
+      "scenarios": [
+        "SC-UI-NEW-SESSION"
+      ],
+      "summary": "The packaged new-session journey owns the AppKit open-panel host."
+    },
+    {
+      "group": "ui",
+      "path": "app/Sources/DetachApp/TerminalPreferencePicker.swift",
+      "region": "window-pin",
+      "scenarios": [
+        "SC-UI-NEW-SESSION"
+      ],
+      "summary": "XCTest cannot host an NSWindow. The packaged journey keeps the sheet top edge."
+    },
+    {
+      "group": "ui",
       "path": "app/Sources/DetachApp/OnboardingView.swift",
       "region": "ui-e2e-instrumentation",
       "scenarios": [
@@ -1403,6 +1430,13 @@
     },
     {
       "pattern": "app/Sources/DetachApp/NewSessionSheet.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "session-ui-source"
+    },
+    {
+      "pattern": "app/Sources/DetachApp/TerminalPreferencePicker.swift",
       "priority": 870,
       "release_domain": "safe",
       "spec": "docs/specs/app.md",
@@ -2757,6 +2791,7 @@
         "app/Sources/DetachApp/Settings*.swift",
         "app/Sources/DetachApp/SetupGuidance.swift",
         "app/Sources/DetachApp/SidebarView.swift",
+        "app/Sources/DetachApp/TerminalPreferencePicker.swift",
         "app/Sources/DetachApp/TextSize.swift",
         "app/Sources/DetachApp/Theme.swift",
         "app/Sources/DetachApp/TipsBar.swift",
@@ -3098,7 +3133,7 @@
       "name": "ui-e2e",
       "order": 60,
       "release": true,
-      "timeout_seconds": 40
+      "timeout_seconds": 55
     },
     {
       "name": "codex",

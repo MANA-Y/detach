@@ -55,6 +55,7 @@
 "<empty>" = "<empty>";
 "Add %@ to PATH" = "Add %@ to PATH";
 "Agent response is ready" = "Agent response is ready";
+"Advanced" = "Advanced";
 "All detach sessions from both providers are on the left" = "All detach sessions from both providers are on the left";
 "All interactive actions will open in %@." = "All interactive actions will open in %@.";
 "Allow notifications" = "Allow notifications";
@@ -78,6 +79,7 @@
 "Checking the system permission…" = "Checking the system permission…";
 "Choose Another App…" = "Choose Another App…";
 "Choose another terminal" = "Choose another terminal";
+"Choose a project to launch." = "Choose a project to launch.";
 "Choose…" = "Choose…";
 "Close" = "Close";
 "Connect Codex or Claude" = "Connect Codex or Claude";
@@ -111,7 +113,9 @@
 "Install and authenticate Codex CLI or Claude CLI, then retry setup." = "Install and authenticate Codex CLI or Claude CLI, then retry setup.";
 "Installation" = "Installation";
 "Launch Codex or Claude in Terminal" = "Launch Codex or Claude in Terminal";
-"Launch in Terminal" = "Launch in Terminal";
+"Launch in %@" = "Launch in %@";
+"Launching…" = "Launching…";
+"Leave empty and type in the terminal." = "Leave empty and type in the terminal.";
 "Model context used" = "Model context used";
 "Move Detach to Applications" = "Move Detach to Applications";
 "Move Detach.app to Applications and open the installed copy" = "Move Detach.app to Applications and open the installed copy";
@@ -165,6 +169,7 @@
 "Setting Up Detach…" = "Setting Up Detach…";
 "Something went wrong" = "Something went wrong";
 "Sparkle checks in the background on its own schedule." = "Sparkle checks in the background on its own schedule.";
+"Start a managed run in your terminal." = "Start a managed run in your terminal.";
 "Start your first session" = "Start your first session";
 "Stop" = "Stop";
 "Technical Details" = "Technical Details";
@@ -206,6 +211,7 @@
 "macOS did not finish stopping the previous watchdog." = "macOS did not finish stopping the previous watchdog.";
 "macOS doesn't show the prompt again after a denial. Allow notifications for Detach in System Settings." = "macOS doesn't show the prompt again after a denial. Allow notifications for Detach in System Settings.";
 "not selected" = "not selected";
+"Other…" = "Other…";
 "optional, for example Rev (ai)" = "optional, for example Rev (ai)";
 "sqlite3" = "sqlite3";
 "tar" = "tar";
@@ -272,6 +278,7 @@
 "Makes managed tmux recognize Shift+Return and forward the same multiline input as Option+Return." = "Makes managed tmux recognize Shift+Return and forward the same multiline input as Option+Return.";
 "detach returned an unsupported tmux extended-keys setting: %@" = "detach returned an unsupported tmux extended-keys setting: %@";
 "The agent replied in “my-project”" = "The agent replied in “my-project”";
+"The agent starts in this folder." = "The agent starts in this folder.";
 "System" = "System";
 "Mac stays awake" = "Mac stays awake";
 "Mac can sleep" = "Mac can sleep";

@@ -55,6 +55,7 @@
 "<empty>" = "<пусто>";
 "Add %@ to PATH" = "Добавьте %@ в PATH";
 "Agent response is ready" = "Ответ агента готов";
+"Advanced" = "Дополнительно";
 "All detach sessions from both providers are on the left" = "Слева — все detach-сессии обоих провайдеров";
 "All interactive actions will open in %@." = "Все интерактивные действия будут открываться в %@.";
 "Allow notifications" = "Разрешить уведомления";
@@ -78,6 +79,7 @@
 "Checking the system permission…" = "Проверяем системное разрешение…";
 "Choose Another App…" = "Выбрать другое приложение…";
 "Choose another terminal" = "Выбрать другой терминал";
+"Choose a project to launch." = "Выберите проект, чтобы запустить сессию.";
 "Choose…" = "Выбрать…";
 "Close" = "Закрыть";
 "Connect Codex or Claude" = "Подключите Codex или Claude";
@@ -111,7 +113,9 @@
 "Install and authenticate Codex CLI or Claude CLI, then retry setup." = "Установите и авторизуйте Codex CLI или Claude CLI, затем повторите настройку.";
 "Installation" = "Установка";
 "Launch Codex or Claude in Terminal" = "Запустить Codex или Claude в терминале";
-"Launch in Terminal" = "Запустить в терминале";
+"Launch in %@" = "Запустить в %@";
+"Launching…" = "Запуск…";
+"Leave empty and type in the terminal." = "Можно оставить пустым и писать в терминале.";
 "Model context used" = "Занятый контекст модели";
 "Move Detach to Applications" = "Переместите Detach в Applications";
 "Move Detach.app to Applications and open the installed copy" = "Переместите Detach.app в Applications и откройте установленную копию";
@@ -165,6 +169,7 @@
 "Setting Up Detach…" = "Настраиваем Detach…";
 "Something went wrong" = "Не получилось";
 "Sparkle checks in the background on its own schedule." = "Проверки выполняет Sparkle в фоне по собственному расписанию.";
+"Start a managed run in your terminal." = "Запустите управляемый сеанс в терминале.";
 "Start your first session" = "Запустите первую сессию";
 "Stop" = "Остановить";
 "Technical Details" = "Технические детали";
@@ -206,6 +211,7 @@
 "macOS did not finish stopping the previous watchdog." = "macOS не завершила остановку предыдущей фоновой службы.";
 "macOS doesn't show the prompt again after a denial. Allow notifications for Detach in System Settings." = "macOS не показывает повторный запрос после отказа. Разрешите уведомления для Detach в системных настройках.";
 "not selected" = "не выбран";
+"Other…" = "Другое…";
 "optional, for example Rev (ai)" = "необязательно, например Rev (ai)";
 "sqlite3" = "sqlite3";
 "tar" = "tar";
@@ -272,6 +278,7 @@
 "Makes managed tmux recognize Shift+Return and forward the same multiline input as Option+Return." = "Учит tmux в управляемых сессиях распознавать Shift+Return и передавать тот же перенос строки, что и Option+Return.";
 "detach returned an unsupported tmux extended-keys setting: %@" = "detach вернул неподдерживаемое значение tmux extended-keys: %@";
 "The agent replied in “my-project”" = "Агент ответил в «my-project»";
+"The agent starts in this folder." = "Агент стартует в этой папке.";
 "System" = "Система";
 "Mac stays awake" = "Mac не уснёт";
 "Mac can sleep" = "Mac может уснуть";

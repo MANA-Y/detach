@@ -4,8 +4,8 @@
 
 `app/` is a SwiftPM package containing `DetachKit`, `DetachApp`,
 `DetachWatchdog`, `DetachState`, `DetachPower`, and `DetachPowerHelper`. The app
-bundles and signs arm64-only versions of every executable, the immutable CLI
-payload, pinned tmux sources/licenses/provenance, Sparkle, and the complete
+bundles and signs arm64-only executables, the immutable CLI
+payload, pinned tmux sources/licenses/provenance, Sparkle, and the
 pinned Sparkle license notice.
 
 `ANSIParser` is the single terminal-preview decoder. It strips non-SGR control
@@ -44,7 +44,7 @@ app activation.
 Each readiness build stores one `detach-app-build:<UUID>` in its executable and
 signed marker. UI smoke uses a stripped private copy at
 `/private/tmp/detach-ui-e2e.*`. It excludes production CLI, watchdog, helper,
-power, state, and tmux payloads. Injections stay below its root. An escape,
+power, state, and tmux. Injections stay below its root. An escape,
 unsafe identity, build mismatch, or payload fails closed.
 
 Smoke restores focus and the pointer. It sends ordered AppKit down/up
@@ -169,10 +169,11 @@ If none runs, the launch environment sets a private `.zshenv` as outer
 original `ZDOTDIR` for that process. Open, Resume, and Recover use the selected
 terminal, with Terminal as fallback.
 The new-session sheet accepts an optional UTF-8 name up to 100 bytes. It rejects
-control characters, explains invalid input, blocks launch, and passes one
-shell-quoted `--name` argument. The app uses `display_name` as the title, with
+control characters, blocks launch, and passes one `--name`. The launch button
+names the selected terminal. Advanced holds terminal choice and the prompt and
+grows down, top fixed. The app uses `display_name` as the title, with
 the project/internal name fallback for old records.
-Notifications are opt-in. One app poller deduplicates baseline and transitions.
+Notifications are opt-in. One poller deduplicates baseline and transitions.
 
 Sparkle 2 is pinned in `Package.resolved`, embedded with its symlink layout
 intact, and signed inside-out before the outer app. Ad-hoc development builds
@@ -180,7 +181,7 @@ alone use `com.apple.security.cs.disable-library-validation`; it must never
 appear in a Developer ID build. `UpdaterService` starts only for a packaged app
 in `/Applications` with a valid HTTPS feed URL and 32-byte Ed25519 public key.
 A generated or published appcast must contain exactly one arm64 hardware
-requirement so Intel clients are never offered the unsupported update.
+requirement so Intel clients are never offered the update.
 A Sparkle update replaces only the app; bootstrap atomically activates its new
 immutable CLI payload without rewriting live-session binaries. Sparkle errors
 for a disk image or App Translocation tell the user to move Detach to
@@ -188,7 +189,6 @@ for a disk image or App Translocation tell the user to move Detach to
 check the network and free disk space, then try again. Archive, signature,
 validation, and installation errors provide the manual DMG path and the
 Settings > System Repair path. These errors state that the active CLI did not
-change. If app
-replacement completes but CLI or helper synchronization fails, the prior CLI
-stays active and Repair remains available. Background synchronization keeps
+change. If replacement completes but CLI or helper sync fails, the prior CLI
+stays active and Repair remains available. Background sync keeps
 the dashboard. A later activation retries it.
