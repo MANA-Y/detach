@@ -671,7 +671,8 @@ if codex_part_selected lifecycle; then
 
 wait_for_tmux_option "$SESSION" @detach_status running
 wait_for_tmux_option "$SESSION" set-titles on
-wait_for_tmux_option "$SESSION" set-titles-string "Detach · $PROJECT_LABEL"
+LC_ALL=C.UTF-8 wait_for_tmux_option \
+  "$SESSION" set-titles-string "Detach · $PROJECT_LABEL"
 wait_for_tmux_option_text "$SESSION" status-left RUNNING
 tmux -L "$SOCKET" has-session -t "=$SESSION"
 "$DETACH" list | grep -F 'codex' | grep -F "$SESSION" >/dev/null
@@ -681,9 +682,6 @@ TMUX_TMPDIR="$TMP_ROOT/unrelated-tmux-tmpdir" \
   "$DETACH" list | grep -F 'codex' | grep -F "$SESSION" >/dev/null
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach)" = "1" ]
 [ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_provider)" = "codex" ]
-[ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" set-titles)" = "on" ]
-[ "$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" set-titles-string)" = \
-  "Detach · $PROJECT_LABEL" ]
 pane_id="$(tmux -L "$SOCKET" show-options -qv -t "=$SESSION:" @detach_pane_id)"
 # The creator CLI has already exited. The tmux server and worker must remain
 # alive without an attached client (the same lifecycle as closing Terminal or
