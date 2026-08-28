@@ -101,9 +101,12 @@ Thermal safety uses only public `ProcessInfo.thermalState`. `serious` and
 closed-lid sleep, the wrapper releases its IOKit assertion without waiting for
 a checkpoint, and initial acquisition is refused. A notification-time release
 failure is retained and surfaced by the next heartbeat or protected-run result;
-it must never disappear behind best-effort cleanup. `nominal` and `fair` must
-remain stable for 30 seconds before protection can return; the helper persists
-this cooldown across restart, and an unknown reading cannot clear it. The raw
+it must never disappear behind best-effort cleanup. Each heartbeat retries the
+safety release and advances the cooldown. Only a confirmed release clears the
+retained failure; a release that still fails stays surfaced. `nominal` and
+`fair` must remain stable for 30 seconds before protection can return; the
+helper persists this cooldown across restart, and an unknown reading cannot
+clear it. The raw
 `nominal|fair|serious|critical|unknown` value and latch cross helper status, CLI
 JSON, watchdog, tmux, and app. Low battery wins the combined reason when both
 guards are active, while the thermal fields remain visible. Borrowed external
