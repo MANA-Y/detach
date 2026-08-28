@@ -100,6 +100,40 @@ struct MacPowerSettingsPresentation: Equatable {
     }
 }
 
+/// Live sessions that Settings and the menu bar count as active.
+enum MacPowerLiveSessions {
+    static func live(in sessions: [Session]) -> [Session] {
+        sessions.filter(\.isLive)
+    }
+
+    static func counts(in sessions: [Session]) -> (active: Int, working: Int) {
+        let live = live(in: sessions)
+        return (live.count, live.filter { !$0.isWaitingForUser }.count)
+    }
+}
+
+/// Heartbeat refresh for Settings → System. The SwiftUI `.task` wrapper
+/// only calls this; XCTest cannot map that modifier.
+enum SystemTabHeartbeatRefresh {
+    static func run(
+        refreshPower: () -> Void,
+        refreshStorage: () async -> Void,
+        sleepNanoseconds: UInt64 = 10_000_000_000
+    ) async {
+        refreshPower()
+        async let storageRefresh: Void = refreshStorage()
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: sleepNanoseconds)
+            } catch {
+                break
+            }
+            refreshPower()
+        }
+        await storageRefresh
+    }
+}
+
 struct PowerHelperSettingsPresentation: Equatable {
     let status: DiagnosticCheck.Status
     let detailLocalizationKey: String?
@@ -294,19 +328,12 @@ struct SettingsView: View {
             await extendedKeys.load(detachPath: activeDetachPath)
         }
         .task(id: navigation.selectedTab) {
+// quality-coverage:begin system-heartbeat
             guard navigation.selectedTab == .system else { return }
-            installation.refreshPowerProtectionState()
-            async let storageRefresh: Void = storageStore.refresh()
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(nanoseconds: 10_000_000_000)
-                } catch {
-                    await storageRefresh
-                    return
-                }
-                installation.refreshPowerProtectionState()
-            }
-            await storageRefresh
+            await SystemTabHeartbeatRefresh.run(
+                refreshPower: { installation.refreshPowerProtectionState() },
+                refreshStorage: { await storageStore.refresh() })
+// quality-coverage:end system-heartbeat
         }
         .onChange(of: fontPointSize) { _, value in
             let clamped = AppFontSize.clamped(value)
@@ -991,15 +1018,15 @@ struct SettingsView: View {
         }
     }
 
-    private var macPowerPresentation: MacPowerSettingsPresentation {
-        let live = sessionStore.sessions.filter(\.isLive)
+    var macPowerPresentation: MacPowerSettingsPresentation {
+        let counts = MacPowerLiveSessions.counts(in: sessionStore.sessions)
         return MacPowerSettingsPresentation(
             state: installation.powerProtectionState,
             helperStatus: installation.powerHelperStatus,
             watchdogStatus: installation.watchdogStatus,
             distributionMatchesBundle: installation.distributionMatchesBundle,
-            activeSessionCount: live.count,
-            workingSessionCount: live.filter { !$0.isWaitingForUser }.count)
+            activeSessionCount: counts.active,
+            workingSessionCount: counts.working)
     }
 
     private var macPowerHeroRow: some View {

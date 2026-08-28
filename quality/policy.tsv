@@ -74,6 +74,7 @@ coverage-region	ui	app/Sources/DetachApp/OnboardingView.swift	ui-e2e-instrumenta
 coverage-region	ui	app/Sources/DetachApp/RootView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-ONBOARD-FIRST-RUN,SC-UI-ONBOARD-PROVIDER,SC-UI-ONBOARD-APPROVAL	Packaged journeys cover the test-only semantic bridge and route.
 coverage-region	ui	app/Sources/DetachApp/SessionDetailView.swift	ui-e2e-instrumentation	SC-UI-SESSION-STOP,SC-UI-SESSION-DELETE,SC-UI-SESSION-DETAIL	The packaged journey covers action geometry, UUID copy, and its negative control.
 coverage-region	ui	app/Sources/DetachApp/SettingsView.swift	ui-e2e-instrumentation	SC-UI-SETTINGS	The packaged Settings journey covers its semantic control.
+coverage-region	ui	app/Sources/DetachApp/SettingsView.swift	system-heartbeat	SC-UI-SETTINGS	XCTest cannot map SwiftUI task modifiers. Unit tests cover the extracted System heartbeat loop.
 coverage-region	ui	app/Sources/DetachApp/SidebarView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-SESSION-DETAIL,SC-UI-SESSION-DELETE,SC-UI-FAILURE	Packaged journeys cover sidebar control geometry, bulk Delete, and failure status.
 route	1100	quality/policy.tsv	quality-core	safe	docs/specs/documentation.md
 route	1000	quality/*	policy	safe	docs/specs/documentation.md

@@ -55,7 +55,7 @@ struct MenuBarPresentation: Equatable {
         now: Date = Date()
     ) {
         let state = heartbeat.effectivePowerState
-        let live = allSessions.filter(\.isLive)
+        let live = MacPowerLiveSessions.live(in: allSessions)
         let working = live.filter { !$0.isWaitingForUser }
         power = MacPowerSettingsPresentation(
             state: state,

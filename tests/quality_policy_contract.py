@@ -123,6 +123,10 @@ def main() -> None:
             "\tSC-UI-SETTINGS\tThe packaged Settings journey covers its semantic control.",
             "\tSC-UI-DASHBOARD\tThe packaged Settings journey covers its semantic control.",
             1,
+        ).replace(
+            "\tSC-UI-SETTINGS\tXCTest cannot map SwiftUI task modifiers. Unit tests cover the extracted System heartbeat loop.",
+            "\tSC-UI-DASHBOARD\tXCTest cannot map SwiftUI task modifiers. Unit tests cover the extracted System heartbeat loop.",
+            1,
         ),
         "requirement has no automated verification scenario: QC-APP-SETTINGS",
     )

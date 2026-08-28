@@ -1,4 +1,5 @@
 import DetachKit
+import SwiftUI
 import XCTest
 @testable import DetachApp
 
@@ -174,4 +175,126 @@ final class MacPowerSettingsPresentationTests: XCTestCase {
             activeSessionCount: activeSessionCount,
             workingSessionCount: workingSessionCount)
     }
+}
+
+@MainActor
+final class MacPowerLiveSessionTests: XCTestCase {
+    func testCountsTreatStartingAndRecoveringAsActive() {
+        let sessions = [
+            session(status: "starting"),
+            session(status: "recovering"),
+            session(status: "completed"),
+        ]
+        XCTAssertEqual(
+            MacPowerLiveSessions.live(in: sessions).map(\.effectiveStatus),
+            [.starting, .recovering])
+        let counts = MacPowerLiveSessions.counts(in: sessions)
+        XCTAssertEqual(counts.active, 2)
+        XCTAssertEqual(counts.working, 2)
+    }
+
+    func testCountsSeparateWaitingRunningSessions() {
+        let sessions = [
+            session(status: "running", turnState: "waiting"),
+            session(status: "starting"),
+        ]
+        let counts = MacPowerLiveSessions.counts(in: sessions)
+        XCTAssertEqual(counts.active, 2)
+        XCTAssertEqual(counts.working, 1)
+    }
+
+    func testHeartbeatStartsBeforeStorageFinishesAndAwaitsCancel() async {
+        var events: [String] = []
+        let task = Task {
+            await SystemTabHeartbeatRefresh.run(
+                refreshPower: { events.append("power") },
+                refreshStorage: {
+                    events.append("storage-start")
+                    try? await Task.sleep(nanoseconds: 40_000_000)
+                    events.append("storage-end")
+                },
+                sleepNanoseconds: 1_000_000_000)
+        }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+        XCTAssertEqual(events.first, "power")
+        XCTAssertTrue(events.contains("storage-start"))
+        XCTAssertFalse(events.contains("storage-end"))
+        task.cancel()
+        await task.value
+        XCTAssertTrue(events.contains("storage-end"))
+    }
+
+    func testHeartbeatRepeatsAfterTheSleepInterval() async {
+        var powerCount = 0
+        let task = Task {
+            await SystemTabHeartbeatRefresh.run(
+                refreshPower: { powerCount += 1 },
+                refreshStorage: {},
+                sleepNanoseconds: 8_000_000)
+        }
+        try? await Task.sleep(nanoseconds: 25_000_000)
+        task.cancel()
+        await task.value
+        XCTAssertGreaterThanOrEqual(powerCount, 2)
+    }
+
+    func testSettingsSystemPaneCountsAStartingSession() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let checkedAt = ISO8601DateFormatter().string(from: Date())
+        try Data(
+            #"{"state":"ok","power_state":"allowed","checked_at":"\#(checkedAt)"}"#
+                .utf8
+        ).write(to: root.appendingPathComponent("watchdog-status.json"))
+
+        let cli = LiveSessionListCLI(stdout: sessionJSON(status: "starting"))
+        let sessionStore = SessionStore(cli: cli)
+        await sessionStore.refresh()
+
+        let view = SettingsView(
+            installation: InstallationStore(
+                detachPath: "/tmp/detach-test",
+                powerStateRoot: root),
+            sessionStore: sessionStore,
+            storageStore: StorageStore(cli: cli),
+            updater: UpdaterService(),
+            notifications: SessionNotificationService(
+                center: SilentNotificationCenter(),
+                identifierProvider: { "settings-test" }),
+            navigation: SettingsNavigation(selectedTab: .system))
+
+        XCTAssertNotEqual(view.macPowerPresentation.reason, .noActiveSessions)
+        XCTAssertEqual(view.macPowerPresentation.reason, .sessionsNotHolding(1))
+    }
+}
+
+private struct SilentNotificationCenter: SessionNotificationCenterBackend {
+    func authorizationStatus() async -> SessionNotificationAuthorizationStatus { .denied }
+    func requestAuthorization() async throws -> Bool { false }
+    func deliver(_ payload: SessionNotificationPayload) async throws {}
+}
+
+private struct LiveSessionListCLI: DetachCLIRunning {
+    let stdout: String
+
+    func run(arguments: [String], timeout: TimeInterval) async throws -> CLIResult {
+        CLIResult(exitCode: 0, stdout: stdout, stderr: "", timedOut: false)
+    }
+}
+
+private func session(status: String, turnState: String? = nil) -> Session {
+    SessionListParser.parse(sessionJSON(status: status, turnState: turnState)).sessions[0]
+}
+
+private func sessionJSON(status: String, turnState: String? = nil) -> String {
+    let turnField = turnState.map { #","agent_turn_state":"\#($0)""# } ?? ""
+    return """
+    {"schema":1,"provider":"codex","session_name":"detach-codex-\(status)",\
+    "name":"\(status)","effective_status":"\(status)","meta_status":"\(status)",\
+    "agent_session_id":"\(status)","project_dir":"/tmp/p",\
+    "created_at":"2026-07-15T10:00:00Z","last_checkpoint_at":null,\
+    "exit_status":null,"finished_at":null\(turnField)}
+    """
 }
