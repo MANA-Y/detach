@@ -76,6 +76,7 @@ coverage-region	ui	app/Sources/DetachApp/SessionDetailView.swift	ui-e2e-instrume
 coverage-region	ui	app/Sources/DetachApp/SessionAttachTerminalView.swift	swiftterm-metal	SC-UI-SESSION-DETAIL	XCTest cannot host LocalProcessTerminalView. HeadlessTerminal owns the process proof.
 coverage-region	ui	app/Sources/DetachApp/SessionAttachTerminalView.swift	swiftterm-host	SC-UI-SESSION-DETAIL	XCTest cannot construct the SwiftTerm representable. The packaged journey hosts it.
 coverage-region	ui	app/Sources/DetachApp/SettingsView.swift	ui-e2e-instrumentation	SC-UI-SETTINGS	The packaged Settings journey covers its semantic control.
+coverage-region	ui	app/Sources/DetachApp/SettingsView.swift	system-heartbeat	SC-UI-SETTINGS	XCTest cannot map SwiftUI task modifiers. Unit tests cover the extracted System heartbeat loop.
 coverage-region	ui	app/Sources/DetachApp/SidebarView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-SESSION-DETAIL,SC-UI-SESSION-DELETE,SC-UI-FAILURE	Packaged journeys cover sidebar control geometry, bulk Delete, and failure status.
 route	1100	quality/policy.tsv	quality-core	safe	docs/specs/documentation.md
 route	1000	quality/*	policy	safe	docs/specs/documentation.md
