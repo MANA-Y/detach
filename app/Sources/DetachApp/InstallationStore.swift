@@ -631,6 +631,7 @@ final class InstallationStore {
         // The user agent records an independently observable power heartbeat.
         watchdogError = nil
         do {
+            refreshPowerProtectionState()
             let watchdogStatusBeforeReconcile = watchdog.status
             let replaceSilentRegistration = watchdogStatusBeforeReconcile == .enabled
                 && !watchdogHeartbeat.healthy
