@@ -929,6 +929,7 @@ set -eu
 [ -f "${GATE_ORDER_ROOT:?}/app" ]
 [ -f "$GATE_ORDER_ROOT/ui-e2e" ]
 [ -f "$GATE_ORDER_ROOT/quality-contracts" ]
+[ -f "$GATE_ORDER_ROOT/gate-contract" ]
 : >"$GATE_ORDER_ROOT/codex-started"
 attempt=0
 while [ ! -f "$GATE_ORDER_ROOT/integration-after-contract" ] && \
@@ -952,6 +953,11 @@ cat >"$REPO/tests/quality-gate-fixtures/distribution" <<'SH'
 #!/bin/bash
 set -eu
 [ -f "${GATE_ORDER_ROOT:?}/gate-contract" ]
+attempt=0
+while [ ! -f "$GATE_ORDER_ROOT/codex-started" ] && [ "$attempt" -lt 50 ]; do
+  attempt=$((attempt + 1))
+  sleep 0.1
+done
 [ -f "$GATE_ORDER_ROOT/codex-started" ]
 [ ! -f "$GATE_ORDER_ROOT/codex" ]
 : >"$GATE_ORDER_ROOT/integration-after-contract"
@@ -960,20 +966,22 @@ cat >"$REPO/tests/quality-gate-fixtures/publish-preflight" <<'SH'
 #!/bin/bash
 set -eu
 attempt=0
-while { [ ! -f "${GATE_ORDER_ROOT:?}/gate-contract-started" ] || \
-        [ ! -f "$GATE_ORDER_ROOT/codex-started" ]; } && [ "$attempt" -lt 50 ]; do
+while [ ! -f "${GATE_ORDER_ROOT:?}/gate-contract-started" ] && \
+    [ "$attempt" -lt 50 ]; do
   attempt=$((attempt + 1))
   sleep 0.1
 done
 [ -f "$GATE_ORDER_ROOT/gate-contract-started" ]
-[ -f "$GATE_ORDER_ROOT/codex-started" ]
 [ ! -f "$GATE_ORDER_ROOT/gate-contract" ]
+[ ! -f "$GATE_ORDER_ROOT/codex-started" ]
 : >"$GATE_ORDER_ROOT/short-preflight-during-contract"
 SH
 cat >"$REPO/tests/quality-gate-fixtures/release-workflow" <<'SH'
 #!/bin/bash
 set -eu
 [ -f "${GATE_ORDER_ROOT:?}/gate-contract" ]
+[ -f "$GATE_ORDER_ROOT/codex" ]
+[ -f "$GATE_ORDER_ROOT/claude" ]
 : >"$GATE_ORDER_ROOT/release-workflow-started"
 sleep 1
 : >"$GATE_ORDER_ROOT/release-workflow"
@@ -981,8 +989,17 @@ SH
 cat >"$REPO/tests/quality-gate-fixtures/claude" <<'SH'
 #!/bin/bash
 set -eu
-[ -f "${GATE_ORDER_ROOT:?}/release-workflow" ] || [ -f "$GATE_ORDER_ROOT/codex" ]
-: >"$GATE_ORDER_ROOT/third-heavy-waited"
+[ -f "${GATE_ORDER_ROOT:?}/gate-contract" ]
+[ ! -f "$GATE_ORDER_ROOT/release-workflow-started" ]
+: >"$GATE_ORDER_ROOT/claude-started"
+attempt=0
+while [ ! -f "$GATE_ORDER_ROOT/codex-started" ] && [ "$attempt" -lt 50 ]; do
+  attempt=$((attempt + 1))
+  sleep 0.1
+done
+[ -f "$GATE_ORDER_ROOT/codex-started" ]
+sleep 1
+: >"$GATE_ORDER_ROOT/claude"
 SH
 for ordered_stage in tmux-runtime release-preflight; do
   cat >"$REPO/tests/quality-gate-fixtures/$ordered_stage" <<'SH'
@@ -1017,8 +1034,8 @@ grep -F 'quality-gate: DIAGNOSTIC PASS' "$REPO/resource-order.out" >/dev/null
   printf 'bounded scheduler did not use the safe preflight lane\n' >&2
   exit 1
 }
-[ -f "$ORDER_ROOT/third-heavy-waited" ] || {
-  printf 'bounded scheduler admitted a third process-heavy lane\n' >&2
+[ -f "$ORDER_ROOT/release-workflow" ] || {
+  printf 'bounded scheduler overlapped the nested release workflow with a heavy peer\n' >&2
   exit 1
 }
 

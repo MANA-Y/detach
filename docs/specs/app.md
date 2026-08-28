@@ -47,13 +47,13 @@ signed marker. UI smoke uses a stripped private copy at
 power, state, and tmux payloads. Injections stay below its root. An escape,
 unsafe identity, build mismatch, or payload fails closed.
 
-Smoke preserves and restores focus. It sends AppKit down/up pairs to measured
+Smoke restores focus and pointer position. It sends AppKit down/up pairs to measured
 SwiftUI controls; semantic locators have no actions. Row clicks select sessions
 even after preview text takes focus.
-Each launch and the 40-second stage meet their deadlines.
+Each launch and stage stays within its deadline.
 Journeys cover main surfaces, Settings, onboarding, and focus. It disconnects
 Stop before proving that the real control invokes it.
-Only visible controls complete isolated onboarding.
+Only visible controls complete onboarding.
 
 Coverage builds the normal bundle, instrumented binary, and Swift tests in
 isolated paths. UI waits for the bundle. Metrics wait for UI and Swift tests.
@@ -93,8 +93,8 @@ thin tmux-colored capsule. Status is a filled circle. Power has a neutral
 surface and semantic color. The UUID chip is one copy control. Any click copies
 the full UUID and shows **Copied**.
 
-**Finished** bulk Delete uses typed Delete, asks once, tolerates failures, and
-keeps provider transcripts. Select/Done has 12-point scroll clearance.
+**Finished** bulk Delete stays outside `List`, uses typed Delete, asks once,
+tolerates failures, and keeps transcripts. Select/Done keeps 12-point clearance.
 
 Every app CLI invocation runs in a fresh process group that drains stdout and
 stderr. Its deadline sends TERM then KILL to the group. A pipe-only descendant

@@ -289,11 +289,13 @@ chmod 0755 \
 
 assert_local_validation_rejected() {
   local failure="$1"
-  : >"$TMP_ROOT/validation.log"
-  rm -f "$GH_LOG"
+  local validation_log="$TMP_ROOT/$failure.validation.log"
+  local gh_log="$TMP_ROOT/$failure.gh.log"
+  : >"$validation_log"
+  rm -f "$gh_log"
   if PATH="$FAKE_BIN:/usr/bin:/bin" \
-      FAKE_GH_LOG="$GH_LOG" \
-      FAKE_VALIDATION_LOG="$TMP_ROOT/validation.log" \
+      FAKE_GH_LOG="$gh_log" \
+      FAKE_VALIDATION_LOG="$validation_log" \
       FAIL_VALIDATION="$failure" \
       DETACH_GITHUB_REPOSITORY="$REPOSITORY" \
       DETACH_CONFIRM_PUBLISH="$EXPECTED_CONFIRMATION" \
@@ -303,12 +305,12 @@ assert_local_validation_rejected() {
       "$failure" >&2
     exit 1
   fi
-  [ ! -e "$GH_LOG" ] || {
+  [ ! -e "$gh_log" ] || {
     printf 'publish contacted GitHub before rejecting: %s\n' "$failure" >&2
     exit 1
   }
   if [ "$failure" = hdiutil_attach ]; then
-    grep -F 'hdiutil|detach ' "$TMP_ROOT/validation.log" >/dev/null || {
+    grep -F 'hdiutil|detach ' "$validation_log" >/dev/null || {
       printf 'failed DMG attach was not cleaned up with detach\n' >&2
       exit 1
     }
@@ -355,6 +357,8 @@ printf '%s\n' dirty >"$TEST_REPO/local-note.txt"
 assert_dirty_worktree_rejected dirty-untracked
 rm "$TEST_REPO/local-note.txt"
 
+validation_case_pids=()
+validation_case_names=()
 for failed_validation in \
   hdiutil_verify \
   hdiutil_attach \
@@ -366,8 +370,19 @@ for failed_validation in \
   stapler_dmg \
   gatekeeper_app \
   gatekeeper_dmg; do
-  assert_local_validation_rejected "$failed_validation"
+  assert_local_validation_rejected "$failed_validation" &
+  validation_case_pids+=("$!")
+  validation_case_names+=("$failed_validation")
 done
+validation_case_status=0
+for validation_case_index in "${!validation_case_pids[@]}"; do
+  if ! wait "${validation_case_pids[$validation_case_index]}"; then
+    printf 'publish validation lane failed: %s\n' \
+      "${validation_case_names[$validation_case_index]}" >&2
+    validation_case_status=1
+  fi
+done
+[ "$validation_case_status" -eq 0 ] || exit 1
 
 : >"$TMP_ROOT/validation.log"
 rm -f "$GH_LOG"

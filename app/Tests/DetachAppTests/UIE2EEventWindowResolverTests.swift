@@ -4,6 +4,18 @@ import XCTest
 
 @MainActor
 final class UIE2EEventWindowResolverTests: XCTestCase {
+    func testCursorPointMapsBetweenOffsetDisplayCoordinateSystems() {
+        let screenFrame = CGRect(x: -800, y: 200, width: 800, height: 600)
+        let displayBounds = CGRect(x: 1_600, y: 900, width: 800, height: 600)
+
+        XCTAssertEqual(
+            UIE2ECursorPositionResolver.quartzPoint(
+                for: CGPoint(x: -600, y: 350),
+                screenFrame: screenFrame,
+                displayBounds: displayBounds),
+            CGPoint(x: 1_800, y: 1_350))
+    }
+
     func testViewResolvesItsOwningWindowWhenWindowsOverlap() {
         let behind = NSWindow(
             contentRect: NSRect(x: 100, y: 100, width: 300, height: 300),

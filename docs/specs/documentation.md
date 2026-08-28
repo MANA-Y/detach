@@ -4,7 +4,7 @@
 
 Codex and Claude Code receive the same small durable instruction core, discover
 only task-relevant detailed specs, and use focused tests while iterating.
-Hosted pull-request CI is the deterministic merge-readiness authority.
+Hosted CI is the merge-readiness authority.
 
 ## Invariants
 
@@ -75,10 +75,11 @@ Hosted pull-request CI is the deterministic merge-readiness authority.
 - CI keeps a ten-minute timing ratchet with no reference-Mac limit.
 - Gate contracts admit three heavy shards on eight CPUs and two on
   fewer CPUs. Light contracts stay concurrent. Budgets expose overload.
-- Swift tests and both release builds use separate caches and split three or
-  more CPUs. Smaller hosts run them in order. UI waits for the app; metrics
-  wait for Swift and UI. Later work uses two heavy lanes and one integration
-  lane. Distribution waits for gate-contract.
+- Swift and release builds use separate caches and split at three CPUs.
+  Smaller hosts run in order. UI waits for app; metrics for both.
+  Gate-contract and release-workflow exclude heavy peers. Gate-contract permits
+  preflight and gates distribution. Other work uses two heavy and one
+  integration lane.
 - Exact keys bind code, resources, scripts, version, and toolchain. `main` warms
   only a missing app or executable product. CI verifies hits and rebuilds
   misses. Warming is not evidence.
