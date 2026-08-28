@@ -22,9 +22,12 @@ The live poller reads status without side effects and reconciles once when it
 becomes enabled. Only confirmed readiness (a
 finished helper journal and an open root gate) advances the step. Registration
 can stay in `requiresApproval`; do not treat it as enabled before macOS does.
-The success card waits for a fresh watchdog heartbeat. Its dashboard action
-stays disabled until then. After a long wait, it offers a monitor retry, not a
-bypass. The store records completion only after that action, exactly once.
+The success card waits for a fresh watchdog heartbeat. Each done-step poll
+reads the heartbeat file again. Its dashboard action stays disabled until then.
+After a long wait, it offers a monitor retry, not a bypass. The store records
+completion only after that action, exactly once. Repair and first-run
+synchronization read the heartbeat file again before they decide to replace a
+silent registration.
 If a doctor refresh fails or detects another runtime identity, the app
 withdraws the earlier helper-readiness confirmation.
 
