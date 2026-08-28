@@ -44,9 +44,14 @@ grep -F 'coverage executable has no coverage map' \
 for invocation in \
   'list --json' \
   'codex logs --ansi detach-codex-ui-running' \
+  'codex attach detach-codex-ui-running' \
+  'codex logs --ansi detach-codex-ui-recoverable' \
+  'codex recover --detach detach-codex-ui-recoverable' \
+  'codex attach detach-codex-ui-recoverable' \
   'claude logs --ansi detach-claude-ui-completed' \
+  'resume --detach a9f58f1d-1234-5678-9abc-def012342ed9' \
+  'claude attach detach-claude-ui-completed' \
   'codex stop detach-codex-ui-running' \
-  'claude delete --force detach-claude-ui-completed' \
   'storage --json' \
   'config tmux-style' \
   'config tmux-extended-keys'; do

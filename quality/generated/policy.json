@@ -259,6 +259,24 @@
     },
     {
       "group": "ui",
+      "path": "app/Sources/DetachApp/SessionAttachTerminalView.swift",
+      "region": "swiftterm-metal",
+      "scenarios": [
+        "SC-UI-SESSION-DETAIL"
+      ],
+      "summary": "XCTest cannot host LocalProcessTerminalView. HeadlessTerminal owns the process proof."
+    },
+    {
+      "group": "ui",
+      "path": "app/Sources/DetachApp/SessionAttachTerminalView.swift",
+      "region": "swiftterm-host",
+      "scenarios": [
+        "SC-UI-SESSION-DETAIL"
+      ],
+      "summary": "XCTest cannot construct the SwiftTerm representable. The packaged journey hosts it."
+    },
+    {
+      "group": "ui",
       "path": "app/Sources/DetachApp/SettingsView.swift",
       "region": "ui-e2e-instrumentation",
       "scenarios": [
@@ -687,7 +705,7 @@
     "mutation_timeout_seconds": 240,
     "pr_feedback_seconds": 600
   },
-  "policy": 50,
+  "policy": 51,
   "release_domains": [
     {
       "gates": "-",
@@ -3248,7 +3266,7 @@
     {
       "capabilities": "quality-system",
       "id": "swift-test",
-      "stages": "static,swift,quality-contracts,release-budget"
+      "stages": "static,swift,quality-contracts,app,release-budget"
     },
     {
       "capabilities": "installation,update",

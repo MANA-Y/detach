@@ -15,7 +15,9 @@ final class PowerHelperPlatformTests: XCTestCase {
 
     func testRootCommandRunnerTerminatesHungProcess() {
         let runner = RootProcessCommandRunner(
-            timeout: 0.05, terminationGrace: 0.05)
+            // Give the child time to install its ignored-TERM handler before
+            // the runner starts the TERM-to-KILL escalation.
+            timeout: 0.5, terminationGrace: 0.05)
 
         XCTAssertThrowsError(try runner.run(RootCommand(
             executable: "/bin/sh",
@@ -296,6 +298,26 @@ final class PowerHelperPlatformTests: XCTestCase {
                 as? NSNumber)
         XCTAssertEqual(fileMode.intValue & 0o777, 0o600)
         XCTAssertEqual(directoryMode.intValue & 0o777, 0o700)
+    }
+
+    func testSecureFileStoreAtomicallyReplacesExistingState() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = SecureFilePowerHelperStateStore(
+            fileURL: root.appendingPathComponent("state.json"))
+        let initial = PowerHelperPersistentState()
+        let replacement = PowerHelperPersistentState(
+            ownsClosedLidProtection: true,
+            leases: [PowerLease(
+                id: "replacement", sessionName: "session", runToken: "run",
+                renewedAt: Date(timeIntervalSince1970: 456),
+                assertionActive: true)])
+
+        try store.save(initial)
+        try store.save(replacement)
+
+        XCTAssertEqual(try store.load(), replacement)
     }
 
     func testSecureFileStoreRejectsSymlinkStatePath() throws {

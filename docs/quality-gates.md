@@ -221,6 +221,8 @@ reads a manual floor file.
 
 The metric artifact records exact UI and business test identities, aggregate
 line coverage, critical-source coverage, and changed executable Swift lines.
+Swift-test changes run the packaged-app journeys before metrics so the current
+and baseline coverage inputs are equivalent.
 CI rejects a removed test or a lower aggregate or critical-source ratio.
 Changed executable lines need at least 90 percent coverage. A new critical
 source needs 100 percent coverage for its first baseline. Missing, stale,

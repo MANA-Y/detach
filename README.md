@@ -5,8 +5,8 @@
 <h1 align="center">Detach</h1>
 
 <p align="center">
-  <strong>Close the terminal. Keep the agent running.</strong><br>
-  A native macOS control center and reliability layer for long-running Codex and Claude Code sessions.
+  <strong>Close the window. Keep the agent running.</strong><br>
+  A native macOS workspace for persistent, interactive Codex and Claude Code sessions.
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@ assistant detects both providers and explains what is missing without mixing
 their installation with the Detach installation above.
 
 <p align="center">
-  <img src="docs/assets/detach-app.png" width="920" alt="Detach.app showing Codex and Claude Code sessions, live status, logs, model, context usage, and recovery actions">
+  <img src="docs/assets/detach-app.png" width="920" alt="Detach.app showing Codex and Claude Code sessions with a live interactive terminal">
 </p>
 
 ## Why Detach
@@ -51,9 +51,12 @@ large code generation. Detach gives those runs a durable home.
 
 - **Leave without killing the run.** Close Terminal, close the Detach window,
   or detach from tmux. The managed agent keeps running independently.
+- **Work in one app.** Type in the embedded Codex or Claude Code terminal,
+  paste text or images, search output, and reconnect the terminal client without
+  restarting the agent.
 - **See every agent in one place.** Codex and Claude Code share one native
-  dashboard with live state, logs, model, context usage, checkpoint time, and
-  clear next actions.
+  dashboard with interactive sessions, retained logs, model, context usage,
+  checkpoint time, and clear next actions.
 - **Come back the right way.** Attach to the process that is still alive,
   resume an existing provider conversation, or recover an interrupted managed
   run from a validated local checkpoint.
@@ -68,17 +71,29 @@ large code generation. Detach gives those runs a durable home.
   Mac. Storage usage is visible, and cleanup is limited to state Detach can
   prove is safe to remove.
 
-Detach is not another chat client. It is the process, recovery, power, and
-operations layer around the provider terminal experience you already use.
+Detach does not replace Codex or Claude Code. It adds an interactive terminal,
+process ownership, recovery, power protection, and operations around them.
 
 ## The everyday workflow
 
-1. Click **＋** in Detach, choose a project and provider, and optionally add the
-   first prompt.
-2. Let the agent work in your preferred terminal.
-3. Close the terminal or Detach.app whenever you want.
-4. Reopen Detach to inspect progress, read logs, answer the agent, stop the run,
-   or recover it after an interruption.
+1. Click **＋** in Detach. Choose a project, provider, and optional session name.
+2. Expand **Advanced** only when you want to change the launch terminal or add
+   an initial prompt. The launch button names the selected terminal.
+3. Select the live session and work in its embedded terminal. The external
+   terminal remains available as a fallback.
+4. Close either terminal or Detach.app whenever you want. The managed agent
+   keeps running.
+5. Reopen Detach to answer the agent, inspect progress, stop the run, Resume a
+   conversation, or Recover an interrupted managed run.
+
+The embedded terminal keeps the provider shortcuts that matter:
+
+| Action | Control |
+|---|---|
+| Paste text | `Cmd-V` |
+| Give Codex or Claude Code an image from the clipboard | `Ctrl-V` |
+| Find terminal output | `Cmd-F` |
+| Replace an exited terminal client without restarting the agent | **Reconnect** |
 
 Prefer the shell? Guided setup adds `detach` to your login and interactive
 shell. Open a new terminal window and run:
@@ -94,17 +109,18 @@ detach claude --detach -- "run the test suite and fix failures"
 The app and CLI operate on the same sessions. Start in one and continue in the
 other.
 
-Detach reuses the selected terminal application. When it must start that app,
-it uses a private startup guard until the temporary command starts. A startup
-prompt, such as an oh-my-zsh update, cannot consume the command path. Detach
-then restores the user's shell startup files for that process.
+New sessions start through the selected terminal application. Detach uses a
+private startup guard until the temporary command starts. A startup prompt,
+such as an oh-my-zsh update, cannot consume the command path. Detach then
+restores the user's shell startup files for that process. Live work, Resume,
+and Recover are available in the app after the managed session exists.
 
-## One command center for Codex and Claude Code
+## The terminal and control center in one window
 
-Detach.app owns the session lifecycle while interactive work stays in a real
-terminal. It detects Terminal, iTerm2, Warp, and apps that register as
-shell-script runners; Settings can point to another terminal manually. Attach,
-Resume, and Recover buttons name the terminal currently selected in Settings.
+Detach.app owns the session lifecycle. A live session is interactive inside
+Detach. Resume and Recover also start inside the app and do not require an
+outer terminal. The selected Terminal, iTerm2, Warp, or other shell-script
+runner remains available from the named fallback button.
 
 The dashboard gives every managed session:
 
@@ -112,7 +128,8 @@ The dashboard gives every managed session:
   stopped state;
 - an explicit health reason when the runtime needs attention;
 - provider, project, model, context use, checkpoint time, and exit status;
-- ANSI-aware retained logs with color and common text attributes;
+- an interactive terminal for live sessions and ANSI-aware retained logs for
+  session history;
 - safe actions chosen from **Attach**, **Stop**, **Resume**, **Recover**, and
   **Delete** according to the proven state;
 - checkboxes in **Finished** for one-confirmation deletion of selected eligible
@@ -227,7 +244,7 @@ the storage and ownership checks.
 
 | Situation | Action | What Detach does |
 |---|---|---|
-| The managed worker is still alive | **Attach** | Reopens the existing tmux session without starting another agent. |
+| The managed worker is still alive | **Attach** | Opens an embedded client for the existing tmux session without starting another agent. |
 | The provider conversation exists | **Resume** | Continues the conversation by UUID after detecting its provider and saved project. |
 | A Detach-managed run was interrupted | **Recover** | Validates the saved context and checkpoint, then restarts the exact conversation under management. |
 
@@ -511,7 +528,7 @@ Detach includes:
 
 | Component | Included behavior |
 |---|---|
-| Native app | Dashboard, settings, notifications, menu bar companion, setup, repair, and uninstall. |
+| Native app | Interactive terminal, dashboard, settings, notifications, menu bar companion, setup, repair, and uninstall. |
 | Private tmux | Bundled Apple Silicon runtime; no separate tmux install or global config changes. |
 | Typed state runtime | Reads and updates Detach JSON/JSONL without a `jq` dependency. |
 | Native power components | Idle-sleep assertion, signed closed-lid helper, and background health monitor. |

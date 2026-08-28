@@ -1,5 +1,5 @@
 schema	1
-policy	50
+policy	51
 spec	documentation	docs/specs/documentation.md	Agent context, specifications, and quality automation stay synchronized.
 spec	runtime	docs/specs/runtime.md	Runtime state and session operations preserve exact ownership.
 spec	power	docs/specs/power.md	Power protection fails safe across both required layers.
@@ -39,7 +39,7 @@ test-domain	update-source	static,swift,quality-contracts,app,release-budget	upda
 test-domain	diagnostics-source	static,swift,quality-contracts,app,release-budget	diagnostics
 test-domain	runtime-source	static,swift,quality-contracts,app,release-budget	session-lifecycle
 test-domain	session-ui-source	static,swift,quality-contracts,app,release-budget	session-lifecycle,app-experience
-test-domain	swift-test	static,swift,quality-contracts,release-budget	quality-system
+test-domain	swift-test	static,swift,quality-contracts,app,release-budget	quality-system
 test-domain	package	static,swift,quality-contracts,app,tmux-runtime,release-budget	installation,update
 test-domain	cli	static,app,codex,claude,distribution,tmux-runtime,release-budget	session-lifecycle
 test-domain	install	static,app,distribution,tmux-runtime,release-budget	installation
@@ -73,6 +73,8 @@ coverage-region	ui	app/Sources/DetachApp/TerminalPreferencePicker.swift	window-p
 coverage-region	ui	app/Sources/DetachApp/OnboardingView.swift	ui-e2e-instrumentation	SC-UI-ONBOARD-FIRST-RUN,SC-UI-ONBOARD-PROVIDER,SC-UI-ONBOARD-APPROVAL	Packaged onboarding journeys own their semantic locators and safe poller.
 coverage-region	ui	app/Sources/DetachApp/RootView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-ONBOARD-FIRST-RUN,SC-UI-ONBOARD-PROVIDER,SC-UI-ONBOARD-APPROVAL	Packaged journeys cover the test-only semantic bridge and route.
 coverage-region	ui	app/Sources/DetachApp/SessionDetailView.swift	ui-e2e-instrumentation	SC-UI-SESSION-STOP,SC-UI-SESSION-DELETE,SC-UI-SESSION-DETAIL	The packaged journey covers action geometry, UUID copy, and its negative control.
+coverage-region	ui	app/Sources/DetachApp/SessionAttachTerminalView.swift	swiftterm-metal	SC-UI-SESSION-DETAIL	XCTest cannot host LocalProcessTerminalView. HeadlessTerminal owns the process proof.
+coverage-region	ui	app/Sources/DetachApp/SessionAttachTerminalView.swift	swiftterm-host	SC-UI-SESSION-DETAIL	XCTest cannot construct the SwiftTerm representable. The packaged journey hosts it.
 coverage-region	ui	app/Sources/DetachApp/SettingsView.swift	ui-e2e-instrumentation	SC-UI-SETTINGS	The packaged Settings journey covers its semantic control.
 coverage-region	ui	app/Sources/DetachApp/SidebarView.swift	ui-e2e-instrumentation	SC-UI-DASHBOARD,SC-UI-SESSION-DETAIL,SC-UI-SESSION-DELETE,SC-UI-FAILURE	Packaged journeys cover sidebar control geometry, bulk Delete, and failure status.
 route	1100	quality/policy.tsv	quality-core	safe	docs/specs/documentation.md
