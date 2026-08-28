@@ -100,15 +100,21 @@ struct MacPowerSettingsPresentation: Equatable {
     }
 }
 
-/// Live sessions that Settings and the menu bar count as active.
-enum MacPowerLiveSessions {
-    static func live(in sessions: [Session]) -> [Session] {
-        sessions.filter(\.isLive)
+/// Sessions that Settings and the menu bar count as active work.
+enum MacPowerActiveSessions {
+    static func active(in sessions: [Session]) -> [Session] {
+        sessions.filter {
+            switch $0.effectiveStatus {
+            case .starting, .running, .recovering: true
+            case .hung, .completed, .failed, .interrupted, .stopped,
+                 .recoverable, .orphaned, .corrupt, .collision, .unknown: false
+            }
+        }
     }
 
     static func counts(in sessions: [Session]) -> (active: Int, working: Int) {
-        let live = live(in: sessions)
-        return (live.count, live.filter { !$0.isWaitingForUser }.count)
+        let active = active(in: sessions)
+        return (active.count, active.filter { !$0.isWaitingForUser }.count)
     }
 }
 
@@ -1019,7 +1025,7 @@ struct SettingsView: View {
     }
 
     var macPowerPresentation: MacPowerSettingsPresentation {
-        let counts = MacPowerLiveSessions.counts(in: sessionStore.sessions)
+        let counts = MacPowerActiveSessions.counts(in: sessionStore.sessions)
         return MacPowerSettingsPresentation(
             state: installation.powerProtectionState,
             helperStatus: installation.powerHelperStatus,

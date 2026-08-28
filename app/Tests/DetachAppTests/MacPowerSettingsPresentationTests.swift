@@ -178,19 +178,21 @@ final class MacPowerSettingsPresentationTests: XCTestCase {
 }
 
 @MainActor
-final class MacPowerLiveSessionTests: XCTestCase {
-    func testCountsTreatStartingAndRecoveringAsActive() {
+final class MacPowerActiveSessionTests: XCTestCase {
+    func testCountsTreatStartingRunningAndRecoveringAsActiveButNotHung() {
         let sessions = [
             session(status: "starting"),
+            session(status: "running"),
             session(status: "recovering"),
+            session(status: "hung"),
             session(status: "completed"),
         ]
         XCTAssertEqual(
-            MacPowerLiveSessions.live(in: sessions).map(\.effectiveStatus),
-            [.starting, .recovering])
-        let counts = MacPowerLiveSessions.counts(in: sessions)
-        XCTAssertEqual(counts.active, 2)
-        XCTAssertEqual(counts.working, 2)
+            MacPowerActiveSessions.active(in: sessions).map(\.effectiveStatus),
+            [.starting, .running, .recovering])
+        let counts = MacPowerActiveSessions.counts(in: sessions)
+        XCTAssertEqual(counts.active, 3)
+        XCTAssertEqual(counts.working, 3)
     }
 
     func testCountsSeparateWaitingRunningSessions() {
@@ -198,7 +200,7 @@ final class MacPowerLiveSessionTests: XCTestCase {
             session(status: "running", turnState: "waiting"),
             session(status: "starting"),
         ]
-        let counts = MacPowerLiveSessions.counts(in: sessions)
+        let counts = MacPowerActiveSessions.counts(in: sessions)
         XCTAssertEqual(counts.active, 2)
         XCTAssertEqual(counts.working, 1)
     }

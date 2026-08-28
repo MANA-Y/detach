@@ -123,7 +123,7 @@ final class MenuBarPresentationTests: XCTestCase {
 
     func testAllowedStateWithRunningSessionsNamesTheMismatch() {
         // Heartbeat lag right after a session starts: the menu must not say
-        // "No active agent sessions" above a listed live session.
+        // "No active agent sessions" above a listed active session.
         let presentation = makePresentation(
             powerState: "allowed",
             sessions: [runningSession(id: "a")])
@@ -157,8 +157,8 @@ final class MenuBarPresentationTests: XCTestCase {
         }
     }
 
-    func testAllowedStateNeverClaimsNoSessionsWhileALiveSessionExists() {
-        for status in ["starting", "running", "recovering", "hung"] {
+    func testAllowedStateNeverClaimsNoSessionsWhileAnActiveSessionExists() {
+        for status in ["starting", "running", "recovering"] {
             let presentation = makePresentation(
                 powerState: "allowed",
                 sessions: [
@@ -171,9 +171,25 @@ final class MenuBarPresentationTests: XCTestCase {
             XCTAssertNotEqual(
                 presentation.power.reason,
                 .noActiveSessions,
-                "live status \(status) must not be worded as empty")
+                "active status \(status) must not be worded as empty")
             XCTAssertEqual(presentation.sessions.count, 1, status)
         }
+    }
+
+    func testHungSessionIsAProblemNotActiveWork() {
+        let presentation = makePresentation(
+            powerState: "allowed",
+            sessions: [
+                session(
+                    id: "hung",
+                    status: "hung",
+                    createdAt: "2026-07-15T10:00:00Z",
+                    turnState: nil),
+            ])
+
+        XCTAssertEqual(presentation.power.reason, .noActiveSessions)
+        XCTAssertTrue(presentation.sessions.isEmpty)
+        XCTAssertEqual(presentation.sessionDot, .none)
     }
 
     func testHeaderTextJoinsStateReasonAndFreshness() {
