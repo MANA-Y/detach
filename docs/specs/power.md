@@ -116,7 +116,10 @@ While the wrapper holds a confirmed protected run, it observes the documented
 IOPMrootDomain clamshell notification. Each physical open-to-closed transition
 requests `/usr/bin/pmset displaysleepnow` as the unprivileged console user so
 macOS follows the user's normal Lock Screen policy without Apple Events,
-Automation, or synthetic input. The initial clamshell state is only a baseline:
+Automation, or synthetic input. The lock request has bounded execution: a
+two-second timeout with SIGTERM-to-SIGKILL escalation. A hung `pmset` must not
+block the clamshell monitor or delay wrapper cleanup. The initial clamshell
+state is only a baseline:
 starting a run while the lid is already closed must not lock an external-display
 workflow. Repeated closed notifications lock only once until the lid reopens.
 This does not rewrite the user's password-delay setting. A MacBook run must
