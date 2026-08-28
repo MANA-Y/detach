@@ -24,7 +24,7 @@ FAILURE_COMMAND=""
 CODEX_TEST_PART="${DETACH_CODEX_TEST_PART:-all}"
 
 case "$CODEX_TEST_PART" in
-  all|guardrails|preflight|configuration|lifecycle-recovery|resume-identity|lifecycle|recovery|restart|resume|identity|crash|history) ;;
+  all|guardrails|preflight|configuration|lifecycle-recovery|resume-identity|lifecycle|recovery|restart|resume|identity|delete|crash|history) ;;
   *)
     printf 'unknown Codex test part: %s\n' "$CODEX_TEST_PART" >&2
     exit 2
@@ -46,7 +46,7 @@ codex_part_selected() {
       return 1
     } ||
     [ "$CODEX_TEST_PART" = resume-identity ] && {
-      case "$1" in resume|identity) return 0 ;; esac
+      case "$1" in resume|identity|delete) return 0 ;; esac
       return 1
     }
   }
@@ -1345,7 +1345,11 @@ printf '%s' "$json_line" | grep -F '"session_color":null' >/dev/null
 # safety assertion does not pass merely because the saved value is malformed.
 "$STATE_HELPER" meta patch "$meta" --string session_color "$session_color"
 
-# delete refuses a live session and removes a stopped one.
+# Delete refuses a live session and removes a stopped one. The fine-grained
+# local layout gives its intentional held-lock wait a separate parallel lane.
+fi
+
+if codex_part_selected delete; then
 run_codex --name integration --detach -- 'delete refusal coverage'
 wait_for_tmux_option "$SESSION" @detach_status running
 live_storage_plan="$("$DETACH" storage cleanup --dry-run --json)"

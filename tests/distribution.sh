@@ -4,6 +4,22 @@ set -eu
 set -o pipefail
 
 ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
+DISTRIBUTION_TEST_PART="${DETACH_DISTRIBUTION_TEST_PART:-all}"
+case "$DISTRIBUTION_TEST_PART" in
+  all|runtime|shells) ;;
+  *) printf 'unknown distribution test part: %s\n' "$DISTRIBUTION_TEST_PART" >&2; exit 2 ;;
+esac
+
+distribution_part_selected() {
+  [ "$DISTRIBUTION_TEST_PART" = all ] || [ "$DISTRIBUTION_TEST_PART" = "$1" ]
+}
+
+distribution_scenario_event() {
+  [ "$DISTRIBUTION_TEST_PART" = all ] && \
+    [ "${DETACH_QUALITY_PARTITIONED_DISTRIBUTION:-0}" != 1 ] || return 0
+  "$ROOT/scripts/quality-scenarios" event "$1" "$2"
+}
+
 # Keep the synthetic home short enough that the production absolute tmux
 # socket remains within macOS's 103-byte sockaddr_un limit.
 TMP_ROOT="$(mktemp -d "/tmp/dt.XXXXXX")"
@@ -226,10 +242,12 @@ PLIST
   fi
 }
 
+if distribution_part_selected runtime; then
+
 # App launches inherit a synthetic PATH that already contains ~/.local/bin.
 # Shell setup must still configure every zsh startup mode and preserve a file
 # that existed before Detach, including its missing final newline.
-"$ROOT/scripts/quality-scenarios" event begin SC-INSTALL-CLEAN
+distribution_scenario_event begin SC-INSTALL-CLEAN
 printf '%s' 'export DETACH_ZSHENV_SENTINEL=all' >"$TEST_HOME/.zshenv"
 cp -p "$TEST_HOME/.zshenv" "$TMP_ROOT/zshenv.original"
 
@@ -499,11 +517,11 @@ fi
   --version-file "$payload_v2/VERSION"
 [ ! -e "$foreign_watchdog" ]
 [ ! -e "$LEGACY_WATCHDOG_STATE" ]
-"$ROOT/scripts/quality-scenarios" event pass SC-INSTALL-CLEAN
+distribution_scenario_event pass SC-INSTALL-CLEAN
 
 # Repair must restore from the pristine source recorded in the manifest, not
 # clone corrupted bytes from the active immutable directory.
-"$ROOT/scripts/quality-scenarios" event begin SC-INSTALL-REPAIR
+distribution_scenario_event begin SC-INSTALL-REPAIR
 active_dir="$(cd -P "$(dirname "$(readlink "$DETACH_INSTALL_BIN_DIR/detach")")" && pwd)"
 printf '\n# corruption\n' >>"$active_dir/detach-core"
 PATH="$DETACH_INSTALL_BIN_DIR:/usr/bin:/bin" \
@@ -518,7 +536,7 @@ grep -F '# corruption' "$active_dir/detach-core" >/dev/null
 "$DETACH_INSTALL_BIN_DIR/detach" repair
 [ "$(shasum -a 256 "$active_dir/detach-core" | awk '{print $1}')" = \
   "$(shasum -a 256 "$payload_v2/detach-core" | awk '{print $1}')" ]
-"$ROOT/scripts/quality-scenarios" event pass SC-INSTALL-REPAIR
+distribution_scenario_event pass SC-INSTALL-REPAIR
 
 # BUILD participates in downgrade prevention even when semver is unchanged.
 payload_v2_build2="$(make_payload v2-build2 0.2.0 2)"
@@ -538,7 +556,7 @@ payload_old="$(make_payload old 0.1.5)"
 # The installed runtime is self-contained: doctor resolves immutable sibling
 # helpers even from a sparse PATH and does not ask for the dependencies Detach
 # now owns itself.
-"$ROOT/scripts/quality-scenarios" event begin SC-DOCTOR-REPORT
+distribution_scenario_event begin SC-DOCTOR-REPORT
 active_dir="$(cd -P "$(dirname "$(readlink "$DETACH_INSTALL_BIN_DIR/detach")")" && pwd)"
 doctor_json="$TMP_ROOT/doctor.json"
 env -u DETACH_TMUX_BIN -u DETACH_STATE_BIN -u DETACH_POWER_BIN \
@@ -612,11 +630,11 @@ plutil -extract state raw -o - - <<<"$power_json" | grep -qx allowed
 plutil -extract helper_reachable raw -o - - <<<"$power_json" | grep -qx true
 plutil -extract thermal_state raw -o - - <<<"$power_json" | grep -qx nominal
 plutil -extract thermal_safety_active raw -o - - <<<"$power_json" | grep -qx false
-"$ROOT/scripts/quality-scenarios" event pass SC-DOCTOR-REPORT
+distribution_scenario_event pass SC-DOCTOR-REPORT
 
 # Direct CLI uninstall must not strand the app-owned SMAppService without its
 # executable. Detach.app unregisters the helper before invoking the installer.
-"$ROOT/scripts/quality-scenarios" event begin SC-INSTALL-UNINSTALL
+distribution_scenario_event begin SC-INSTALL-UNINSTALL
 export FAKE_APP_WATCHDOG=1
 if "$DETACH_INSTALL_BIN_DIR/detach" uninstall --keep-state; then
   printf 'uninstall unexpectedly ignored the app-owned watchdog\n' >&2
@@ -673,6 +691,13 @@ DETACH_CODEX_STATE_ROOT="$HOME/.local/state/../../.codex" \
 cmp -s "$TMP_ROOT/zshenv.original" "$TEST_HOME/.zshenv"
 grep -Fx provider-sentinel "$HOME/.codex/must-survive" >/dev/null
 ! grep -F 'bootout' "$LAUNCHCTL_LOG" >/dev/null
+
+fi
+
+if distribution_part_selected shells; then
+if [ "$DISTRIBUTION_TEST_PART" = shells ]; then
+  payload_v2="$(make_payload v2 0.2.0)"
+fi
 
 # Exercise every supported shell adapter in isolated homes so profile ownership
 # cannot leak between cases or into the developer's real shell configuration.
@@ -1070,5 +1095,6 @@ for shell_case_pid in "${shell_case_pids[@]}"; do
 done
 [ "$shell_case_status" -eq 0 ]
 
-"$ROOT/scripts/quality-scenarios" event pass SC-INSTALL-UNINSTALL
-printf 'Detach distribution tests passed\n'
+distribution_scenario_event pass SC-INSTALL-UNINSTALL
+fi
+printf 'Detach distribution tests passed (%s)\n' "$DISTRIBUTION_TEST_PART"

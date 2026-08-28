@@ -18,7 +18,7 @@ FAILURE_COMMAND=""
 CLAUDE_TEST_PART="${DETACH_CLAUDE_TEST_PART:-all}"
 
 case "$CLAUDE_TEST_PART" in
-  all|session|lifecycle|recovery|history) ;;
+  all|session|lifecycle|lifecycle-guardrails|recovery-guardrails|recovery|history) ;;
   *)
     printf 'unknown Claude test part: %s\n' "$CLAUDE_TEST_PART" >&2
     exit 2
@@ -27,6 +27,7 @@ esac
 
 claude_part_selected() {
   [ "$CLAUDE_TEST_PART" = all ] || [ "$CLAUDE_TEST_PART" = "$1" ] || {
+    [ "$CLAUDE_TEST_PART" = lifecycle-guardrails ] && [ "$1" = lifecycle ] ||
     [ "$CLAUDE_TEST_PART" = session ] && {
       case "$1" in lifecycle|recovery) return 0 ;; esac
       return 1
@@ -685,10 +686,13 @@ fi
 
 # Simulate losing primary metadata during a power failure. Recovery must use
 # checkpoint metadata and resume the exact Claude session UUID.
-if claude_part_selected recovery; then
-if [ "$CLAUDE_TEST_PART" = recovery ]; then
+if claude_part_selected recovery || [ "$CLAUDE_TEST_PART" = recovery-guardrails ] || \
+   [ "$CLAUDE_TEST_PART" = lifecycle-guardrails ]; then
+case "$CLAUDE_TEST_PART" in
+recovery|recovery-guardrails)
   bootstrap_claude_checkpoint
-fi
+  ;;
+esac
 "$STATE_HELPER" meta patch "$checkpoint/meta.json" --string status running --null exit_status
 rm -f "$meta"
 printf '{damaged transcript\n' >"$CLAUDE_CONFIG_DIR/projects/fake/$session_id.jsonl"
@@ -707,6 +711,9 @@ export FAKE_CLAUDE_EXPECT_RESTORED=1
 # CLAUDE_CONFIG_DIR itself may be a symlink, but no descendant on a restore
 # destination may be one. Recovery must validate every destination before it
 # replaces even the transcript, and it must never write through that symlink.
+if [ "$CLAUDE_TEST_PART" = all ] || [ "$CLAUDE_TEST_PART" = session ] || \
+   [ "$CLAUDE_TEST_PART" = recovery-guardrails ] || \
+   [ "$CLAUDE_TEST_PART" = lifecycle-guardrails ]; then
 unsafe_claude_outside="$TMP_ROOT/unsafe-claude-restore-target"
 mkdir -p "$unsafe_claude_outside"
 printf 'outside sentinel\n' >"$unsafe_claude_outside/sentinel"
@@ -742,6 +749,10 @@ grep -Fx '{damaged transcript' \
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
 mv -f "$good_claude_archive" "$checkpoint/claude-session.tar"
 rm -rf "$malicious_claude_stage"
+fi
+
+if [ "$CLAUDE_TEST_PART" != recovery-guardrails ] && \
+   [ "$CLAUDE_TEST_PART" != lifecycle-guardrails ]; then
 
 # Stable publish siblings make an interrupted directory replacement
 # recoverable. `.old` is rolled back first and `.tmp` is discarded safely;
@@ -844,6 +855,7 @@ grep -Fx 'outside sentinel' "$outside" >/dev/null
 "$SCRIPT" claude delete --force "$human_label"
 [ ! -d "$DETACH_CLAUDE_STATE_ROOT/sessions/$session" ]
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
+fi
 fi
 
 if claude_part_selected history; then
