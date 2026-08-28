@@ -49,10 +49,13 @@ change real power state, upload assets, or claim publication.
   bounded ten-second launch window before owner confirmation is accepted.
   Automated release tests cover install, repair, uninstall, update, CLI
   synchronization, and helper replacement paths.
+- `DETACH_RELEASE_TEST_MODE=1` relaxes selected local production-path checks
+  for hermetic tests. It refuses the push and publication stages.
 - The release entry point supplies the low-level publication confirmation after
-  all selected gates pass. After upload, every remote asset is downloaded and
-  its digest is independently matched. Missing, extra, changed, or mismatched
-  assets fail closed.
+  all selected gates pass. After upload, verification lists every remote asset
+  name. A name outside the expected set fails closed. Every expected remote
+  asset is downloaded and its digest is independently matched. Missing, extra,
+  changed, or mismatched assets fail closed.
 - Each release includes a deterministic SPDX 2.3 SBOM. It lists the exact
   Swift resolution and the checksummed tmux, libevent, and utf8proc sources.
   The SBOM names the exact tag and commit. The release manifest binds its

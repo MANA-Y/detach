@@ -203,6 +203,9 @@ validate_configuration() {
     die 'DETACH_RELEASE_TEST_MODE must be 0 or 1'
   [ "$IGNORE_TIMING" = 0 ] || [ "$IGNORE_TIMING" = 1 ] || \
     die 'DETACH_RELEASE_IGNORE_TIMING must be 0 or 1'
+  [ "${DETACH_RELEASE_TEST_ALLOW_PUBLISH:-0}" = 0 ] || \
+    [ "${DETACH_RELEASE_TEST_ALLOW_PUBLISH:-0}" = 1 ] || \
+    die 'DETACH_RELEASE_TEST_ALLOW_PUBLISH must be 0 or 1'
   if [ "$TEST_MODE" = 1 ]; then
     printf 'release-version: TEST MODE — production path checks are relaxed\n' >&2
   fi
@@ -490,7 +493,7 @@ download_latest_manifest() {
     "https://github.com/$REPOSITORY/releases/latest/download/release-manifest.json" \
     --output "$destination"
   chmod 0600 "$destination"
-  plutil -p "$destination" >/dev/null
+  plutil -convert json -o /dev/null "$destination"
 }
 
 manifest_value() {
@@ -713,9 +716,16 @@ remove_release_ci_branch() {
     die 'remote release CI branch still exists after cleanup'
 }
 
+refuse_test_mode_publication() {
+  [ "$TEST_MODE" = 1 ] || return 0
+  [ "${DETACH_RELEASE_TEST_ALLOW_PUBLISH:-0}" = 1 ] || \
+    die 'DETACH_RELEASE_TEST_MODE refuses push and publication'
+}
+
 push_release_source() {
   local remote_ci remote_main remote_tag merge_output parents tag_commit tag_type
   local -a release_pr_args
+  refuse_test_mode_publication
   if has_stage pushed; then
     RELEASE_HEAD="$(read_state_value release-head)" || die 'release head is missing'
     RELEASE_COMMIT="$(read_state_value release-commit)" || die 'release commit is missing'
@@ -1021,6 +1031,7 @@ run_publish_preflight() {
 }
 
 publish_release() {
+  refuse_test_mode_publication
   if ! has_stage published; then
     release_api_status "$STATE_DIR/release-before-publish.json" >/dev/null
     run_publish_preflight
@@ -1045,7 +1056,7 @@ download_remote_asset() {
 
 verify_published_release() {
   local remote_root="$STATE_DIR/remote-assets" latest_tag http_status
-  local local_asset remote_asset name
+  local local_asset remote_asset name remote_assets remote_name expected
   local -a assets
 
   rm -rf "$remote_root"
@@ -1066,8 +1077,23 @@ verify_published_release() {
     "$APP_ROOT/build/update-assets/release-manifest.json"
     "$APP_ROOT/build/update-assets/release-manifest.json.sha256"
   )
+  remote_assets="$(gh release view "$TAG" --repo "$REPOSITORY" \
+    --json assets --jq '.assets[].name')"
+  while IFS= read -r remote_name; do
+    [ -n "$remote_name" ] || continue
+    expected=0
+    for local_asset in "${assets[@]}"; do
+      if [ "$remote_name" = "$(basename "$local_asset")" ]; then
+        expected=1
+        break
+      fi
+    done
+    [ "$expected" = 1 ] || die "published release has unexpected asset: $remote_name"
+  done <<<"$remote_assets"
   for local_asset in "${assets[@]}"; do
     name="$(basename "$local_asset")"
+    grep -Fx "$name" <<<"$remote_assets" >/dev/null || \
+      die "published release is missing asset: $name"
     remote_asset="$remote_root/$name"
     download_remote_asset "$name" "$remote_asset"
     [ "$(shasum -a 256 "$local_asset" | awk '{print $1}')" = \
