@@ -15,7 +15,9 @@ final class PowerHelperPlatformTests: XCTestCase {
 
     func testRootCommandRunnerTerminatesHungProcess() {
         let runner = RootProcessCommandRunner(
-            timeout: 0.05, terminationGrace: 0.05)
+            // Give the child time to install its ignored-TERM handler before
+            // the runner starts the TERM-to-KILL escalation.
+            timeout: 0.5, terminationGrace: 0.05)
 
         XCTAssertThrowsError(try runner.run(RootCommand(
             executable: "/bin/sh",
