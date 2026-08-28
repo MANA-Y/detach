@@ -23,6 +23,10 @@
 /* DetachKit errors */
 "detach list timed out" = "detach list timed out";
 "Internal error: %@ must run in Terminal" = "Internal error: %@ must run in Terminal";
+"Internal error: %@ is not an in-app start action" = "Internal error: %@ is not an in-app start action";
+"The session has no provider UUID to resume." = "The session has no provider UUID to resume.";
+"detach resume timed out" = "detach resume timed out";
+"detach recover timed out" = "detach recover timed out";
 "detach exited with status %d" = "detach exited with status %d";
 "Could not run detach: %@" = "Could not run detach: %@";
 "Session is not eligible for deletion from Finished." = "Session is not eligible for deletion from Finished.";
@@ -116,6 +120,7 @@
 "Launch in %@" = "Launch in %@";
 "Launching…" = "Launching…";
 "Leave empty and type in the terminal." = "Leave empty and type in the terminal.";
+"Live session terminal" = "Live session terminal";
 "Model context used" = "Model context used";
 "Move Detach to Applications" = "Move Detach to Applications";
 "Move Detach.app to Applications and open the installed copy" = "Move Detach.app to Applications and open the installed copy";
@@ -145,6 +150,8 @@
 "Provider CLI" = "Provider CLI";
 "Ready — we'll notify you about ready responses, completed sessions, or session problems." = "Ready — we'll notify you about ready responses, completed sessions, or session problems.";
 "Recovery from the latest checkpoint is available" = "Recovery from the latest checkpoint is available";
+"Recover" = "Recover";
+"Reconnect" = "Reconnect";
 "Recover in %@" = "Recover in %@";
 "Refresh interval" = "Refresh interval";
 "Refresh terminal list" = "Refresh terminal list";
@@ -156,6 +163,7 @@
 "Remove the CLI and all saved sessions?" = "Remove the CLI and all saved sessions?";
 "Remove, keeping checkpoints" = "Remove, keeping checkpoints";
 "Resume in %@" = "Resume in %@";
+"Resume" = "Resume";
 "Retry Setup" = "Retry Setup";
 "Running from a DMG or temporary copy is unreliable." = "Running from a DMG or temporary copy is unreliable.";
 "Select a session" = "Select a session";

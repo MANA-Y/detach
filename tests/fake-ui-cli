@@ -26,9 +26,18 @@ if [ "$#" -eq 2 ] && [ "$1" = list ] && [ "$2" = --json ]; then
     printf 'The session list is temporarily unavailable; retry from the dashboard.\n' >&2
     exit 75
   fi
+  completed='{"schema":1,"provider":"claude","session_name":"detach-claude-ui-completed","name":"UI Completed","effective_status":"completed","created_at":"2026-07-22T07:00:00Z","finished_at":"2026-07-22T07:30:00Z","exit_status":0,"agent_session_id":"a9f58f1d-1234-5678-9abc-def012342ed9","session_color":"#A855F7","power_protection_state":"allowed","health_actions":["resume","delete"]}'
+  if [ -f "$ROOT/fake/resumed" ]; then
+    completed='{"schema":1,"provider":"claude","session_name":"detach-claude-ui-completed","name":"UI Completed","effective_status":"running","created_at":"2026-07-22T07:00:00Z","agent_session_id":"a9f58f1d-1234-5678-9abc-def012342ed9","session_color":"#A855F7","power_protection_state":"protected","health_actions":["attach","stop"]}'
+  fi
+  recoverable='{"schema":1,"provider":"codex","session_name":"detach-codex-ui-recoverable","name":"UI Recoverable","effective_status":"recoverable","created_at":"2026-07-22T07:40:00Z","finished_at":"2026-07-22T07:50:00Z","exit_status":1,"session_color":"#F97316","power_protection_state":"allowed","health_actions":["recover","delete"]}'
+  if [ -f "$ROOT/fake/recovered" ]; then
+    recoverable='{"schema":1,"provider":"codex","session_name":"detach-codex-ui-recoverable","name":"UI Recoverable","effective_status":"running","created_at":"2026-07-22T07:40:00Z","session_color":"#F97316","power_protection_state":"protected","health_actions":["attach","stop"]}'
+  fi
   printf '%s\n' \
-    '{"schema":1,"provider":"codex","session_name":"detach-codex-ui-running","name":"UI Running","effective_status":"running","created_at":"2026-07-22T08:00:00Z","model":"gpt-ui-fixture","agent_turn_state":"working","session_color":"#36C5F0","power_protection_state":"protected","health_actions":["stop"]}' \
-    '{"schema":1,"provider":"claude","session_name":"detach-claude-ui-completed","name":"UI Completed","effective_status":"completed","created_at":"2026-07-22T07:00:00Z","finished_at":"2026-07-22T07:30:00Z","exit_status":0,"agent_session_id":"a9f58f1d-1234-5678-9abc-def012342ed9","session_color":"#A855F7","power_protection_state":"allowed","health_actions":["delete"]}' \
+    '{"schema":1,"provider":"codex","session_name":"detach-codex-ui-running","name":"UI Running","effective_status":"running","created_at":"2026-07-22T08:00:00Z","model":"gpt-ui-fixture","agent_turn_state":"working","session_color":"#36C5F0","power_protection_state":"protected","health_actions":["attach","stop"]}' \
+    "$recoverable" \
+    "$completed" \
     '{"schema":1,"provider":"codex","session_name":"detach-codex-ui-stopped","name":"UI Stopped","effective_status":"stopped","created_at":"2026-07-22T06:00:00Z","finished_at":"2026-07-22T06:30:00Z","exit_status":143,"session_color":"#1D4ED8","power_protection_state":"allowed","health_actions":["delete"]}'
   exit 0
 fi
@@ -55,14 +64,47 @@ if [ "$#" -eq 4 ] && [ "$2" = logs ] && [ "$3" = --ansi ]; then
   exit 0
 fi
 
-if [ "$#" -eq 3 ] && [ "$1" = codex ] && [ "$2" = stop ] \
+if [ "$#" -eq 3 ] && [ "$1" = codex ] && [ "$2" = attach ] \
     && [ "$3" = detach-codex-ui-running ]; then
+  printf 'UI fixture attach for %s\n' "$3"
+  stty raw -echo
+  : >"$ROOT/fake/control-v-ready"
+  dd bs=1 count=1 of="$ROOT/fake/control-v.bin" 2>/dev/null
+  exec /bin/cat
+fi
+
+if [ "$#" -eq 4 ] && [ "$1" = codex ] && [ "$2" = recover ] \
+    && [ "$3" = --detach ] && [ "$4" = detach-codex-ui-recoverable ]; then
+  : >"$ROOT/fake/recovered"
   printf '%s\n' "$*" >>"$ACTIONS"
   exit 0
 fi
 
-if [ "$#" -eq 4 ] && [ "$1" = claude ] && [ "$2" = delete ] \
-    && [ "$3" = --force ] && [ "$4" = detach-claude-ui-completed ]; then
+if [ "$#" -eq 3 ] && [ "$1" = codex ] && [ "$2" = attach ] \
+    && [ "$3" = detach-codex-ui-recoverable ]; then
+  printf 'UI fixture attach for %s\n' "$3"
+  if [ ! -f "$ROOT/fake/reconnect-ready" ]; then
+    : >"$ROOT/fake/reconnect-ready"
+    exit 0
+  fi
+  exec /bin/cat
+fi
+
+if [ "$#" -eq 3 ] && [ "$1" = resume ] && [ "$2" = --detach ] \
+    && [ "$3" = a9f58f1d-1234-5678-9abc-def012342ed9 ]; then
+  : >"$ROOT/fake/resumed"
+  printf '%s\n' "$*" >>"$ACTIONS"
+  exit 0
+fi
+
+if [ "$#" -eq 3 ] && [ "$1" = claude ] && [ "$2" = attach ] \
+    && [ "$3" = detach-claude-ui-completed ]; then
+  printf 'UI fixture attach for %s\n' "$3"
+  exec /bin/cat
+fi
+
+if [ "$#" -eq 3 ] && [ "$1" = codex ] && [ "$2" = stop ] \
+    && [ "$3" = detach-codex-ui-running ]; then
   printf '%s\n' "$*" >>"$ACTIONS"
   exit 0
 fi

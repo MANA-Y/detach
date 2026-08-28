@@ -75,10 +75,15 @@ operations layer around the provider terminal experience you already use.
 
 1. Click **＋** in Detach, choose a project and provider, and optionally add the
    first prompt.
-2. Let the agent work in your preferred terminal.
+2. Work with the agent in Detach. Open in Terminal remains available.
 3. Close the terminal or Detach.app whenever you want.
 4. Reopen Detach to inspect progress, read logs, answer the agent, stop the run,
    or recover it after an interruption.
+
+Inside a live terminal, use `Cmd-V` to paste text. Use `Ctrl-V` to give Codex
+or Claude Code an image from the clipboard, as in its normal terminal UI. Use
+`Cmd-F` to find terminal output. If the client exits, use **Reconnect**. This
+does not restart the managed agent.
 
 Prefer the shell? Guided setup adds `detach` to your login and interactive
 shell. Open a new terminal window and run:
@@ -101,10 +106,10 @@ then restores the user's shell startup files for that process.
 
 ## One command center for Codex and Claude Code
 
-Detach.app owns the session lifecycle while interactive work stays in a real
-terminal. It detects Terminal, iTerm2, Warp, and apps that register as
-shell-script runners; Settings can point to another terminal manually. Attach,
-Resume, and Recover buttons name the terminal currently selected in Settings.
+Detach.app owns the session lifecycle. A live session is interactive inside
+Detach. Resume and Recover also start inside the app and do not require an
+outer terminal. The selected Terminal, iTerm2, Warp, or other shell-script
+runner remains available from the secondary fallback button.
 
 The dashboard gives every managed session:
 

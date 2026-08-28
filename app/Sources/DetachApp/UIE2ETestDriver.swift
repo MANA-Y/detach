@@ -252,6 +252,65 @@ enum UIE2ETestDriver {
             checks.append("dashboard-accessible")
             trace("dashboard accessible")
 
+            let recoverableID = "detach-codex-ui-recoverable"
+            let recoverableRow = try await element(
+                identifier: "session-row-\(recoverableID)")
+            try requireSemanticControl(
+                recoverableRow, name: "recoverable session row")
+            _ = try await clickUntilElement(
+                recoverableRow,
+                name: "recoverable session row",
+                resultIdentifier: "session-detail-\(recoverableID)")
+            let recoverButton = try await element(
+                identifier: "session-action-recover-in-app")
+            let recoverFallback = try await element(
+                identifier: "session-action-recover-external")
+            try requireSemanticControl(
+                recoverButton, name: "in-app recover action")
+            try requireSemanticControl(
+                recoverFallback, name: "external recover fallback")
+            try await clickUntil(
+                recoverButton,
+                name: "in-app recover action",
+                outcome: "public detached recover reaches fake CLI") {
+                let actions = try? String(
+                    contentsOf: configuration.root
+                        .appendingPathComponent("fake/actions.log"),
+                    encoding: .utf8)
+                return actions?.contains(
+                    "codex recover --detach \(recoverableID)") == true
+            }
+            let reconnectButton = try await element(
+                identifier: "session-action-attach-in-app")
+            let reconnectFallback = try await element(
+                identifier: "session-action-attach-external")
+            try requireSemanticControl(
+                reconnectButton, name: "in-app reconnect action")
+            try requireSemanticControl(
+                reconnectFallback, name: "external reconnect fallback")
+            guard label(reconnectButton) == L10n.string("Reconnect") else {
+                throw Failure(message: "exited attach client does not offer Reconnect")
+            }
+            try await clickUntil(
+                reconnectButton,
+                name: "in-app reconnect action",
+                outcome: "second attach client reaches fake CLI") {
+                let invocations = try? String(
+                    contentsOf: configuration.root
+                        .appendingPathComponent("fake/invocations.log"),
+                    encoding: .utf8)
+                let attachCount = invocations?
+                    .split(separator: "\n")
+                    .filter { $0 == "codex attach \(recoverableID)" }
+                    .count ?? 0
+                return attachCount >= 2
+            }
+            try await waitUntil("reconnected session terminal", attempts: 40) {
+                find(identifier: "session-preview-terminal") != nil
+            }
+            checks.append(
+                "recover-and-reconnect-run-in-app-with-terminal-fallback")
+
             let completedID = "detach-claude-ui-completed"
             let completedRow = try await element(
                 identifier: "session-row-\(completedID)")
@@ -286,6 +345,27 @@ enum UIE2ETestDriver {
                     == L10n.string("Copy session UUID")
             }
             checks.append("session-uuid-copies-from-text-side")
+            let resumeButton = try await element(
+                identifier: "session-action-resume-in-app")
+            let resumeFallback = try await element(
+                identifier: "session-action-resume-external")
+            try requireSemanticControl(resumeButton, name: "in-app resume action")
+            try requireSemanticControl(resumeFallback, name: "external resume fallback")
+            try await clickUntil(
+                resumeButton,
+                name: "in-app resume action",
+                outcome: "public detached resume reaches fake CLI") {
+                let actions = try? String(
+                    contentsOf: configuration.root
+                        .appendingPathComponent("fake/actions.log"),
+                    encoding: .utf8)
+                return actions?.contains(
+                    "resume --detach a9f58f1d-1234-5678-9abc-def012342ed9") == true
+            }
+            try await waitUntil("resumed session attaches in app", attempts: 40) {
+                find(identifier: "session-preview-terminal") != nil
+            }
+            checks.append("resume-runs-in-app-with-terminal-fallback")
             let runningID = "detach-codex-ui-running"
             let runningRow = try await element(
                 identifier: "session-row-\(runningID)")
@@ -294,21 +374,31 @@ enum UIE2ETestDriver {
                 runningRow,
                 name: "running session row",
                 resultIdentifier: "session-detail-\(runningID)")
+            try await waitUntil("live attach terminal", attempts: 40) {
+                find(identifier: "session-preview-terminal") != nil
+            }
+            checks.append("live-session-hosts-attach-client")
+            try await waitUntil("live terminal input readiness", attempts: 40) {
+                FileManager.default.fileExists(atPath: configuration.root
+                    .appendingPathComponent("fake/control-v-ready").path)
+            }
+            try await keyPress("v", keyCode: 9, modifiers: [.control])
+            try await waitUntil("raw control-V reaches attach PTY", attempts: 40) {
+                (try? Data(contentsOf: configuration.root
+                    .appendingPathComponent("fake/control-v.bin"))) == Data([0x16])
+            }
+            checks.append("live-terminal-routes-control-v")
             let identityMarker = try await measuredFrame(
                 identifier: "session-detail-identity-marker",
                 name: "session identity marker")
             guard identityMarker.height >= identityMarker.width * 3 else {
                 throw Failure(message: "session identity marker reads as a status dot")
             }
-            let previewIdentity = try await measuredFrame(
-                identifier: "session-preview-identity",
-                name: "session preview identity")
             let previewPower = try await measuredFrame(
                 identifier: "session-preview-power",
                 name: "session preview power")
-            guard previewIdentity.intersection(previewPower).width <= 1,
-                  previewIdentity.maxX <= previewPower.minX + 1 else {
-                throw Failure(message: "session identity and power share one surface")
+            guard identityMarker.intersection(previewPower).isNull else {
+                throw Failure(message: "session identity and power overlap")
             }
             checks.append("session-signals-stay-distinct")
             let stopButton = try await element(identifier: "session-action-stop")
@@ -362,19 +452,20 @@ enum UIE2ETestDriver {
                 selectionMode,
                 name: "finished selection mode",
                 resultIdentifier: "finished-select-all-button")
-            let completedSelectionID = "finished-selection-\(completedID)"
-            var completedSelection = try await element(identifier: completedSelectionID)
+            let stoppedID = "detach-codex-ui-stopped"
+            let stoppedSelectionID = "finished-selection-\(stoppedID)"
+            var stoppedSelection = try await element(identifier: stoppedSelectionID)
             try requireSemanticControl(
-                completedSelection, name: "completed session selection")
-            try await click(completedSelection, name: "select completed session")
-            try await waitUntil("selected completed session") {
-                find(identifier: completedSelectionID)
+                stoppedSelection, name: "stopped session selection")
+            try await click(stoppedSelection, name: "select stopped session")
+            try await waitUntil("selected stopped session") {
+                find(identifier: stoppedSelectionID)
                     .flatMap(label)?.hasPrefix("Deselect") == true
             }
-            completedSelection = try await element(identifier: completedSelectionID)
-            try await click(completedSelection, name: "deselect completed session")
-            try await waitUntil("deselected completed session") {
-                find(identifier: completedSelectionID)
+            stoppedSelection = try await element(identifier: stoppedSelectionID)
+            try await click(stoppedSelection, name: "deselect stopped session")
+            try await waitUntil("deselected stopped session") {
+                find(identifier: stoppedSelectionID)
                     .flatMap(label)?.hasPrefix("Select") == true
             }
 
@@ -418,15 +509,13 @@ enum UIE2ETestDriver {
             try await clickUntil(
                 confirmDelete,
                 name: "delete confirmation",
-                outcome: "fake CLI records both delete actions") {
+                outcome: "fake CLI records stopped-session delete") {
                 let actions = try? String(
                     contentsOf: configuration.root
                         .appendingPathComponent("fake/actions.log"),
                     encoding: .utf8)
                 return actions?.contains(
-                    "claude delete --force \(completedID)") == true
-                    && actions?.contains(
-                        "codex delete --force detach-codex-ui-stopped") == true
+                    "codex delete --force \(stoppedID)") == true
             }
             checks.append("bulk-delete-reaches-fake-cli")
             trace("bulk delete reached fake CLI")
@@ -871,6 +960,7 @@ enum UIE2ETestDriver {
             || identifier == "settings-show-tips"
             || identifier.hasPrefix("new-session-")
             || identifier.hasPrefix("onboarding-")
+            || identifier.hasPrefix("finished-")
             || identifier.hasPrefix("session-row-")
             || identifier.hasPrefix("session-action-")
     }

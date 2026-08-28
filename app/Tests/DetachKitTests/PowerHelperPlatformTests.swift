@@ -298,6 +298,26 @@ final class PowerHelperPlatformTests: XCTestCase {
         XCTAssertEqual(directoryMode.intValue & 0o777, 0o700)
     }
 
+    func testSecureFileStoreAtomicallyReplacesExistingState() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = SecureFilePowerHelperStateStore(
+            fileURL: root.appendingPathComponent("state.json"))
+        let initial = PowerHelperPersistentState()
+        let replacement = PowerHelperPersistentState(
+            ownsClosedLidProtection: true,
+            leases: [PowerLease(
+                id: "replacement", sessionName: "session", runToken: "run",
+                renewedAt: Date(timeIntervalSince1970: 456),
+                assertionActive: true)])
+
+        try store.save(initial)
+        try store.save(replacement)
+
+        XCTAssertEqual(try store.load(), replacement)
+    }
+
     func testSecureFileStoreRejectsSymlinkStatePath() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("detach-power-store-\(UUID().uuidString)")
