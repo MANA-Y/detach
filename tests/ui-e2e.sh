@@ -139,7 +139,7 @@ UI_E2E_DEADLINE=$((SECONDS + 38))
 
 mkdir -p "$TEST_HOME/.local/bin" "$TEST_HOME/Library/Preferences" \
   "$TEST_ROOT/state" "$TEST_ROOT/power" "$FAKE_DIR"
-ditto "$SOURCE_APP" "$TEST_APP"
+cp -cR "$SOURCE_APP" "$TEST_APP"
 
 if [ -n "$COVERAGE_BINARY" ]; then
   install -m 0755 "$COVERAGE_BINARY" "$TEST_APP/Contents/MacOS/Detach"
@@ -238,7 +238,7 @@ run_app_scenario() {
       && [ "$SECONDS" -lt "$UI_E2E_DEADLINE" ]; do
     [ ! -f "$RESULT" ] || break
     if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi
-    sleep 0.1
+    sleep 0.05
   done
   if [ ! -f "$RESULT" ]; then
     kill -TERM "$APP_PID" 2>/dev/null || true
@@ -255,7 +255,7 @@ run_app_scenario() {
   for _ in $(seq 1 10); do
     if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi
     [ "$SECONDS" -lt "$UI_E2E_DEADLINE" ] || break
-    sleep 0.1
+    sleep 0.05
   done
   if kill -0 "$APP_PID" 2>/dev/null; then
     kill -TERM "$APP_PID" 2>/dev/null || true

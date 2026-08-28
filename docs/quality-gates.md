@@ -166,7 +166,8 @@ not run a test twice.
 The gate-contract stage keeps lightweight contracts concurrent. It admits
 three process-heavy orchestrator shards on a host with at least eight logical
 CPUs, and two on a smaller host. This limit prevents process oversubscription
-without increasing the stage budget.
+without increasing the stage budget. At most four contract children run at one
+time, so lightweight contracts do not crowd adjacent preflights.
 
 Swift and Clang caches stay under `app/.build`. Their hosted key covers the
 compiler, package, sources, tests, build scripts, and version metadata. A
@@ -180,7 +181,8 @@ two Claude parts; larger hosts use finer parts. Compact layouts reuse
 checkpoints across recovery and restart, resume and identity, or Claude
 lifecycle and recovery. The parent writes scenario events in one order and
 fails the stage when any part fails. Tests do not use installed product state
-or ambient helpers.
+or ambient helpers. Distribution runs its runtime and shell-profile contracts
+as separate parts in private temporary homes.
 
 There are no quarantined tests. A future quarantine needs an owner, reason, and
 expiry. It cannot remove release evidence.

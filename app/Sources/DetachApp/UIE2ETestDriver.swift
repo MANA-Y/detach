@@ -438,7 +438,6 @@ enum UIE2ETestDriver {
                 NSApp.windows.allSatisfy(\.sheets.isEmpty)
             }
             try await activate(mainWindow)
-            try await Task.sleep(nanoseconds: 200_000_000)
 
             let newSession = try await element(identifier: "new-session-button")
             try requireSemanticControl(newSession, name: "new session action")
@@ -1073,7 +1072,7 @@ enum UIE2ETestDriver {
             mouseUp.post()
         }
         NSApp.postEvent(events[0], atStart: true)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await Task.sleep(nanoseconds: 60_000_000)
     }
 
     private static func moveCursor(

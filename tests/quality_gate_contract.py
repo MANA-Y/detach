@@ -20,6 +20,7 @@ from quality_gate import (  # noqa: E402
     GateError,
     QualityGate,
     exact_products_enabled,
+    gate_contract_process_limit,
     gate_contract_definitions,
     gate_orchestrator_limit,
     include_gate_orchestrators,
@@ -27,6 +28,7 @@ from quality_gate import (  # noqa: E402
     parse_options,
     provider_test_parts,
     run_app_stage,
+    run_distribution_parts,
     run_provider_parts,
     run_static_contracts,
     split_quality_pipeline_jobs,
@@ -109,6 +111,8 @@ class QualityGateContract(unittest.TestCase):
         self.assertEqual(gate_orchestrator_limit(10), 3)
         self.assertEqual(gate_orchestrator_limit(8), 3)
         self.assertEqual(gate_orchestrator_limit(4), 2)
+        self.assertEqual(gate_contract_process_limit(10), 4)
+        self.assertEqual(gate_contract_process_limit(4), 4)
 
     def test_public_shell_entry_point_is_thin(self) -> None:
         wrapper = (ROOT / "scripts/quality-gate").read_text(encoding="utf-8")
@@ -278,7 +282,15 @@ class QualityGateContract(unittest.TestCase):
             with patch("quality_gate.os.cpu_count", return_value=10):
                 self.assertEqual(
                     provider_test_parts("codex"),
-                    ("preflight", "lifecycle", "recovery", "resume", "identity", "crash"),
+                    (
+                        "preflight",
+                        "lifecycle",
+                        "recovery",
+                        "resume",
+                        "identity",
+                        "delete",
+                        "crash",
+                    ),
                 )
 
     def test_static_contracts_keep_separate_deterministic_logs(self) -> None:
@@ -365,8 +377,58 @@ class QualityGateContract(unittest.TestCase):
             with patch("quality_gate.os.cpu_count", return_value=10):
                 self.assertEqual(
                     provider_test_parts("claude"),
-                    ("lifecycle", "recovery", "history"),
+                    ("lifecycle-guardrails", "recovery", "history"),
                 )
+
+    def test_distribution_parts_keep_separate_logs_and_scenario_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            suite = root / "tests/distribution.sh"
+            suite.parent.mkdir()
+            suite.write_text(
+                "#!/bin/bash\n"
+                "set -eu\n"
+                "[ \"$DETACH_QUALITY_PARTITIONED_DISTRIBUTION\" = 1 ]\n"
+                "printf '%s\\n' \"$DETACH_DISTRIBUTION_TEST_PART\"\n",
+                encoding="utf-8",
+            )
+            suite.chmod(0o755)
+            run_dir = root / "evidence"
+            run_dir.mkdir()
+            events = run_dir / "distribution-events.jsonl"
+            with patch.dict(
+                "os.environ",
+                {
+                    "DETACH_QUALITY_SCENARIO_STAGE": "distribution",
+                    "DETACH_QUALITY_SCENARIO_EVENTS": str(events),
+                },
+            ):
+                self.assertEqual(run_distribution_parts(root, run_dir), 0)
+            for part in ("runtime", "shells"):
+                self.assertEqual(
+                    (run_dir / f"distribution-parts/{part}.log").read_text(
+                        encoding="utf-8"
+                    ),
+                    f"{part}\n",
+                )
+            records = [
+                json.loads(line)
+                for line in events.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(len(records), 8)
+            self.assertEqual(
+                {(record["kind"], record["id"]) for record in records},
+                {
+                    (kind, scenario)
+                    for kind in ("begin", "pass")
+                    for scenario in (
+                        "SC-INSTALL-CLEAN",
+                        "SC-INSTALL-REPAIR",
+                        "SC-DOCTOR-REPORT",
+                        "SC-INSTALL-UNINSTALL",
+                    )
+                },
+            )
 
 
 def main() -> int:
