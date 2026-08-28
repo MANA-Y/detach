@@ -953,6 +953,11 @@ cat >"$REPO/tests/quality-gate-fixtures/distribution" <<'SH'
 #!/bin/bash
 set -eu
 [ -f "${GATE_ORDER_ROOT:?}/gate-contract" ]
+attempt=0
+while [ ! -f "$GATE_ORDER_ROOT/codex-started" ] && [ "$attempt" -lt 50 ]; do
+  attempt=$((attempt + 1))
+  sleep 0.1
+done
 [ -f "$GATE_ORDER_ROOT/codex-started" ]
 [ ! -f "$GATE_ORDER_ROOT/codex" ]
 : >"$GATE_ORDER_ROOT/integration-after-contract"
