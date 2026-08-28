@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class OnboardingLivePollerTests: XCTestCase {
-    func testProductionWiringReadsServiceAndApplicationState() async throws {
+    func testProductionWiringConstructsAnIdlePoller() async throws {
         let store = InstallationStore(
             detachPath: "/tmp/detach-test",
             watchdog: PollerWatchdogStub(),
