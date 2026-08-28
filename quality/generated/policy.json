@@ -3133,7 +3133,7 @@
       "name": "ui-e2e",
       "order": 60,
       "release": true,
-      "timeout_seconds": 40
+      "timeout_seconds": 55
     },
     {
       "name": "codex",

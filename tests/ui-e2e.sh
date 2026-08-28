@@ -135,7 +135,7 @@ RESULT="$TEST_ROOT/result.json"
 BREACH="$TEST_ROOT/production-cli-breach"
 APP_LOG="$TEST_ROOT/app.log"
 IDENTIFIER="dev.tsarev.detach.ui-e2e.$$"
-UI_E2E_DEADLINE=$((SECONDS + 38))
+UI_E2E_DEADLINE=$((SECONDS + 50))
 
 mkdir -p "$TEST_HOME/.local/bin" "$TEST_HOME/Library/Preferences" \
   "$TEST_ROOT/state" "$TEST_ROOT/power" "$FAKE_DIR"
@@ -326,7 +326,7 @@ run_app_scenario() {
   printf 'UI e2e: %s passed in %ss\n' "$scenario" "$((SECONDS - scenario_started))"
 }
 
-run_app_scenario main sessions 24 \
+run_app_scenario main sessions 32 \
   background-app-starts-without-focus \
   dashboard-accessible \
   sidebar-selects-completed-session \

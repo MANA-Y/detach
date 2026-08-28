@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 import XCTest
-import DetachKit
+@testable import DetachKit
 @testable import DetachApp
 
 @MainActor
