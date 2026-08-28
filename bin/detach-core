@@ -4496,10 +4496,19 @@ stop_session() {
     if [ -n "$pane" ] && [ "$(tmux_pane_dead "$session")" = "0" ]; then
       pane_pid="$("${TMUX_CMD[@]}" display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null || true)"
       if [ -n "$pane_pid" ]; then
-        pgid="$(ps -o pgid= -p "$pane_pid" 2>/dev/null | tr -d '[:space:]')"
+        pgid="$(/bin/ps -o pgid= -p "$pane_pid" 2>/dev/null | tr -d '[:space:]')"
+        case "$pgid" in ''|*[!0-9]*) pgid="" ;; esac
       fi
       if [ -n "$pgid" ]; then
-        kill -TERM -- "-$pgid" 2>/dev/null || true
+        # A group signal reaches every process in the group. Revalidate the
+        # pane immediately before the TERM: it must still be alive, still run
+        # the same owned process, and still lead the same process group.
+        if [ "$(tmux_pane_dead "$session")" = "0" ] && \
+           [ "$("${TMUX_CMD[@]}" display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null || true)" = "$pane_pid" ] && \
+           process_is_owned_alive "$pane_pid" && \
+           [ "$(/bin/ps -o pgid= -p "$pane_pid" 2>/dev/null | tr -d '[:space:]')" = "$pgid" ]; then
+          kill -TERM -- "-$pgid" 2>/dev/null || true
+        fi
       elif [ -n "$pane_pid" ]; then
         kill -TERM "$pane_pid" 2>/dev/null || true
       fi
@@ -4576,9 +4585,13 @@ delete_locked() {
   [ -d "$SESSIONS_ROOT" ] && [ ! -L "$SESSIONS_ROOT" ] && \
     [ "$(/usr/bin/stat -f '%u' "$SESSIONS_ROOT" 2>/dev/null || true)" = "$owner_uid" ] || \
     die "refusing unsafe sessions root: $SESSIONS_ROOT"
-  [ -d "$dir" ] && [ ! -L "$dir" ] && \
-    [ "$(/usr/bin/stat -f '%u' "$dir" 2>/dev/null || true)" = "$owner_uid" ] || \
-    die "refusing unsafe session directory: $dir"
+  # A tmux-only remnant has no state directory left to validate; the retained
+  # tmux session must still be removed below.
+  if [ -e "$dir" ] || [ -L "$dir" ]; then
+    [ -d "$dir" ] && [ ! -L "$dir" ] && \
+      [ "$(/usr/bin/stat -f '%u' "$dir" 2>/dev/null || true)" = "$owner_uid" ] || \
+      die "refusing unsafe session directory: $dir"
+  fi
   # Re-check under the lock: a concurrent start may have revived the session.
   refuse_runtime_without_managed_tmux "$session"
   if tmux_has_session "$session"; then
@@ -4590,7 +4603,7 @@ delete_locked() {
   if tmux_has_session "$session"; then
     "${TMUX_CMD[@]}" kill-session -t "=$session" || die "could not remove tmux session '$session'"
   fi
-  rm -rf -- "$dir"
+  rm -rf -- "$dir" || die "could not completely remove session state: $dir"
   printf 'Deleted %s\n' "$session"
 }
 
