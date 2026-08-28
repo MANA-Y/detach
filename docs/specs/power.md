@@ -57,7 +57,12 @@ private `0700` directory, `0600` regular file, symlink rejection, atomic writes,
 and file/directory fsync. Ownership intent is persisted before changing power
 state. A pre-existing enabled setting is borrowed and never disabled. A setting
 Detach enabled is restored after the last live lease, a stale lease, low
-battery, or orderly SIGTERM/SIGINT handling. The state records the current
+battery, or orderly SIGTERM/SIGINT handling. After shutdown begins, the helper
+refuses queued reconciliations, so a retained live lease cannot re-enable the
+setting before exit. A state file that cannot be loaded is renamed aside with
+a `.corrupt-<timestamp>` suffix, and the helper starts from a clean state
+instead of a launchd crash loop. Unreadable state never proves
+ownership, so a borrowed setting stays untouched. The state records the current
 `kern.bootsessionuuid`; a different boot clears every old lease before power is
 reconciled, and implausibly future renewal timestamps expire rather than live
 forever. Do not manually change the same machine-wide boolean while Detach owns
@@ -65,7 +70,8 @@ it.
 
 The client lease heartbeat remains every 30 seconds while protected; the helper
 reconciles machine power state every 10 seconds. Leases expire after 120 seconds
-without renewal, with a maximum of 256. The runtime health loop slows from ten
+without renewal, with a maximum of 256 live leases. Expired leases are pruned
+before the count limit is enforced. The runtime health loop slows from ten
 to 30 seconds while waiting, below its 45-second stale limit. Transient renewal
 failures are retried; an active failure is surfaced rather than silently
 reporting protection. Read-only

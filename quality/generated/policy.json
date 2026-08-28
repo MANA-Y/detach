@@ -1794,7 +1794,7 @@
     {
       "pattern": "scripts/release-version",
       "priority": 900,
-      "release_domain": "safe",
+      "release_domain": "lid",
       "spec": "docs/specs/release.md",
       "test_domain": "release-tool"
     },

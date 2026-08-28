@@ -642,13 +642,28 @@ public final class SecureFilePowerHelperStateStore:
 
     private let fileURL: URL
     private let fileManager: FileManager
+    private let directorySyncer: (Int32) -> Int32
 
-    public init(
+    public convenience init(
         fileURL: URL = SecureFilePowerHelperStateStore.defaultFileURL,
         fileManager: FileManager = .default
     ) {
+        self.init(
+            fileURL: fileURL,
+            fileManager: fileManager,
+            directorySyncer: Darwin.fsync)
+    }
+
+    /// Test seam for the directory-sync failure path, which hardware cannot
+    /// raise on demand.
+    init(
+        fileURL: URL,
+        fileManager: FileManager,
+        directorySyncer: @escaping (Int32) -> Int32
+    ) {
         self.fileURL = fileURL
         self.fileManager = fileManager
+        self.directorySyncer = directorySyncer
     }
 
     public func load() throws -> PowerHelperPersistentState? {
@@ -666,6 +681,39 @@ public final class SecureFilePowerHelperStateStore:
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
         return try decoder.decode(PowerHelperPersistentState.self, from: data)
+    }
+
+    /// Moves an unloadable state file aside for later diagnosis and leaves
+    /// the state path empty so the helper starts from a clean state instead
+    /// of crash-looping. The rename acts on the path itself: a symlink is
+    /// moved aside, never followed.
+    public func quarantineUnreadableState() throws {
+        var metadata = stat()
+        guard Darwin.lstat(fileURL.path, &metadata) == 0 else {
+            let code = errno
+            if code == ENOENT { return }
+            throw PowerHelperPlatformError.fileSystem(
+                operation: "lstat", code: code)
+        }
+        let milliseconds = Int(Date().timeIntervalSince1970 * 1_000)
+        let quarantineURL = fileURL.appendingPathExtension(
+            "corrupt-\(milliseconds)")
+        guard Darwin.rename(fileURL.path, quarantineURL.path) == 0 else {
+            throw PowerHelperPlatformError.fileSystem(
+                operation: "rename", code: errno)
+        }
+        let directoryDescriptor = Darwin.open(
+            fileURL.deletingLastPathComponent().path,
+            O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard directoryDescriptor >= 0 else {
+            throw PowerHelperPlatformError.fileSystem(
+                operation: "open directory", code: errno)
+        }
+        defer { Darwin.close(directoryDescriptor) }
+        guard directorySyncer(directoryDescriptor) == 0 else {
+            throw PowerHelperPlatformError.fileSystem(
+                operation: "fsync directory", code: errno)
+        }
     }
 
     public func save(_ state: PowerHelperPersistentState) throws {
