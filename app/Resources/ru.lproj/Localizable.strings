@@ -23,6 +23,10 @@
 /* DetachKit errors */
 "detach list timed out" = "Истекло время ожидания detach list";
 "Internal error: %@ must run in Terminal" = "Внутренняя ошибка: команда %@ должна выполняться в Terminal";
+"Internal error: %@ is not an in-app start action" = "Внутренняя ошибка: %@ не запускается внутри приложения";
+"The session has no provider UUID to resume." = "У сессии нет UUID провайдера для продолжения.";
+"detach resume timed out" = "Истекло время ожидания detach resume";
+"detach recover timed out" = "Истекло время ожидания detach recover";
 "detach exited with status %d" = "detach завершился с кодом %d";
 "Could not run detach: %@" = "Не удалось запустить detach: %@";
 "Session is not eligible for deletion from Finished." = "Сессию нельзя удалить из раздела «Завершены».";
@@ -146,6 +150,8 @@
 "Provider CLI" = "CLI провайдера";
 "Ready — we'll notify you about ready responses, completed sessions, or session problems." = "Готово — сообщим о готовом ответе, завершении или проблеме сессии.";
 "Recovery from the latest checkpoint is available" = "Доступно восстановление из последнего чекпойнта";
+"Recover" = "Восстановить";
+"Reconnect" = "Переподключиться";
 "Recover in %@" = "Восстановить в %@";
 "Refresh interval" = "Интервал обновления";
 "Refresh terminal list" = "Обновить список терминалов";
@@ -157,6 +163,7 @@
 "Remove the CLI and all saved sessions?" = "Удалить CLI и все сохранённые сессии?";
 "Remove, keeping checkpoints" = "Удалить, сохранив чекпойнты";
 "Resume in %@" = "Продолжить в %@";
+"Resume" = "Продолжить";
 "Retry Setup" = "Повторить настройку";
 "Running from a DMG or temporary copy is unreliable." = "Запуск из DMG или временной копии ненадёжен.";
 "Select a session" = "Выберите сессию";

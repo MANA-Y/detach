@@ -17,6 +17,9 @@ struct SessionDetailView: View {
     @State private var isLaunchingTerminal = false
     @State private var confirmDelete = false
     @State private var attachClientActive = true
+    @State private var attachRequested = false
+    @State private var preparingAction: SessionAction?
+    @State private var interactionGeneration = UUID()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -26,7 +29,10 @@ struct SessionDetailView: View {
         }
         .padding(16)
         .onChange(of: session.id) { _, _ in
+            interactionGeneration = UUID()
             attachClientActive = true
+            attachRequested = false
+            preparingAction = nil
         }
         .task(id: "\(session.id)-\(showsEmbeddedTerminal)") {
             guard !showsEmbeddedTerminal else {
@@ -157,6 +163,9 @@ struct SessionDetailView: View {
                 if let exit = session.exitStatus {
                     metaChip(L10n.format("exit %d", exit))
                 }
+                if showsEmbeddedTerminal {
+                    embeddedTerminalPowerChip
+                }
             }
         }
         .padding(14)
@@ -229,31 +238,63 @@ struct SessionDetailView: View {
     }
 
     private var showsEmbeddedTerminal: Bool {
-        SessionAttachInvocation.shouldEmbed(session, clientActive: attachClientActive)
+        attachRequested || (
+            preparingAction == nil
+                && SessionAttachInvocation.shouldEmbed(
+                    session,
+                    clientActive: attachClientActive))
     }
 
     private var logView: some View {
         VStack(spacing: 0) {
             if showsEmbeddedTerminal {
+                let generation = interactionGeneration
                 SessionAttachTerminalView(
                     detachPath: detachPath,
                     session: session,
                     fontPointSize: fontPointSize,
-                    onTerminated: { _ in attachClientActive = false })
-                    .id(session.sessionName)
+                    onTerminated: { _ in
+                        handleTerminalExit(generation: generation)
+                    })
+                    .id("\(session.sessionName)-\(generation.uuidString)")
                     .frame(maxHeight: .infinity)
                     .accessibilityLabel(L10n.string("Live session terminal"))
             } else {
                 LogTextView(text: logContent)
                     .frame(maxHeight: .infinity)
             }
-            sessionColorStrip
+            if !showsEmbeddedTerminal {
+                sessionColorStrip
+            }
         }
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    /// A discreet echo of the tmux status line under the log, in the
-    /// session's stable identity color.
+    private var embeddedTerminalPowerChip: some View {
+        Label(
+            session.powerProtectionLabel,
+            systemImage: session.powerProtectionSystemImage)
+            .font(.system(size: 10, weight: .medium))
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(.quaternary.opacity(0.6)))
+            .foregroundStyle(SessionDetailSignalPresentation.powerColor(
+                for: session.powerProtectionState))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(session.powerProtectionLabel))
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+            .background {
+                uiE2EGeometryProbe(identifier: "session-preview-power")
+            }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
+    }
+
+    /// A discreet echo of the tmux status line under a retained log, in the
+    /// session's stable identity color. A live terminal already shows tmux's
+    /// status line, so its typed power signal stays in the metadata row.
     @ViewBuilder
     private var sessionColorStrip: some View {
         if let sessionColor = session.sessionColor {
@@ -334,39 +375,12 @@ struct SessionDetailView: View {
     @ViewBuilder
     private func actionButton(_ action: SessionAction) -> some View {
         switch action {
-        case .attach:
-            Button(SessionActionPresentation.terminalTitle(
-                for: action,
-                terminalDisplayName: selectedTerminalDisplayName)) {
-                openInTerminal(TerminalCommand.attach(detachPath: detachPath, session: session))
-            }
-                .keyboardShortcut(.return, modifiers: .command)
-                .buttonStyle(.borderedProminent)
-                .tint(Brand.indigo)
-                .disabled(isLaunchingTerminal)
-        case .resume:
-            Button(SessionActionPresentation.terminalTitle(
-                for: action,
-                terminalDisplayName: selectedTerminalDisplayName)) {
-                if let command = TerminalCommand.resume(detachPath: detachPath, session: session) {
-                    openInTerminal(command)
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Brand.indigo)
-            .disabled(isLaunchingTerminal)
-        case .recover:
-            Button(SessionActionPresentation.terminalTitle(
-                for: action,
-                terminalDisplayName: selectedTerminalDisplayName)) {
-                openInTerminal(TerminalCommand.recover(detachPath: detachPath, session: session))
-            }
-                .buttonStyle(.borderedProminent)
-                .tint(Brand.indigo)
-                .disabled(isLaunchingTerminal)
+        case .attach, .resume, .recover:
+            interactiveActionButtons(action)
         case .stop:
             Button(L10n.string("Stop"), role: .destructive) { run(.stop) }
                 .accessibilityIdentifier("session-action-stop")
+                .disabled(preparingAction != nil)
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
                 .background {
@@ -377,6 +391,7 @@ struct SessionDetailView: View {
         case .delete:
             Button(L10n.string("Delete"), role: .destructive) { confirmDelete = true }
                 .accessibilityIdentifier("session-action-delete")
+                .disabled(preparingAction != nil)
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
                 .background {
@@ -387,12 +402,141 @@ struct SessionDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private func interactiveActionButtons(_ action: SessionAction) -> some View {
+        if shouldShowInAppButton(action) {
+            let title = SessionActionPresentation.inAppTitle(for: action)
+            let identifier = "session-action-\(action.rawValue)-in-app"
+            let enabled = preparingAction == nil && !isLaunchingTerminal
+            Button {
+                startInsideDetach(action)
+            } label: {
+                HStack(spacing: 6) {
+                    if preparingAction == action {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(title)
+                }
+            }
+            .keyboardShortcut(.return, modifiers: .command)
+            .buttonStyle(.borderedProminent)
+            .tint(Brand.indigo)
+            .disabled(!enabled)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(title))
+            .accessibilityIdentifier(identifier)
+#if !DEBUG
+            .background {
+                uiE2EGeometryProbe(
+                    identifier: identifier,
+                    semanticLabel: title,
+                    semanticRole: .button,
+                    semanticEnabled: enabled)
+            }
+#endif
+        }
+
+        if shouldShowExternalFallback(action),
+           let command = externalTerminalCommand(for: action) {
+            let title = SessionActionPresentation.terminalTitle(
+                for: action,
+                terminalDisplayName: selectedTerminalDisplayName)
+            let identifier = "session-action-\(action.rawValue)-external"
+            let enabled = preparingAction == nil && !isLaunchingTerminal
+            Button(title) {
+                openInTerminal(command)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!enabled)
+            .accessibilityLabel(Text(title))
+            .accessibilityIdentifier(identifier)
+#if !DEBUG
+            .background {
+                uiE2EGeometryProbe(
+                    identifier: identifier,
+                    semanticLabel: title,
+                    semanticRole: .button,
+                    semanticEnabled: enabled)
+            }
+#endif
+        }
+    }
+
+    private func shouldShowInAppButton(_ action: SessionAction) -> Bool {
+        if preparingAction == action { return true }
+        return preparingAction == nil && !showsEmbeddedTerminal
+    }
+
+    private func shouldShowExternalFallback(_ action: SessionAction) -> Bool {
+        guard preparingAction == nil else { return false }
+        return action == .attach || !showsEmbeddedTerminal
+    }
+
+    private func externalTerminalCommand(for action: SessionAction) -> String? {
+        switch action {
+        case .attach:
+            TerminalCommand.attach(detachPath: detachPath, session: session)
+        case .resume:
+            TerminalCommand.resume(detachPath: detachPath, session: session)
+        case .recover:
+            TerminalCommand.recover(detachPath: detachPath, session: session)
+        case .stop, .delete:
+            nil
+        }
+    }
+
+    private func startInsideDetach(_ action: SessionAction) {
+        let generation = UUID()
+        interactionGeneration = generation
+        attachRequested = false
+
+        if action == .attach {
+            attachClientActive = true
+            attachRequested = true
+            return
+        }
+
+        guard preparingAction == nil,
+              action == .resume || action == .recover else { return }
+        let sessionID = session.id
+        attachClientActive = false
+        preparingAction = action
+        Task {
+            let message = await store.prepareInteractive(action, on: session)
+            guard interactionGeneration == generation,
+                  session.id == sessionID else { return }
+            preparingAction = nil
+            if let message {
+                actionError = message
+                return
+            }
+            attachClientActive = true
+            attachRequested = true
+        }
+    }
+
+    private func handleTerminalExit(generation: UUID) {
+        guard generation == interactionGeneration else { return }
+        attachRequested = false
+        attachClientActive = false
+        Task { await store.refresh() }
+    }
+
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
     @ViewBuilder
-    private func uiE2EGeometryProbe(identifier: String) -> some View {
+    private func uiE2EGeometryProbe(
+        identifier: String,
+        semanticLabel: String? = nil,
+        semanticRole: NSAccessibility.Role? = nil,
+        semanticEnabled: Bool = true
+    ) -> some View {
         if AppSettings.uiE2E != nil {
-            UIE2EGeometryProbe(identifier: identifier)
+            UIE2EGeometryProbe(
+                identifier: identifier,
+                semanticLabel: semanticLabel,
+                semanticRole: semanticRole,
+                semanticEnabled: semanticEnabled)
         }
     }
 #endif
@@ -534,6 +678,16 @@ private struct ChipPressStyle: ButtonStyle {
 }
 
 enum SessionActionPresentation {
+    static func inAppTitle(for action: SessionAction) -> String {
+        switch action {
+        case .attach: L10n.string("Reconnect")
+        case .resume: L10n.string("Resume")
+        case .recover: L10n.string("Recover")
+        case .stop, .delete:
+            preconditionFailure("A non-terminal action has no in-app title")
+        }
+    }
+
     static func terminalTitle(
         for action: SessionAction,
         terminalDisplayName: String

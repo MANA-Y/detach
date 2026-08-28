@@ -201,6 +201,113 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertTrue(cli.calls.contains(["codex", "delete", "--force", "detach-codex-p-1"]))
     }
 
+    func testPrepareResumeStartsDetachedThenRefreshes() async throws {
+        let cli = FakeCLI()
+        let stopped = line.replacingOccurrences(
+            of: #""effective_status":"running""#,
+            with: #""effective_status":"stopped""#)
+        cli.responses["list --json"] = ok(stopped)
+        let store = SessionStore(cli: cli)
+        await store.refresh()
+
+        let error = await store.prepareInteractive(
+            .resume,
+            on: try XCTUnwrap(store.sessions.first))
+
+        XCTAssertNil(error)
+        XCTAssertEqual(
+            cli.calls,
+            [["list", "--json"], ["resume", "--detach", "u1"], ["list", "--json"]])
+    }
+
+    func testPrepareRecoverUsesProviderAndManagedName() async throws {
+        let cli = FakeCLI()
+        let recoverable = line
+            .replacingOccurrences(of: "codex", with: "claude")
+            .replacingOccurrences(
+                of: #""effective_status":"running""#,
+                with: #""effective_status":"recoverable""#)
+        cli.responses["list --json"] = ok(recoverable)
+        let store = SessionStore(cli: cli)
+        await store.refresh()
+
+        let error = await store.prepareInteractive(
+            .recover,
+            on: try XCTUnwrap(store.sessions.first))
+
+        XCTAssertNil(error)
+        XCTAssertTrue(cli.calls.contains([
+            "claude", "recover", "--detach", "detach-claude-p-1",
+        ]))
+    }
+
+    func testPrepareInteractiveReturnsTheBoundedCLIFailure() async throws {
+        let cli = FakeCLI()
+        let stopped = line.replacingOccurrences(
+            of: #""effective_status":"running""#,
+            with: #""effective_status":"stopped""#)
+        cli.responses["list --json"] = ok(stopped)
+        cli.responses["resume --detach u1"] = .success(CLIResult(
+            exitCode: 17,
+            stdout: "",
+            stderr: "resume refused",
+            timedOut: false))
+        let store = SessionStore(cli: cli)
+        await store.refresh()
+
+        let error = await store.prepareInteractive(
+            .resume,
+            on: try XCTUnwrap(store.sessions.first))
+
+        XCTAssertEqual(error, "resume refused")
+        XCTAssertEqual(cli.calls.last, ["list", "--json"])
+    }
+
+    func testPrepareInteractiveHandlesMissingIDTimeoutAndLaunchFailure() async throws {
+        let missingIDCLI = FakeCLI()
+        missingIDCLI.responses["list --json"] = ok(line.replacingOccurrences(
+            of: #""agent_session_id":"u1""#,
+            with: #""agent_session_id":null"#))
+        let missingIDStore = SessionStore(cli: missingIDCLI)
+        await missingIDStore.refresh()
+        let missingIDError = await missingIDStore.prepareInteractive(
+            .resume,
+            on: try XCTUnwrap(missingIDStore.sessions.first))
+        XCTAssertEqual(
+            missingIDError,
+            L10n.string("The session has no provider UUID to resume."))
+
+        let timeoutCLI = FakeCLI()
+        timeoutCLI.responses["list --json"] = ok(line)
+        timeoutCLI.responses["resume --detach u1"] = .success(CLIResult(
+            exitCode: 124,
+            stdout: "",
+            stderr: "",
+            timedOut: true))
+        let timeoutStore = SessionStore(cli: timeoutCLI)
+        await timeoutStore.refresh()
+        let timeoutError = await timeoutStore.prepareInteractive(
+            .resume,
+            on: try XCTUnwrap(timeoutStore.sessions.first))
+        XCTAssertEqual(
+            timeoutError,
+            L10n.string("detach resume timed out"))
+
+        let failedCLI = FakeCLI()
+        failedCLI.responses["list --json"] = ok(line)
+        failedCLI.responses["resume --detach u1"] = .failure(FakeError())
+        let failedStore = SessionStore(cli: failedCLI)
+        await failedStore.refresh()
+        let launchError = await failedStore.prepareInteractive(
+            .resume,
+            on: try XCTUnwrap(failedStore.sessions.first))
+        let invalidActionError = await failedStore.prepareInteractive(
+            .attach,
+            on: try XCTUnwrap(failedStore.sessions.first))
+        XCTAssertNotNil(launchError)
+        XCTAssertNotNil(invalidActionError)
+    }
+
     func testBulkFinishedDeleteContinuesAfterFailureAndRefreshesOnce() async throws {
         let cli = FakeCLI()
         let firstLine = line.replacingOccurrences(

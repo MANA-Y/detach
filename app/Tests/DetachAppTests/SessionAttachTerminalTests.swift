@@ -233,6 +233,84 @@ final class SessionAttachTerminalTests: XCTestCase {
         XCTAssertEqual(pasteboard.string(forType: .string), "selected text")
     }
 
+    @MainActor
+    func testControlVReachesTheProviderAsTheRawClipboardImageShortcut() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "detach-attach-control-v-\(UUID().uuidString)",
+                isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let ready = root.appendingPathComponent("ready")
+        let received = root.appendingPathComponent("received")
+        let terminal = LocalProcessTerminalView(frame: .zero)
+        terminal.startProcess(
+            executable: "/bin/sh",
+            args: [
+                "-c",
+                "stty raw -echo; : > '\(ready.path)'; "
+                    + "dd bs=1 count=1 of='\(received.path)' 2>/dev/null",
+            ],
+            environment: ["PATH=/bin:/usr/bin"])
+        defer { SessionAttachController.terminate(process: terminal.process) }
+
+        try waitUntil {
+            FileManager.default.fileExists(atPath: ready.path)
+                && terminal.process.running
+        }
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .control,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{16}",
+            charactersIgnoringModifiers: "v",
+            isARepeat: false,
+            keyCode: 9))
+
+        XCTAssertTrue(SessionAttachKeyboard.routeProviderShortcut(
+            from: event,
+            send: terminal.send))
+
+        try waitUntil {
+            (try? Data(contentsOf: received).count) == 1
+        }
+        XCTAssertEqual(try Data(contentsOf: received), Data([0x16]))
+    }
+
+    func testProviderClipboardShortcutRequiresUnmodifiedControlV() throws {
+        let controlV = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.control, .capsLock],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{16}",
+            charactersIgnoringModifiers: "м",
+            isARepeat: false,
+            keyCode: 9))
+        let commandV = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "v",
+            charactersIgnoringModifiers: "v",
+            isARepeat: false,
+            keyCode: 9))
+
+        XCTAssertEqual(
+            SessionAttachKeyboard.providerInput(for: controlV),
+            [0x16])
+        XCTAssertNil(SessionAttachKeyboard.providerInput(for: commandV))
+    }
+
     private func bufferText(_ terminal: HeadlessTerminal) -> String {
         String(data: terminal.terminal.getBufferAsData(), encoding: .utf8) ?? ""
     }

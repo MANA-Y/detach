@@ -4,6 +4,42 @@ import SwiftUI
 import SwiftTerm
 import DetachKit
 
+final class SessionAttachLocalProcessTerminalView: LocalProcessTerminalView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            window.makeFirstResponder(self)
+        }
+    }
+}
+
+/// Preserves provider shortcuts that must reach the child as conventional
+/// control bytes, even after the child negotiates an enhanced keyboard mode.
+enum SessionAttachKeyboard {
+    static func providerInput(for event: NSEvent) -> [UInt8]? {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags.contains(.control),
+              flags.intersection([.command, .option, .shift, .function]).isEmpty,
+              (event.keyCode == 9
+                  || event.charactersIgnoringModifiers?.lowercased() == "v") else {
+            return nil
+        }
+        return [0x16]
+    }
+
+    @discardableResult
+    static func routeProviderShortcut(
+        from event: NSEvent,
+        send: ([UInt8]) -> Void
+    ) -> Bool {
+        guard let bytes = providerInput(for: event) else { return false }
+        send(bytes)
+        return true
+    }
+}
+
 /// Hosts one ephemeral PTY client for a live managed session.
 final class SessionAttachController: NSObject, LocalProcessTerminalViewDelegate {
     let invocation: SessionAttachInvocation
@@ -156,9 +192,10 @@ struct SessionAttachTerminalView: NSViewRepresentable {
 
 // quality-coverage:begin swiftterm-host
     func makeNSView(context: Context) -> LocalProcessTerminalView {
-        let view = LocalProcessTerminalView(frame: .zero)
+        let view = SessionAttachLocalProcessTerminalView(frame: .zero)
         context.coordinator.controller.onTerminated = context.coordinator.onTerminated
         context.coordinator.controller.configure(view, fontPointSize: fontPointSize)
+        context.coordinator.installKeyboardMonitor(for: view)
         context.coordinator.controller.start()
         return view
     }
@@ -173,6 +210,7 @@ struct SessionAttachTerminalView: NSViewRepresentable {
         _ view: LocalProcessTerminalView,
         coordinator: Coordinator
     ) {
+        coordinator.removeKeyboardMonitor()
         coordinator.controller.terminateClient()
     }
 // quality-coverage:end swiftterm-host
@@ -180,10 +218,46 @@ struct SessionAttachTerminalView: NSViewRepresentable {
     final class Coordinator {
         let controller: SessionAttachController
         var onTerminated: (Int32?) -> Void
+        private var keyboardMonitor: Any?
 
         init(controller: SessionAttachController, onTerminated: @escaping (Int32?) -> Void) {
             self.controller = controller
             self.onTerminated = onTerminated
+        }
+
+        func installKeyboardMonitor(for view: LocalProcessTerminalView) {
+            removeKeyboardMonitor()
+            keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+                [weak view] event in
+                guard let view,
+                      event.window === view.window,
+                      Self.isFocused(view, in: event.window),
+                      SessionAttachKeyboard.routeProviderShortcut(
+                          from: event,
+                          send: view.send) else {
+                    return event
+                }
+                return nil
+            }
+        }
+
+        func removeKeyboardMonitor() {
+            guard let keyboardMonitor else { return }
+            NSEvent.removeMonitor(keyboardMonitor)
+            self.keyboardMonitor = nil
+        }
+
+        private static func isFocused(
+            _ view: LocalProcessTerminalView,
+            in window: NSWindow?
+        ) -> Bool {
+            guard let responder = window?.firstResponder else { return false }
+            if responder === view { return true }
+            return (responder as? NSView)?.isDescendant(of: view) == true
+        }
+
+        deinit {
+            removeKeyboardMonitor()
         }
     }
 }

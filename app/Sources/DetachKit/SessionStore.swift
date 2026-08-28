@@ -138,6 +138,60 @@ public final class SessionStore {
         return result.message
     }
 
+    /// Starts Resume or Recover without an outer terminal. The provider starts
+    /// detached; the app creates a separate attach-only PTY after this returns.
+    public func prepareInteractive(
+        _ action: SessionAction,
+        on session: Session
+    ) async -> String? {
+        let arguments: [String]
+        switch action {
+        case .resume:
+            guard let sessionID = session.agentSessionId, !sessionID.isEmpty else {
+                return L10n.string("The session has no provider UUID to resume.")
+            }
+            arguments = ["resume", "--detach", sessionID]
+        case .recover:
+            arguments = [
+                session.provider.rawValue,
+                "recover",
+                "--detach",
+                session.sessionName,
+            ]
+        case .attach, .stop, .delete:
+            return L10n.format(
+                "Internal error: %@ is not an in-app start action",
+                action.rawValue)
+        }
+
+        do {
+            let result = try await cli.run(arguments: arguments, timeout: 120)
+            await refresh()
+            if result.timedOut {
+                switch action {
+                case .resume:
+                    return L10n.string("detach resume timed out")
+                case .recover:
+                    return L10n.string("detach recover timed out")
+                case .attach, .stop, .delete:
+                    preconditionFailure("Unexpected in-app start action")
+                }
+            }
+            guard result.exitCode == 0 else {
+                let stderr = result.stderr.trimmingCharacters(
+                    in: .whitespacesAndNewlines)
+                return stderr.isEmpty
+                    ? L10n.format("detach exited with status %d", result.exitCode)
+                    : stderr
+            }
+            return nil
+        } catch {
+            return L10n.format(
+                "Could not run detach: %@",
+                error.localizedDescription)
+        }
+    }
+
     /// Deletes every selected finished session and reports failures without
     /// stopping the remaining operations. One final refresh publishes the
     /// resulting list instead of polling between individual removals.

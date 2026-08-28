@@ -50,9 +50,9 @@ unsafe identity, build mismatch, or payload fails closed.
 Smoke restores focus and the pointer. It sends ordered AppKit down/up
 pairs to measured SwiftUI controls; semantic locators have no actions. Row
 clicks select sessions even after preview text takes focus.
-Each launch and stage stays within its deadline.
-Journeys cover main surfaces, Settings, onboarding, and focus. It disconnects
-Stop before proving that the real control invokes it.
+Each launch and stage stays within its deadline. Journeys cover main surfaces,
+Settings, onboarding, focus, Codex Recover, Claude Resume, and reconnect after
+an attach client exits. It disconnects Stop before the real control invokes it.
 Only visible controls complete onboarding.
 
 Coverage builds the normal bundle, instrumented binary, and Swift tests in
@@ -161,12 +161,14 @@ daemon is a distinct demand-launched LaunchDaemon. Neither plist may contain a
 user-specific path. Native power protection requires no Apple Events or
 Automation entitlement.
 
-Distribution bootstrap runs only from `/Applications`, never a DMG or App
-Translocation path. A live managed session uses an ephemeral in-app PTY client
-on `detach <provider> attach <session>`. Closing the view or app ends only that
-client. Health and power stay typed. Open,
-Resume, and Recover use `NSWorkspace` and a `.command` file in a running
-selected terminal, or Terminal. Without one, a private `.zshenv` is the outer
+Bootstrap runs only from `/Applications`, not a DMG or App Translocation path.
+In-app Resume and Recover call `--detach`, then attach through an
+ephemeral PTY on `detach <provider> attach <session>`. Closing the view or app
+ends that client. `Ctrl-V` reaches provider image paste; Detach stores no
+image. Live views move typed Mac Power to metadata and omit the duplicate strip.
+An exited client offers Reconnect without an agent restart. The selected
+terminal remains an `NSWorkspace` `.command` fallback. Without one, a private
+`.zshenv` is the outer
 `ZDOTDIR` until payload removal restores the original.
 The new-session sheet accepts an optional UTF-8 name up to 100 bytes. It rejects
 control characters, blocks launch, and passes one `--name`. The launch button

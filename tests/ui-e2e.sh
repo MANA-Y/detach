@@ -16,9 +16,13 @@ approved_invocation() {
     'list --json'|\
     'codex logs --ansi detach-codex-ui-running'|\
     'codex attach detach-codex-ui-running'|\
+    'codex logs --ansi detach-codex-ui-recoverable'|\
+    'codex recover --detach detach-codex-ui-recoverable'|\
+    'codex attach detach-codex-ui-recoverable'|\
     'claude logs --ansi detach-claude-ui-completed'|\
+    'resume --detach a9f58f1d-1234-5678-9abc-def012342ed9'|\
+    'claude attach detach-claude-ui-completed'|\
     'codex stop detach-codex-ui-running'|\
-    'claude delete --force detach-claude-ui-completed'|\
     'codex delete --force detach-codex-ui-stopped'|\
     'storage --json'|\
     'config tmux-style'|\
@@ -300,6 +304,8 @@ run_app_scenario() {
       background-app-starts-without-focus|disconnected-stop-blocks-action|\
       finished-selection-clears-scrollbar|session-uuid-copies-from-text-side|\
       live-session-hosts-attach-client|\
+      recover-and-reconnect-run-in-app-with-terminal-fallback|\
+      resume-runs-in-app-with-terminal-fallback|\
       settings-window-stays-on-screen|\
       settings-system-reveals-storage-and-installation|\
       new-session-advanced-keeps-top-edge|\
@@ -331,8 +337,10 @@ run_app_scenario() {
 run_app_scenario main sessions 32 \
   background-app-starts-without-focus \
   dashboard-accessible \
+  recover-and-reconnect-run-in-app-with-terminal-fallback \
   sidebar-selects-completed-session \
   session-uuid-copies-from-text-side \
+  resume-runs-in-app-with-terminal-fallback \
   live-session-hosts-attach-client \
   session-signals-stay-distinct \
   disconnected-stop-blocks-action \
@@ -360,5 +368,10 @@ while IFS= read -r invocation; do
     exit 1
   fi
 done <"$FAKE_DIR/invocations.log"
+
+[ "$(grep -Fxc 'codex recover --detach detach-codex-ui-recoverable' \
+  "$FAKE_DIR/invocations.log")" -ge 1 ]
+[ "$(grep -Fxc 'codex attach detach-codex-ui-recoverable' \
+  "$FAKE_DIR/invocations.log")" -ge 2 ]
 
 printf 'Packaged Detach.app UI e2e smoke passed\n'
