@@ -70,6 +70,7 @@ POST_UI_STAGES = (
 PROCESS_HEAVY_LIMIT = 2
 INTEGRATION_LANE_LIMIT = 1
 PROCESS_HEAVY_STAGES = {"gate-contract", "codex", "claude", "release-workflow"}
+EXCLUSIVE_PROCESS_HEAVY_STAGES = {"gate-contract", "release-workflow"}
 GATE_COMPATIBLE_INTEGRATION_STAGES = {
     "tmux-runtime",
     "release-preflight",
@@ -1410,7 +1411,13 @@ class QualityGate:
                 raise GateError(f"release stage budget must rank scheduled stage: {stage}")
             return int(value)
 
-        pending.sort(key=lambda stage: (-expected_seconds(stage), self.all_stages.index(stage)))
+        pending.sort(
+            key=lambda stage: (
+                stage != "gate-contract",
+                -expected_seconds(stage),
+                self.all_stages.index(stage),
+            )
+        )
         while pending or any(stage in self.active for stage in POST_UI_STAGES):
             while pending:
                 active_heavy = sum(
@@ -1426,6 +1433,14 @@ class QualityGate:
                         stage for stage in pending
                         if (
                             active_heavy < PROCESS_HEAVY_LIMIT
+                            and (
+                                active_heavy == 0
+                                if stage in EXCLUSIVE_PROCESS_HEAVY_STAGES
+                                else not any(
+                                    peer in self.active
+                                    for peer in EXCLUSIVE_PROCESS_HEAVY_STAGES
+                                )
+                            )
                             if stage in PROCESS_HEAVY_STAGES
                             else (
                                 active_integration < INTEGRATION_LANE_LIMIT

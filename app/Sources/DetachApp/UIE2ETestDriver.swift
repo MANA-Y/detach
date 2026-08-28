@@ -9,6 +9,32 @@ enum UIE2EControlFault {
     static var stopActionAttempts = 0
 }
 
+private final class UIE2EDeferredMouseUp: @unchecked Sendable {
+    private let application: NSApplication
+    private let event: NSEvent
+
+    init(application: NSApplication, event: NSEvent) {
+        self.application = application
+        self.event = event
+    }
+
+    func post() {
+        application.postEvent(event, atStart: true)
+    }
+}
+
+enum UIE2ECursorPositionResolver {
+    static func quartzPoint(
+        for appKitPoint: CGPoint,
+        screenFrame: CGRect,
+        displayBounds: CGRect
+    ) -> CGPoint {
+        CGPoint(
+            x: displayBounds.minX + appKitPoint.x - screenFrame.minX,
+            y: displayBounds.minY + screenFrame.maxY - appKitPoint.y)
+    }
+}
+
 @MainActor
 enum UIE2EEventWindowResolver {
     static func owner(
@@ -128,6 +154,7 @@ enum UIE2ETestDriver {
     private static var scenarioDeadline = TimeInterval.greatestFiniteMagnitude
     private static var nextMouseEventNumber = Int(
         ProcessInfo.processInfo.systemUptime * 1_000)
+    private static var cursorRestorePoint: CGPoint?
 
     static func runIfRequested(
         installation: InstallationStore,
@@ -162,6 +189,13 @@ enum UIE2ETestDriver {
         installation: InstallationStore,
         store: SessionStore
     ) async -> Report {
+        cursorRestorePoint = CGEvent(source: nil)?.location
+        defer {
+            if let cursorRestorePoint {
+                CGWarpMouseCursorPosition(cursorRestorePoint)
+            }
+            cursorRestorePoint = nil
+        }
         switch configuration.scenario {
         case "onboarding-first-run":
             return await runOnboardingFirstRun(
@@ -994,6 +1028,7 @@ enum UIE2ETestDriver {
         trace(
             "clicking \(name) at \(screenPoint.x),\(screenPoint.y) "
                 + "in window \(windowName)")
+        try moveCursor(to: screenPoint, name: name)
         let windowPoint = window.convertPoint(fromScreen: screenPoint)
         if let contentView = window.contentView {
             let contentPoint = contentView.convert(windowPoint, from: nil)
@@ -1007,6 +1042,7 @@ enum UIE2ETestDriver {
         }
         var events: [NSEvent] = []
         let timestamp = ProcessInfo.processInfo.systemUptime
+        let clickInterval: TimeInterval = 0.03
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
             let eventNumber = nextMouseEventNumber
             nextMouseEventNumber += 1
@@ -1014,7 +1050,7 @@ enum UIE2ETestDriver {
                 with: type,
                 location: windowPoint,
                 modifierFlags: [],
-                timestamp: timestamp + Double(events.count) / 1_000,
+                timestamp: timestamp + Double(events.count) * clickInterval,
                 windowNumber: window.windowNumber,
                 context: nil,
                 eventNumber: eventNumber,
@@ -1026,11 +1062,41 @@ enum UIE2ETestDriver {
         guard events.count == 2 else {
             throw Failure(message: "cannot create mouse pair for \(name)")
         }
-        // Put the complete pair at the front in delivery order. The main event
-        // loop dispatches mouseDown and can consume mouseUp while it tracks.
-        NSApp.postEvent(events[1], atStart: true)
+        // AppKit permits postEvent from a subthread. Delay mouseUp so SwiftUI
+        // receives a physical-duration click even inside a tracking loop.
+        let mouseUp = UIE2EDeferredMouseUp(application: NSApp, event: events[1])
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(
+            deadline: .now() + clickInterval
+        ) {
+            mouseUp.post()
+        }
         NSApp.postEvent(events[0], atStart: true)
         try await Task.sleep(nanoseconds: 100_000_000)
+    }
+
+    private static func moveCursor(
+        to screenPoint: CGPoint,
+        name: String
+    ) throws {
+        guard cursorRestorePoint != nil else {
+            throw Failure(message: "cannot preserve pointer position for \(name)")
+        }
+        guard let screen = NSScreen.screens.first(where: {
+            $0.frame.contains(screenPoint)
+        }),
+        let screenNumber = screen.deviceDescription[
+            NSDeviceDescriptionKey("NSScreenNumber")
+        ] as? NSNumber
+        else {
+            throw Failure(message: "cannot resolve the display for \(name)")
+        }
+        let quartzPoint = UIE2ECursorPositionResolver.quartzPoint(
+            for: screenPoint,
+            screenFrame: screen.frame,
+            displayBounds: CGDisplayBounds(CGDirectDisplayID(screenNumber.uint32Value)))
+        guard CGWarpMouseCursorPosition(quartzPoint) == .success else {
+            throw Failure(message: "cannot position the pointer for \(name)")
+        }
     }
 
     private static func keyPress(
@@ -1057,10 +1123,11 @@ enum UIE2ETestDriver {
     }
 
     private static func activate(_ mainWindow: NSWindow) async throws {
-        NSApp.activate(ignoringOtherApps: true)
-        mainWindow.makeKeyAndOrderFront(nil)
         try await waitUntil("test app activation") {
-            NSApp.isActive && mainWindow.isKeyWindow
+            if NSApp.isActive && mainWindow.isKeyWindow { return true }
+            NSApp.activate(ignoringOtherApps: true)
+            mainWindow.makeKeyAndOrderFront(nil)
+            return false
         }
     }
 
