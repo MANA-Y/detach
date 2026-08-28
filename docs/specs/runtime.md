@@ -149,8 +149,8 @@ wrapper's tmux foreground process group; a separate group makes interactive
 Codex or Claude stop on terminal I/O. On provider exit, the worker records
 status, attempts a final checkpoint, and leaves the pane retained for logs.
 
-Stop resolves the pane group through `/bin/ps` and revalidates pane identity
-immediately before signaling. Delete removes a retained tmux session even
+Stop revalidates the managed run, pane, owned PID, and process group before
+each TERM or KILL. Delete removes a retained tmux session even
 without a state directory and never reports success over leftover state.
 
 Closing Terminal or Detach.app only removes clients. The Detach tmux server,

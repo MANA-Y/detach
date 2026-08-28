@@ -3967,6 +3967,37 @@ process_is_descendant() {
   return 1
 }
 
+signal_managed_pane_group() {
+  local session="$1"
+  local run_token="$2"
+  local pane="$3"
+  local pane_pid="$4"
+  local pgid="$5"
+  local signal="$6"
+  local current_pane
+  local current_pane_pid
+  local current_pgid
+
+  case "$signal" in TERM|KILL) ;; *) return 1 ;; esac
+  [ -n "$run_token" ] || return 1
+  case "$pane_pid" in ''|*[!0-9]*) return 1 ;; esac
+  case "$pgid" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$pgid" -gt 1 ] || return 1
+  tmux_has_session "$session" && tmux_is_managed "$session" || return 1
+  [ "$(tmux_option "$session" '@detach_run_token')" = "$run_token" ] || return 1
+  [ "$(tmux_pane_dead "$session")" = "0" ] || return 1
+  current_pane="$(tmux_pane_id "$session" 2>/dev/null || true)"
+  [ "$current_pane" = "$pane" ] || return 1
+  current_pane_pid="$("${TMUX_CMD[@]}" display-message -p \
+    -t "$current_pane" '#{pane_pid}' 2>/dev/null || true)"
+  [ "$current_pane_pid" = "$pane_pid" ] && \
+    process_is_owned_alive "$current_pane_pid" || return 1
+  current_pgid="$(/bin/ps -o pgid= -p "$current_pane_pid" \
+    2>/dev/null | tr -d '[:space:]')"
+  [ "$current_pgid" = "$pgid" ] || return 1
+  kill "-$signal" -- "-$pgid"
+}
+
 checkpoint_is_recoverable() {
   local session="$1"
   local id="$2"
@@ -4500,17 +4531,8 @@ stop_session() {
         case "$pgid" in ''|*[!0-9]*) pgid="" ;; esac
       fi
       if [ -n "$pgid" ]; then
-        # A group signal reaches every process in the group. Revalidate the
-        # pane immediately before the TERM: it must still be alive, still run
-        # the same owned process, and still lead the same process group.
-        if [ "$(tmux_pane_dead "$session")" = "0" ] && \
-           [ "$("${TMUX_CMD[@]}" display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null || true)" = "$pane_pid" ] && \
-           process_is_owned_alive "$pane_pid" && \
-           [ "$(/bin/ps -o pgid= -p "$pane_pid" 2>/dev/null | tr -d '[:space:]')" = "$pgid" ]; then
-          kill -TERM -- "-$pgid" 2>/dev/null || true
-        fi
-      elif [ -n "$pane_pid" ]; then
-        kill -TERM "$pane_pid" 2>/dev/null || true
+        signal_managed_pane_group "$session" "$run_token" "$pane" "$pane_pid" "$pgid" TERM \
+          2>/dev/null || true
       fi
 
       while [ "$(tmux_pane_dead "$session")" = "0" ] && [ "$attempts" -lt 60 ]; do
@@ -4519,10 +4541,10 @@ stop_session() {
       done
       if [ "$(tmux_pane_dead "$session")" = "0" ]; then
         error "$PROVIDER_LABEL did not stop after 15 seconds; sending KILL"
-        if [ -n "$pgid" ]; then
-          kill -KILL -- "-$pgid" 2>/dev/null || true
-        elif [ -n "$pane_pid" ]; then
-          kill -KILL "$pane_pid" 2>/dev/null || true
+        if [ -n "$pgid" ] && \
+           ! signal_managed_pane_group "$session" "$run_token" "$pane" "$pane_pid" "$pgid" KILL \
+             2>/dev/null; then
+          error "warning: could not confirm and signal the exact runtime before KILL"
         fi
       fi
     fi

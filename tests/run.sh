@@ -1480,6 +1480,14 @@ rm -rf "$stubborn_dir"
 # on PATH must not replace it: a single-pid fallback TERM would leave the
 # HUP-ignoring provider running after kill-session and fail the stop, while
 # the revalidated group TERM still stops the whole managed group cleanly.
+stop_signal_source="$(sed -n '/^stop_session() {/,/^delete_session() {/p' \
+  "$ROOT/bin/detach-core")"
+[ "$(printf '%s\n' "$stop_signal_source" | \
+  grep -c 'signal_managed_pane_group .* TERM')" = 1 ]
+[ "$(printf '%s\n' "$stop_signal_source" | \
+  grep -c 'signal_managed_pane_group .* KILL')" = 1 ]
+! printf '%s\n' "$stop_signal_source" | \
+  grep -E 'kill[[:space:]]+-(TERM|KILL)' >/dev/null
 shadow_name=delete-stop-shadow-ps
 shadow_session=detach-codex-delete-stop-shadow-ps
 shadow_bin="$TMP_ROOT/shadow-bin"
