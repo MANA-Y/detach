@@ -715,6 +715,34 @@ final class DetachPowerCommandTests: XCTestCase {
         XCTAssertTrue(child.commands.isEmpty)
     }
 
+    func testThermalLatchDuringLeaseAttachStagesInactiveLeaseAndRefusesLaunch() {
+        let thermal = FakeThermalWatcher()
+        let (command, events, assertion, helper, child, _) = fixture(
+            thermalWatcher: thermal)
+        helper.onAcquire = { thermal.emit(.critical) }
+
+        XCTAssertThrowsError(try command.execute(arguments: [
+            "run", "--session", "session", "--run-token", "token",
+            "--", "/fixture/provider",
+        ])) { error in
+            XCTAssertEqual(
+                error as? DetachPowerCommandError,
+                .temperatureSafetyActive)
+        }
+
+        XCTAssertTrue(child.commands.isEmpty)
+        XCTAssertFalse(assertion.isActive)
+        XCTAssertEqual(helper.renewed.map(\.1), [false])
+        XCTAssertEqual(events.values, [
+            "assertion.acquire",
+            "helper.acquire",
+            "assertion.release",
+            "helper.renew",
+            "helper.release",
+            "assertion.release",
+        ])
+    }
+
     func testThermalProtectionReturnsOnlyAfterStableCooldown() throws {
         let thermal = FakeThermalWatcher()
         let clock = TestClock()
