@@ -60,28 +60,28 @@ Hosted CI is the merge-readiness authority.
   defects, policy mutations, and scope violations. Its graders compare stages,
   specs, capabilities, journeys, release gates, and ignored paths. Change an
   expectation only when the intended outcome changes.
-- Instrumented user scenarios emit addressable begin and pass events. Gate
-  evidence records their requirement and journey links, duration, result, and
-  bounded rerun command. A passed stage with missing scenario events fails.
-- A local timing-budget failure creates performance work. Warm-cache or
-  variance reruns cannot turn it into readiness; an unchanged rerun is allowed
-  only for an evidenced unrelated external transient whose cause is recorded.
+- Instrumented scenarios emit begin and pass events. Evidence records their
+  requirement and journey links, duration, result, and bounded rerun. A missing
+  event fails a passed stage.
+- A local timing-budget failure creates performance work. Warm-cache and
+  variance reruns cannot prove readiness. Repeat an unchanged run only for a
+  recorded unrelated external transient.
 - CI binds checks to the tested merge and first parent. Linux runs level 0
-  planning and static work. Level 1 is unit and contract work. Level 2 is
-  packaged and runtime work on macOS. All selected levels are required.
+  planning and static work. Level 1 covers units and contracts. Level 2 covers
+  packaged and runtime work on macOS. Every selected level is required.
 - Shards revalidate merge identity but have no merge authority. The final Linux
   job recomputes the plan and accepts only exact digest-bound shard evidence.
-  Evidence roots are absolute; ambiguity fails closed and a failed shard cancels peers.
+  Evidence roots are absolute. Ambiguity fails closed. A failed shard cancels peers.
 - CI keeps a ten-minute timing ratchet with no reference-Mac limit.
-- Gate contracts admit three heavy shards on eight CPUs and two on smaller
+- Gate contracts admit four heavy shards on eight CPUs and two on smaller
   hosts; light contracts stay concurrent and budgets expose overload.
 - Swift and release builds use separate caches and split at three CPUs;
   smaller hosts run in order. UI waits for app; metrics require both.
-  Gate-contract and release-workflow exclude heavy peers. Gate-contract permits
-  preflight and gates distribution. Other work uses two heavy and one
-  integration lane.
-- Exact keys bind code, resources, scripts, version, and toolchain. `main` warms
-  only missing products; CI verifies hits and rebuilds misses. Warming is not
+  Gate-contract excludes heavy peers and gates distribution. Release-workflow
+  may overlap one provider and gates distribution. Other work uses two
+  heavy and one integration lane.
+- Exact keys bind inputs and toolchain. `main` warms missing products. CI
+  verifies hits and misses, then reuses a fresh app. Warming emits no
   evidence.
 - CI uses the newest green `main` artifact with metrics; a later run without
   them does not replace it. Test identities and aggregate or critical-source

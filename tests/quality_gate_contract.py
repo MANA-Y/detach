@@ -108,8 +108,8 @@ class QualityGateContract(unittest.TestCase):
         self.assertTrue(include_gate_orchestrators("change", "gate-contract"))
 
     def test_gate_orchestrator_capacity_tracks_available_processors(self) -> None:
-        self.assertEqual(gate_orchestrator_limit(10), 3)
-        self.assertEqual(gate_orchestrator_limit(8), 3)
+        self.assertEqual(gate_orchestrator_limit(10), 4)
+        self.assertEqual(gate_orchestrator_limit(8), 4)
         self.assertEqual(gate_orchestrator_limit(4), 2)
         self.assertEqual(gate_contract_process_limit(10), 4)
         self.assertEqual(gate_contract_process_limit(4), 4)
@@ -283,13 +283,13 @@ class QualityGateContract(unittest.TestCase):
                 self.assertEqual(
                     provider_test_parts("codex"),
                     (
-                        "preflight",
-                        "lifecycle",
-                        "recovery",
-                        "resume",
-                        "identity",
                         "delete",
+                        "resume",
                         "crash",
+                        "lifecycle",
+                        "preflight",
+                        "recovery",
+                        "identity",
                     ),
                 )
 
@@ -389,18 +389,32 @@ class QualityGateContract(unittest.TestCase):
                 "#!/bin/bash\n"
                 "set -eu\n"
                 "[ \"$DETACH_QUALITY_PARTITIONED_DISTRIBUTION\" = 1 ]\n"
+                "root=\"${GATE_DISTRIBUTION_PARALLEL_ROOT:?}\"\n"
+                "part=\"$DETACH_DISTRIBUTION_TEST_PART\"\n"
+                "peer=runtime\n"
+                "[ \"$part\" = runtime ] && peer=shells\n"
+                ": >\"$root/$part\"\n"
+                "attempt=0\n"
+                "while [ ! -f \"$root/$peer\" ] && [ \"$attempt\" -lt 40 ]; do\n"
+                "  attempt=$((attempt + 1))\n"
+                "  sleep 0.05\n"
+                "done\n"
+                "[ -f \"$root/$peer\" ]\n"
                 "printf '%s\\n' \"$DETACH_DISTRIBUTION_TEST_PART\"\n",
                 encoding="utf-8",
             )
             suite.chmod(0o755)
             run_dir = root / "evidence"
             run_dir.mkdir()
+            barrier = root / "barrier"
+            barrier.mkdir()
             events = run_dir / "distribution-events.jsonl"
             with patch.dict(
                 "os.environ",
                 {
                     "DETACH_QUALITY_SCENARIO_STAGE": "distribution",
                     "DETACH_QUALITY_SCENARIO_EVENTS": str(events),
+                    "GATE_DISTRIBUTION_PARALLEL_ROOT": str(barrier),
                 },
             ):
                 self.assertEqual(run_distribution_parts(root, run_dir), 0)

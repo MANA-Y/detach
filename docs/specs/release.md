@@ -54,6 +54,9 @@ change real power state, upload assets, or claim publication.
   for hermetic tests. It can simulate push and publication only after it proves
   the exact fixture repository, local origin, empty hooks, placeholder name,
   and fake external tools. This boundary never authorizes an external release.
+- End-to-end release fixtures use separate repositories and external-state
+  roots. They run with bounded admission, report each case duration, and always
+  run the complete case set. A scheduler change cannot omit a release case.
 - The release entry point supplies the low-level publication confirmation after
   all selected gates pass. After upload, verification lists every remote asset
   name. A name outside the expected set fails closed. Every expected remote

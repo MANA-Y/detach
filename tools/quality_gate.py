@@ -69,13 +69,15 @@ POST_UI_STAGES = (
 )
 PROCESS_HEAVY_LIMIT = 2
 INTEGRATION_LANE_LIMIT = 1
+PROCESS_POLL_SECONDS = 0.01
 PROCESS_HEAVY_STAGES = {"gate-contract", "codex", "claude", "release-workflow"}
-EXCLUSIVE_PROCESS_HEAVY_STAGES = {"gate-contract", "release-workflow"}
+EXCLUSIVE_PROCESS_HEAVY_STAGES = {"gate-contract"}
 GATE_COMPATIBLE_INTEGRATION_STAGES = {
     "tmux-runtime",
     "release-preflight",
     "publish-preflight",
 }
+RELEASE_COMPETING_INTEGRATION_STAGES = {"distribution"}
 UI_COVERAGE_SCRATCH = "quality-ui-release"
 SWIFT_TEST_SCRATCH = "quality-swift-tests"
 QUALITY_TEST_BUNDLE = Path(
@@ -89,14 +91,16 @@ QUALITY_UI_BINARY = Path(
     "app/.build/quality-ui-release/arm64-apple-macosx/release/DetachApp"
 )
 PROVIDER_TEST_PARTS = {
+    # The Codex lane admits three parts at a time. Start the longest measured
+    # independent parts first so a short part cannot delay the critical path.
     "codex": (
-        "preflight",
-        "lifecycle",
-        "recovery",
-        "resume",
-        "identity",
         "delete",
+        "resume",
         "crash",
+        "lifecycle",
+        "preflight",
+        "recovery",
+        "identity",
     ),
     "claude": (
         "lifecycle-guardrails",
@@ -1421,7 +1425,7 @@ class QualityGate:
         while any(stage not in self.results for stage in wanted):
             self.poll_active()
             if any(stage not in self.results for stage in wanted):
-                time.sleep(0.05)
+                time.sleep(PROCESS_POLL_SECONDS)
         for stage in stages:
             if stage in self.results:
                 self.report(stage)
@@ -1469,6 +1473,13 @@ class QualityGate:
                             if stage in PROCESS_HEAVY_STAGES
                             else (
                                 active_integration < INTEGRATION_LANE_LIMIT
+                                and not (
+                                    stage in RELEASE_COMPETING_INTEGRATION_STAGES
+                                    and (
+                                        "release-workflow" in self.active
+                                        or "release-workflow" in pending
+                                    )
+                                )
                                 and (
                                     "gate-contract" not in self.active
                                     or stage in GATE_COMPATIBLE_INTEGRATION_STAGES
@@ -1490,7 +1501,7 @@ class QualityGate:
                 if stage in self.results:
                     self.report(stage)
             if pending or any(stage in self.active for stage in POST_UI_STAGES):
-                time.sleep(0.05)
+                time.sleep(PROCESS_POLL_SECONDS)
 
     def budget_values(self) -> dict[str, str | None]:
         if not self.release_budget.is_file() or self.release_budget.is_symlink():
@@ -2050,7 +2061,7 @@ def run_provider_parts(
                         record_scenario_event("pass", scenario_id)
                 pending.remove(index)
             if pending:
-                time.sleep(0.05)
+                time.sleep(PROCESS_POLL_SECONDS)
         for index, (part, log, _, _, _) in enumerate(processes):
             status = statuses[index]
             sys.stdout.write(log.read_text(encoding="utf-8", errors="replace"))
@@ -2109,12 +2120,19 @@ def run_distribution_parts(root: Path, run_dir: Path) -> int:
                 stderr=subprocess.STDOUT,
             )
             processes.append((part, log, process, output, time.monotonic()))
-            index = len(processes) - 1
-            statuses[index] = process.wait()
-            durations[index] = max(
-                0, round(time.monotonic() - processes[index][4])
-            )
-            output.close()
+        pending = set(range(len(processes)))
+        while pending:
+            for index in list(pending):
+                _, _, process, output, started = processes[index]
+                part_status = process.poll()
+                if part_status is None:
+                    continue
+                output.close()
+                statuses[index] = part_status
+                durations[index] = max(0, round(time.monotonic() - started))
+                pending.remove(index)
+            if pending:
+                time.sleep(PROCESS_POLL_SECONDS)
         status = next(
             (statuses[index] for index in range(len(processes)) if statuses[index]),
             0,
@@ -2182,7 +2200,7 @@ def run_static_contracts(root: Path, run_dir: Path) -> int:
                 durations[index] = max(0, round(time.monotonic() - started))
                 pending.remove(index)
             if pending:
-                time.sleep(0.05)
+                time.sleep(PROCESS_POLL_SECONDS)
         for index, (name, log, _, _, _) in enumerate(processes):
             sys.stdout.write(log.read_text(encoding="utf-8", errors="replace"))
             print(
@@ -2426,7 +2444,7 @@ def gate_contract_definitions(
 
 def gate_orchestrator_limit(logical_cpus: int | None = None) -> int:
     available = logical_cpus if logical_cpus is not None else os.cpu_count()
-    return 3 if (available or 0) >= 8 else 2
+    return 4 if (available or 0) >= 8 else 2
 
 
 def gate_contract_process_limit(logical_cpus: int | None = None) -> int:
@@ -2488,7 +2506,7 @@ def run_gate_contract_stage(root: Path, *, include_orchestrators: bool) -> int:
                 if path.name.startswith("orchestrator-"):
                     running_orchestrators -= 1
             if running:
-                time.sleep(0.05)
+                time.sleep(PROCESS_POLL_SECONDS)
         for path, _, _, expected, _ in sorted(processes, key=lambda item: item[0].name):
             content = path.read_text(encoding="utf-8", errors="replace")
             sys.stdout.write(content)
