@@ -1504,11 +1504,20 @@ PATH="$shadow_bin:$PATH" run_codex stop "$shadow_name"
 run_codex delete --force "$shadow_name"
 
 # A start holds the install lock through its readiness wait (up to 35
-# seconds). A concurrent config write must wait for that holder instead of
-# failing spuriously on a shorter acquisition timeout.
+# seconds). Scale lockf deadlines by 10 for this check so the regression stays
+# discriminating without adding 35 seconds to every Codex test run.
 install_lock_ready="$TMP_ROOT/install-lock-ready"
+scaled_install_lockf="$TMP_ROOT/scaled-install-lockf"
+printf '%s\n' \
+  '#!/bin/bash' \
+  'set -eu' \
+  '[ "$1" = -k ] && [ "$2" = -t ]' \
+  'timeout=$((($3 + 9) / 10))' \
+  'shift 3' \
+  'exec /usr/bin/lockf -k -t "$timeout" "$@"' >"$scaled_install_lockf"
+chmod 0755 "$scaled_install_lockf"
 /usr/bin/lockf -k "$TEST_INSTALL_STATE_ROOT/install.lock" /bin/sh -c \
-  'touch "$1"; sleep 35' sh "$install_lock_ready" &
+  'touch "$1"; sleep 3.5' sh "$install_lock_ready" &
 install_holder=$!
 attempts=0
 while [ ! -f "$install_lock_ready" ]; do
@@ -1519,7 +1528,7 @@ while [ ! -f "$install_lock_ready" ]; do
   }
   sleep 0.05
 done
-"$SCRIPT" config tmux-mouse off
+DETACH_LOCKF_BIN="$scaled_install_lockf" "$SCRIPT" config tmux-mouse off
 wait "$install_holder"
 [ "$("$SCRIPT" config tmux-mouse)" = "off" ]
 "$SCRIPT" config tmux-mouse on
