@@ -629,6 +629,37 @@ final class InstallationStorePowerStateTests: XCTestCase {
         XCTAssertEqual(watchdog.forceReplacementRequests, [false])
     }
 
+    func testSynchronizeDecidesForceReplacementFromFreshHeartbeatSnapshot()
+        async throws
+    {
+        let distribution = InstallationDistributionProbe(
+            synchronizeResults: [.success("repaired")],
+            doctorResults: [
+                .success(installedRuntimeReport()),
+                .success(installedRuntimeReport()),
+            ])
+        let watchdog = InstallationWatchdogProbe(status: .enabled)
+        let powerHelper = InstallationPowerHelperProbe(status: .enabled)
+        let fixture = try makePackagedInstallationFixture(
+            completedOnboarding: true,
+            distribution: distribution,
+            watchdog: watchdog,
+            powerHelper: powerHelper)
+        defer { fixture.cleanup() }
+
+        XCTAssertFalse(fixture.store.watchdogHeartbeat.healthy)
+        try writeHeartbeat(
+            #"{"state":"ok","power_state":"protected","checked_at":"\#(stamp())"}"#,
+            to: fixture.stateRoot)
+        XCTAssertFalse(fixture.store.watchdogHeartbeat.healthy)
+
+        await fixture.store.repair()
+
+        XCTAssertTrue(fixture.store.watchdogHeartbeat.healthy)
+        XCTAssertEqual(watchdog.forceReplacementRequests, [false])
+        XCTAssertEqual(distribution.repairs, [true])
+    }
+
     func testRepairDefersHelperReplacementWhileActiveLeasesRemain()
         async throws
     {

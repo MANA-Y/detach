@@ -2,18 +2,17 @@
 
 ## Contract
 
-`app/` is a SwiftPM package containing `DetachKit`, `DetachApp`,
+`app/` is a SwiftPM package with `DetachKit`, `DetachApp`,
 `DetachWatchdog`, `DetachState`, `DetachPower`, and `DetachPowerHelper`. The app
-bundles and signs arm64-only executables, the immutable CLI
-payload, pinned tmux sources/licenses/provenance, Sparkle, SwiftTerm, and
-their license notices.
+bundles signed arm64-only executables, the immutable CLI payload, pinned tmux
+sources/licenses/provenance, Sparkle, SwiftTerm, and their license notices.
 
-`ANSIParser` is the single terminal-preview decoder. It strips non-SGR control
-sequences and preserves terminal foreground/background colors, bold, dim,
+`ANSIParser` is the terminal-preview decoder. It strips non-SGR sequences and
+keeps terminal foreground/background colors, bold, dim,
 italic, underline, strikethrough, and reverse video. Reverse video swaps
-against `ANSIParser.terminalBackground`, also the `LogTextView`
-background; do not duplicate that canvas color. Font-size scaling may replace
-only the font and must keep every ANSI attribute.
+against `ANSIParser.terminalBackground`, also the `LogTextView` background;
+keep one canvas color. Font scaling changes only the font and keeps every ANSI
+attribute.
 
 Onboarding uses the pure reducer in `SetupGuidance.step(for:)`; a setup failure
 outranks provider discovery. A bare
@@ -22,17 +21,18 @@ The live poller reads status without side effects and reconciles once when it
 becomes enabled. Only confirmed readiness (a
 finished helper journal and an open root gate) advances the step. Registration
 can stay in `requiresApproval`; do not treat it as enabled before macOS does.
-The success card waits for a fresh watchdog heartbeat. Its dashboard action
-stays disabled until then. After a long wait, it offers a monitor retry, not a
-bypass. The store records completion only after that action, exactly once.
+Each done-step poll rereads the watchdog heartbeat. The success card disables
+its dashboard action until the heartbeat is fresh. After a long wait, it offers
+a monitor retry, not a bypass. The store records completion exactly once, only
+after that action. Repair and first-run synchronization also reread the
+heartbeat before replacing a silent registration.
 If a doctor refresh fails or detects another runtime identity, the app
 withdraws the earlier helper-readiness confirmation.
 
-After onboarding completes, `.idle`, `.syncing`, `.updateDeferred`, and
-`.ready` present `.mainApp`. Bootstrap, refresh, and an update held by active
-leases keep the dashboard mounted. Only a completed `.actionRequired` or
-`.failed` result shows setup again. A missing provider also shows the
-dashboard. Provider installation uses the official command,
+After onboarding, `.idle`, `.syncing`, `.updateDeferred`, and `.ready` present
+`.mainApp`. Bootstrap, refresh, and an update held by active leases keep the
+dashboard. Only a completed `.actionRequired` or `.failed` result shows setup;
+a missing provider keeps the dashboard. Provider installation uses the official command,
 launched visibly in the user's own terminal through the private `.command`
 mechanism; never claim a guided install failed (there is no outcome channel),
 only that the CLI is not detected yet. When helper/plist bytes change after an
@@ -47,33 +47,32 @@ signed marker. UI smoke uses a stripped private copy at
 power, state, and tmux. Injections stay below its root. An escape,
 unsafe identity, build mismatch, or payload fails closed.
 
-Smoke restores focus and the pointer. It sends ordered AppKit down/up
-pairs to measured SwiftUI controls; semantic locators have no actions. Row
-clicks select sessions even after preview text takes focus.
+Smoke restores focus and the pointer, then sends ordered AppKit down/up pairs to
+measured SwiftUI controls; semantic locators have no actions. Row clicks select
+sessions even after preview text takes focus.
 Each launch and stage stays within its deadline. Journeys cover main surfaces,
 Settings, onboarding, focus, Codex Recover, Claude Resume, and reconnect after
 an attach client exits. It disconnects Stop before the real control invokes it.
 Only visible controls complete onboarding.
 
 Coverage builds the normal bundle, instrumented binary, and Swift tests in
-isolated paths. UI waits for the bundle. Metrics wait for UI and Swift tests.
+isolated paths. UI waits for the bundle; metrics wait for UI and Swift tests.
 Only the copy gets it. The binary and profiles stay out of public artifacts.
 If an overlay scroller ignores a page event, the driver reveals the measured
 semantic control, then posts the action to it.
 
-The per-user watchdog has an additional launch-readiness rule. macOS can report
-an approved agent as enabled while no launchd job loaded after the approval
-transition. During first onboarding, or an explicit Repair, an enabled watchdog
-without a fresh heartbeat must be replaced through the same durable
-unregister/barrier/register transaction. Ordinary activation refreshes must not
+The per-user watchdog adds a launch-readiness rule: macOS can report an approved
+agent as enabled while no launchd job loaded after approval. During first
+onboarding or Repair, an enabled watchdog without a fresh heartbeat uses the
+durable unregister/barrier/register transaction. Ordinary activation does not
 replace it for a temporarily stale heartbeat.
 
-The menu bar item is display-only. Its Detach prompt mark uses a filled dot for
-protected, a dim mark for sleep allowed, an exclamation badge for attention,
-and an outline for unknown. With active sessions, green means working and
-orange means waiting. Waiting outranks working. A badge suppresses both tints
-so a power warning stays visible. Monochrome states remain template. Tinted
-states use label or system colors resolved at composite time. VoiceOver names
+The menu bar is display-only. Its prompt mark is filled for protected, dim for
+sleep allowed, badged for attention, and outlined for unknown. Starting,
+running, and recovering sessions are active; hung sessions are not. Green means
+working and orange means waiting. Waiting outranks working. A badge hides both
+tints so power warnings stay visible. Monochrome states remain template; tints
+resolve from label or system colors. VoiceOver names
 the session state. The first menu line is `state · reason · freshness`.
 Protected counts working sessions. Allowed names all-waiting or an unprotected
 working session and never claims no sessions. The shared `checked_at` heartbeat
@@ -162,18 +161,18 @@ user-specific path. Native power protection requires no Apple Events or
 Automation entitlement.
 
 Bootstrap runs only from `/Applications`, not a DMG or App Translocation path.
-In-app Resume and Recover call `--detach`, then attach through an
-ephemeral PTY on `detach <provider> attach <session>`. Closing the view or app
-ends that client. `Ctrl-V` reaches provider image paste; Detach stores no
-image. Live views move typed Mac Power to metadata and omit the duplicate strip.
-An exited client offers Reconnect without an agent restart. The selected
-terminal remains an `NSWorkspace` `.command` fallback. Without one, a private
-`.zshenv` is the outer
-`ZDOTDIR` until payload removal restores the original.
+App Start runs the provider with `--detach` in its project, keeps an error in
+the sheet, refreshes state, and selects one unambiguous new
+session. Start, Resume, and Recover attach through an ephemeral PTY on
+`detach <provider> attach <session>`. Closing the view or app ends that client.
+`Ctrl-V` reaches provider image paste; Detach stores no image. Live views move
+typed Mac Power to metadata and omit the duplicate strip. An exited client
+offers Reconnect without an agent restart. The selected terminal remains an
+`NSWorkspace` `.command` fallback.
 The new-session sheet accepts an optional UTF-8 name up to 100 bytes. It rejects
 control characters, blocks launch, and passes one `--name`. The launch button
-names the selected terminal. Advanced holds terminal choice and the prompt and
-grows down, top fixed. The app uses `display_name` as the title, with
+starts inside Detach. Advanced holds the prompt and grows down, top fixed. The
+app uses `display_name` as the title, with
 the project/internal name fallback for old records.
 Notifications are opt-in. One poller deduplicates baseline and transitions.
 
