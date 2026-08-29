@@ -102,6 +102,55 @@ final class NewSessionSheetTests: XCTestCase {
         _ = NewSessionLaunch.label(isLaunching: true)
     }
 
+    func testLaunchStartsInAppAndSelectsTheTypedSession() async {
+        let cli = NewSessionRecordingCLI()
+        cli.responses["list --json"] = .success(CLIResult(
+            exitCode: 0,
+            stdout: #"{"schema":1,"provider":"claude","session_name":"detach-claude-p-1","name":"p-1","effective_status":"running","meta_status":"running","agent_session_id":"u1","project_dir":"/tmp/proj","created_at":"2026-08-29T00:00:00Z","last_checkpoint_at":null,"exit_status":null,"finished_at":null}"#,
+            stderr: "",
+            timedOut: false))
+        var selectedID: String?
+        let sheet = NewSessionSheet(
+            store: SessionStore(cli: cli),
+            selectedID: Binding(
+                get: { selectedID },
+                set: { selectedID = $0 }),
+            initialProjectDir: URL(
+                fileURLWithPath: "/tmp/proj",
+                isDirectory: true))
+
+        let result = await sheet.launch()
+
+        XCTAssertEqual(result?.sessionID, "detach-claude-p-1")
+        XCTAssertEqual(selectedID, "detach-claude-p-1")
+        XCTAssertEqual(cli.calls, [["claude", "--detach"], ["list", "--json"]])
+    }
+
+    func testLaunchReturnsTheStartFailureWithoutSelectingASession() async {
+        let cli = NewSessionRecordingCLI()
+        cli.responses["claude --detach"] = .success(CLIResult(
+            exitCode: 17,
+            stdout: "",
+            stderr: "start refused",
+            timedOut: false))
+        var selectedID: String?
+        let sheet = NewSessionSheet(
+            store: SessionStore(cli: cli),
+            selectedID: Binding(
+                get: { selectedID },
+                set: { selectedID = $0 }),
+            initialProjectDir: URL(
+                fileURLWithPath: "/tmp/proj",
+                isDirectory: true))
+
+        let result = await sheet.launch()
+
+        XCTAssertEqual(result?.message, "start refused")
+        XCTAssertNil(selectedID)
+        XCTAssertEqual(cli.calls, [["claude", "--detach"]])
+        _ = sheet.body
+    }
+
     func testLaunchTitleAndDisplayNameUseTheSelectedTerminal() {
         XCTAssertEqual(
             TerminalLaunchPresentation.title(terminalDisplayName: "iTerm"),
@@ -122,6 +171,21 @@ final class NewSessionSheetTests: XCTestCase {
         XCTAssertFalse(rules.canChooseDirectories)
         XCTAssertFalse(rules.allowsMultipleSelection)
         XCTAssertFalse(rules.canCreateDirectories)
+    }
+
+    func testOpenPanelsApplyTheirTypedRules() {
+        let terminal = TerminalApplicationChooser.makeOpenPanel()
+        XCTAssertTrue(terminal.canChooseFiles)
+        XCTAssertFalse(terminal.canChooseDirectories)
+        XCTAssertEqual(terminal.allowedContentTypes, [.applicationBundle])
+        XCTAssertEqual(terminal.directoryURL?.path, "/Applications")
+
+        let project = ProjectDirectoryChooser.makeOpenPanel(
+            startingAt: URL(fileURLWithPath: "/tmp", isDirectory: true))
+        XCTAssertFalse(project.canChooseFiles)
+        XCTAssertTrue(project.canChooseDirectories)
+        XCTAssertEqual(project.allowedContentTypes, [])
+        XCTAssertEqual(project.directoryURL?.path, "/tmp")
     }
 
     func testProjectChooserStartsInTheSelectedProjectParent() {
@@ -205,6 +269,35 @@ final class NewSessionSheetTests: XCTestCase {
         pin.layout()
     }
 
+    func testPinViewKeepsAnAttachedWindowTopFixed() async {
+        let window = NSWindow(
+            contentRect: NSRect(x: 100, y: 200, width: 520, height: 300),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: true)
+        let pin = PinWindowTopEdgeView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        window.contentView = pin
+        pin.removeResizeObserver()
+        pin.startPinning()
+
+        let scheduled = expectation(description: "pin scheduled")
+        DispatchQueue.main.async { scheduled.fulfill() }
+        await fulfillment(of: [scheduled], timeout: 1)
+        let pinnedMaxY = window.frame.maxY
+
+        window.setFrame(
+            NSRect(x: 100, y: 150, width: 520, height: 400),
+            display: false)
+        pin.applyPinnedTop()
+
+        XCTAssertEqual(window.frame.maxY, pinnedMaxY, accuracy: 0.01)
+        NotificationCenter.default.post(
+            name: NSWindow.didResizeNotification,
+            object: window)
+        pin.removeResizeObserver()
+    }
+
     private static func terminalApplicationURL() -> URL? {
         [
             "/System/Applications/Utilities/Terminal.app",
@@ -221,6 +314,20 @@ private struct NewSessionNoopCLI: DetachCLIRunning {
         timeout: TimeInterval
     ) async throws -> CLIResult {
         CLIResult(exitCode: 0, stdout: "", stderr: "", timedOut: false)
+    }
+}
+
+private final class NewSessionRecordingCLI: DetachCLIRunning, @unchecked Sendable {
+    var responses: [String: Result<CLIResult, Error>] = [:]
+    private(set) var calls: [[String]] = []
+
+    func run(
+        arguments: [String],
+        timeout: TimeInterval
+    ) async throws -> CLIResult {
+        calls.append(arguments)
+        return try responses[arguments.joined(separator: " ")]?.get()
+            ?? CLIResult(exitCode: 0, stdout: "", stderr: "", timedOut: false)
     }
 }
 

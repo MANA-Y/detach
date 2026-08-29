@@ -314,8 +314,9 @@ struct NewSessionSheet: View {
     }
 
     @MainActor
-    private func launch() async {
-        guard !isLaunching, isNameValid, let projectDir else { return }
+    @discardableResult
+    func launch() async -> SessionStartResult? {
+        guard !isLaunching, isNameValid, let projectDir else { return nil }
         isLaunching = true
         defer { isLaunching = false }
         let result = await store.startDetached(
@@ -330,6 +331,7 @@ struct NewSessionSheet: View {
             if let sessionID = result.sessionID { selectedID = sessionID }
             dismiss()
         }
+        return result
     }
 }
 // quality-coverage:end sheet-appkit
