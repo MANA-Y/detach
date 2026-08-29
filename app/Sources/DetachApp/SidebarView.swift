@@ -33,6 +33,22 @@ struct SidebarView: View {
         deletableFinishedSessions.filter { selectedFinishedIDs.contains($0.id) }
     }
 
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+    private var uiE2EInitialProjectDirectory: URL? {
+        guard let configuration = AppSettings.uiE2E,
+              FileManager.default.fileExists(atPath: configuration.root
+                .appendingPathComponent(
+                    "fake/enable-new-session-project").path)
+        else { return nil }
+        return configuration.root.appendingPathComponent(
+            "project", isDirectory: true)
+    }
+#else
+    private var uiE2EInitialProjectDirectory: URL? { nil }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
+
     var body: some View {
         VStack(spacing: 0) {
             List(selection: $selectedID) {
@@ -90,7 +106,11 @@ struct SidebarView: View {
             }
         }
         .sheet(isPresented: $showNewSession) {
-            NewSessionSheet(store: store, selectedID: $selectedID)
+            NewSessionSheet(
+                store: store,
+                selectedID: $selectedID,
+                initialProjectDir: uiE2EInitialProjectDirectory
+            )
         }
         .confirmationDialog(
             L10n.format(

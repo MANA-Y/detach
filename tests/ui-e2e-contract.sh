@@ -51,6 +51,8 @@ for invocation in \
   'claude logs --ansi detach-claude-ui-completed' \
   'resume --detach a9f58f1d-1234-5678-9abc-def012342ed9' \
   'claude attach detach-claude-ui-completed' \
+  'claude --detach' \
+  'claude attach detach-claude-ui-new' \
   'codex stop detach-codex-ui-running' \
   'storage --json' \
   'config tmux-style' \

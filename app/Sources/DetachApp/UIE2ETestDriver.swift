@@ -594,6 +594,38 @@ enum UIE2ETestDriver {
             checks.append("new-session-sheet-semantics")
             trace("new-session sheet closed")
 
+            try Data().write(to: configuration.root.appendingPathComponent(
+                "fake/enable-new-session-project"), options: .atomic)
+            try await click(newSession, name: "new session action")
+            _ = try await measuredFrame(
+                identifier: "new-session-sheet", name: "new session sheet")
+            try await waitUntil("enabled new session launch") {
+                find(identifier: "new-session-launch").map(isEnabled) == true
+            }
+            let enabledLaunch = try await element(
+                identifier: "new-session-launch")
+            try requireSemanticControl(
+                enabledLaunch, name: "enabled new session launch")
+            try await clickUntil(
+                enabledLaunch,
+                name: "enabled new session launch",
+                outcome: "new session start reaches fake CLI") {
+                FileManager.default.fileExists(atPath: configuration.root
+                    .appendingPathComponent("fake/new-session-started").path)
+            }
+            let startedID = "detach-claude-ui-new"
+            try await waitUntil("new session selection") {
+                find(identifier: "session-detail-\(startedID)") != nil
+            }
+            try await waitUntil("new session embedded terminal", attempts: 40) {
+                find(identifier: "session-preview-terminal") != nil
+                    && FileManager.default.fileExists(atPath: configuration.root
+                        .appendingPathComponent(
+                            "fake/new-session-attach-ready").path)
+            }
+            checks.append("new-session-start-opens-embedded-terminal")
+            trace("new session selected and attached inside Detach")
+
             try Data("empty\n".utf8).write(
                 to: configuration.fixtureState, options: .atomic)
             let emptyGuide = try await element(identifier: "empty-sessions-guide")

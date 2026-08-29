@@ -22,6 +22,8 @@ approved_invocation() {
     'claude logs --ansi detach-claude-ui-completed'|\
     'resume --detach a9f58f1d-1234-5678-9abc-def012342ed9'|\
     'claude attach detach-claude-ui-completed'|\
+    'claude --detach'|\
+    'claude attach detach-claude-ui-new'|\
     'codex stop detach-codex-ui-running'|\
     'codex delete --force detach-codex-ui-stopped'|\
     'storage --json'|\
@@ -143,7 +145,7 @@ IDENTIFIER="dev.tsarev.detach.ui-e2e.$$"
 UI_E2E_DEADLINE=$((SECONDS + 50))
 
 mkdir -p "$TEST_HOME/.local/bin" "$TEST_HOME/Library/Preferences" \
-  "$TEST_ROOT/state" "$TEST_ROOT/power" "$FAKE_DIR"
+  "$TEST_ROOT/state" "$TEST_ROOT/power" "$TEST_ROOT/project" "$FAKE_DIR"
 cp -cR "$SOURCE_APP" "$TEST_APP"
 
 if [ -n "$COVERAGE_BINARY" ]; then
@@ -310,7 +312,8 @@ run_app_scenario() {
       settings-window-stays-on-screen|\
       settings-system-reveals-storage-and-installation|\
       new-session-advanced-keeps-top-edge|\
-      new-session-starts-without-outer-terminal) ;;
+      new-session-starts-without-outer-terminal|\
+      new-session-start-opens-embedded-terminal) ;;
       dashboard-accessible) pass=SC-UI-DASHBOARD ;;
       sidebar-selects-completed-session) ;;
       bulk-delete-reaches-fake-cli) pass=SC-UI-SESSION-DELETE ;;
@@ -352,6 +355,7 @@ run_app_scenario main sessions 32 \
   new-session-starts-without-outer-terminal \
   new-session-advanced-keeps-top-edge \
   new-session-sheet-semantics \
+  new-session-start-opens-embedded-terminal \
   empty-dashboard-state \
   actionable-failure-presentation \
   settings-change-persists \
@@ -375,5 +379,8 @@ done <"$FAKE_DIR/invocations.log"
   "$FAKE_DIR/invocations.log")" -ge 1 ]
 [ "$(grep -Fxc 'codex attach detach-codex-ui-recoverable' \
   "$FAKE_DIR/invocations.log")" -ge 2 ]
+[ "$(grep -Fxc 'claude --detach' "$FAKE_DIR/invocations.log")" -eq 1 ]
+[ "$(grep -Fxc 'claude attach detach-claude-ui-new' \
+  "$FAKE_DIR/invocations.log")" -ge 1 ]
 
 printf 'Packaged Detach.app UI e2e smoke passed\n'
