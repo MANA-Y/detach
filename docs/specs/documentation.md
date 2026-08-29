@@ -89,12 +89,11 @@ Hosted CI is the merge-readiness authority.
   person cannot raise floors. Policy exclusions need
   scenario evidence and cannot cover critical sources. Named test-only regions
   stay in aggregate coverage but not changed-line metrics.
-- Authoritative coverage combines Swift and packaged-app tests. Swift-test
-  changes run both, so metrics match the baseline. CI resolves one shared
-  cache, then three builds use isolated paths. The gate splits workers and
-  verifies the normal bundle. Only a stripped private
-  copy gets the instrumented executable. Metrics merge profiles without a
-  second test run.
+- Coverage artifacts name `swift` or `combined`. Ratchets use the newest
+  matching main profile; schema-1 means combined. Full runs record a Swift
+  snapshot; test-only changes skip app journeys. CI shares one cache
+  across isolated builds, splits workers, verifies the bundle, and instruments
+  only a private copy. Combined metrics merge profiles without another run.
 - `coverage-opportunities.json` is a separate digest-bound advisory artifact.
   It ranks uncovered UI sources from policy routes, release impact,
   requirements, and journeys. Its next milestone is the five-point boundary

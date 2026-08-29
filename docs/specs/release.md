@@ -34,10 +34,10 @@ change real power state, upload assets, or claim publication.
 - Developer ID signing, notarization, and the real signed power smoke are
   mandatory for every release. `scripts/release-impact` compares the last
   published tag with the release source. It selects supervised closed-lid
-  testing only for power, helper, watchdog, lease, assertion, lid-probe, or
-  `scripts/release-version` impact. An unknown product path selects the
-  closed-lid gate. Test-only, documentation-only, and known unrelated product
-  paths do not select it.
+  testing only for power, helper, watchdog, lease, assertion, or lid-probe
+  impact. An unknown product path selects the closed-lid gate. Test-only,
+  documentation-only, release-orchestrator, and known unrelated product paths
+  do not select it.
 - Notary credential preflight gives `notarytool` a private PTY and captures its
   output in private workflow evidence. This supports protected Keychain
   profiles without exposing submission history in the release log.

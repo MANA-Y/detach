@@ -344,7 +344,7 @@ mkdir -p "$REPO/app/Tests/DetachKitTests"
 printf '%s\n' 'final class ChangedTests {}' \
   >"$REPO/app/Tests/DetachKitTests/ChangedTests.swift"
 plan="$(gate --plan)"
-[[ "$plan" = *'stages=static,swift,quality-contracts,app,ui-e2e,release-budget' ]]
+[[ "$plan" = *'stages=static,swift,quality-contracts,release-budget' ]]
 
 setup_fixture typed-state-impact
 mkdir -p "$REPO/app/Sources/DetachKit"

@@ -1,5 +1,5 @@
 schema	1
-policy	53
+policy	54
 spec	documentation	docs/specs/documentation.md	Agent context, specifications, and quality automation stay synchronized.
 spec	runtime	docs/specs/runtime.md	Runtime state and session operations preserve exact ownership.
 spec	power	docs/specs/power.md	Power protection fails safe across both required layers.
@@ -39,7 +39,7 @@ test-domain	update-source	static,swift,quality-contracts,app,release-budget	upda
 test-domain	diagnostics-source	static,swift,quality-contracts,app,release-budget	diagnostics
 test-domain	runtime-source	static,swift,quality-contracts,app,release-budget	session-lifecycle
 test-domain	session-ui-source	static,swift,quality-contracts,app,release-budget	session-lifecycle,app-experience
-test-domain	swift-test	static,swift,quality-contracts,app,release-budget	quality-system
+test-domain	swift-test	static,swift,quality-contracts,release-budget	quality-system
 test-domain	package	static,swift,quality-contracts,app,tmux-runtime,release-budget	installation,update
 test-domain	cli	static,app,codex,claude,distribution,tmux-runtime,release-budget	session-lifecycle
 test-domain	install	static,app,distribution,tmux-runtime,release-budget	installation
@@ -209,7 +209,7 @@ route	900	app/scripts/bundle-modes.sh	app-script	unknown	docs/specs/release.md
 route	890	app/scripts/publish-release.sh	release-tool	safe	docs/specs/release.md
 route	890	app/scripts/verify-appcast.sh	release-tool	safe	docs/specs/release.md
 route	880	app/scripts/*	app-script	safe	docs/specs/release.md
-route	900	scripts/release-version	release-tool	lid	docs/specs/release.md
+route	900	scripts/release-version	release-tool	safe	docs/specs/release.md
 route	900	scripts/release-impact	release-tool	safe	docs/specs/release.md
 route	800	scripts/*	unknown	unknown	docs/specs/documentation.md
 route	900	tests/run.sh	codex-test	safe	docs/specs/runtime.md

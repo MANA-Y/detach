@@ -154,12 +154,12 @@ assert_value "$TMP_ROOT/new-app.tsv" unknown_impact true
 grep -F $'unknown_reason\tapp/Sources/DetachApp/FutureFlow.swift' \
   "$TMP_ROOT/new-app.tsv" >/dev/null
 
-ORCHESTRATOR_HEAD="$(commit_path scripts/release-version lid-orchestrator)"
+ORCHESTRATOR_HEAD="$(commit_path scripts/release-version release-orchestrator)"
 "$REPO/scripts/release-impact" "$NEW_APP_HEAD" "$ORCHESTRATOR_HEAD" \
   >"$TMP_ROOT/orchestrator.tsv"
-assert_value "$TMP_ROOT/orchestrator.tsv" lid_test_required true
+assert_value "$TMP_ROOT/orchestrator.tsv" lid_test_required false
 assert_value "$TMP_ROOT/orchestrator.tsv" unknown_impact false
-grep -F $'lid_test_reason\tscripts/release-version' \
+! grep -F $'lid_test_reason\tscripts/release-version' \
   "$TMP_ROOT/orchestrator.tsv" >/dev/null
 
 git -C "$REPO" checkout -qb unrelated "$BASE"

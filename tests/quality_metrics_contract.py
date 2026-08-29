@@ -87,17 +87,24 @@ def create_baseline(
     authority: str = "ci-main",
     source_commit: str = BASE_COMMIT,
     promotion_main: Optional[str] = None,
+    swift_metrics: Optional[Path] = None,
 ) -> Path:
     run_dir = root / "run"
     run_dir.mkdir(parents=True)
     artifacts = run_dir / "artifacts.tsv"
     if include_metrics:
         shutil.copyfile(metrics, run_dir / "quality-metrics.json")
-        artifacts.write_text(
-            "schema\t1\n"
-            f"file\tquality-metrics.json\t{digest(run_dir / 'quality-metrics.json')}\n",
-            encoding="utf-8",
-        )
+        artifact_lines = [
+            "schema\t1",
+            f"file\tquality-metrics.json\t{digest(run_dir / 'quality-metrics.json')}",
+        ]
+        if swift_metrics is not None:
+            shutil.copyfile(swift_metrics, run_dir / "quality-metrics-swift.json")
+            artifact_lines.append(
+                "file\tquality-metrics-swift.json\t"
+                f"{digest(run_dir / 'quality-metrics-swift.json')}"
+            )
+        artifacts.write_text("\n".join(artifact_lines) + "\n", encoding="utf-8")
     else:
         artifacts.write_text("schema\t1\n", encoding="utf-8")
     (run_dir / "manifest.tsv").write_text(
@@ -167,6 +174,7 @@ def evaluate_arguments(
     authority: str = "local-diagnostic",
     source_commit: str = SOURCE_COMMIT,
     opportunities: Optional[Path] = None,
+    profile: str = "",
 ) -> list[str]:
     arguments = [
         "evaluate",
@@ -185,6 +193,8 @@ def evaluate_arguments(
     ]
     if baseline is not None:
         arguments.extend(("--baseline-root", str(baseline)))
+    if profile:
+        arguments.extend(("--coverage-profile", profile))
     if opportunities is not None:
         arguments.extend(("--opportunities-output", str(opportunities)))
     return arguments
@@ -258,7 +268,65 @@ def main() -> None:
             )
         )
         invoke(["validate", str(baseline_metrics)])
+        baseline_document = json.loads(baseline_metrics.read_text(encoding="utf-8"))
+        assert baseline_document["schema"] == 2
+        assert baseline_document["coverage_profile"] == "swift"
         run_dir = create_baseline(baseline_root, baseline_metrics)
+
+        combined_metrics = root / "combined-metrics.json"
+        combined_document = dict(baseline_document)
+        combined_document["coverage_profile"] = "combined"
+        write_json(combined_metrics, combined_document)
+        combined_root = root / "combined-baseline"
+        create_baseline(combined_root, combined_metrics)
+        profile_mismatch = invoke(
+            evaluate_arguments(
+                coverage,
+                tests,
+                root / "profile-mismatch.json",
+                changed,
+                baseline=combined_root,
+                authority="ci-merge",
+            ),
+            expected=2,
+        )
+        require_text(profile_mismatch, "has no swift quality metrics")
+
+        dual_root = root / "dual-profile-baseline"
+        create_baseline(
+            dual_root,
+            combined_metrics,
+            swift_metrics=baseline_metrics,
+        )
+        invoke(
+            evaluate_arguments(
+                coverage,
+                tests,
+                root / "dual-profile-current.json",
+                changed,
+                baseline=dual_root,
+                authority="ci-merge",
+            )
+        )
+
+        legacy_metrics = root / "legacy-metrics.json"
+        legacy_document = dict(combined_document)
+        legacy_document["schema"] = 1
+        legacy_document.pop("coverage_profile")
+        write_json(legacy_metrics, legacy_document)
+        legacy_root = root / "legacy-baseline"
+        create_baseline(legacy_root, legacy_metrics)
+        invoke(
+            evaluate_arguments(
+                coverage,
+                tests,
+                root / "legacy-current.json",
+                changed,
+                baseline=legacy_root,
+                authority="ci-merge",
+                profile="combined",
+            )
+        )
 
         write_json(changed, {"app/Sources/DetachApp/Synthetic.swift": list(range(1, 11))})
         current = root / "current.json"
@@ -636,7 +704,7 @@ def main() -> None:
             ),
             expected=2,
         )
-        require_text(no_metrics, "has no quality metrics")
+        require_text(no_metrics, "has no swift quality metrics")
 
         old_floor_root = root / "old-floor-only"
         create_baseline(
@@ -656,7 +724,7 @@ def main() -> None:
             ),
             expected=2,
         )
-        require_text(old_floor_only, "has no quality metrics")
+        require_text(old_floor_only, "has no swift quality metrics")
 
         removed_bootstrap_flag = invoke(
             [

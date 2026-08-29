@@ -485,7 +485,7 @@ def build_data(
     metrics_origin = "current-run"
     if metrics is None and metrics_baseline is not None:
         try:
-            metrics, _, _ = load_baseline(metrics_baseline)
+            metrics, _, _ = load_baseline(metrics_baseline, "combined")
         except MetricsError as error:
             raise DashboardError(f"quality metrics baseline is invalid: {error}") from error
         metrics_origin = "green-main-artifact"
