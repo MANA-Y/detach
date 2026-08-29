@@ -18,9 +18,11 @@ validates a recorded inode/mtime/size snapshot and starts an event watcher on th
 exact provider transcript. It then stages the helper lease as
 assertion-inactive, releases the IOKit assertion, and releases the helper lease.
 Any transcript change immediately means `working` and reacquires both layers;
-it does not wait for the idle runtime heartbeat. Missing, changed, or malformed
-handoff state stays `working`. Transition failures are surfaced and must not
-claim that sleep is safe. The provider continues while waiting.
+it does not wait for the idle runtime heartbeat. A transcript event belongs to
+the watch generation that delivered it: an event from a cancelled watch must
+not cancel its replacement or change the reported state. Missing, changed, or
+malformed handoff state stays `working`. Transition failures are surfaced and
+must not claim that sleep is safe. The provider continues while waiting.
 
 Each working session owns a separate helper lease. Outside the low-battery and
 thermal fail-safe states, the helper keeps the machine-wide closed-lid setting
@@ -121,7 +123,10 @@ While the wrapper holds a confirmed protected run, it observes the documented
 IOPMrootDomain clamshell notification. Each physical open-to-closed transition
 requests `/usr/bin/pmset displaysleepnow` as the unprivileged console user so
 macOS follows the user's normal Lock Screen policy without Apple Events,
-Automation, or synthetic input. The initial clamshell state is only a baseline:
+Automation, or synthetic input. The lock request has bounded execution: a
+two-second timeout with SIGTERM-to-SIGKILL escalation. A hung `pmset` must not
+block the clamshell monitor or delay wrapper cleanup. The initial clamshell
+state is only a baseline:
 starting a run while the lid is already closed must not lock an external-display
 workflow. Repeated closed notifications lock only once until the lid reopens.
 This does not rewrite the user's password-delay setting. A MacBook run must
