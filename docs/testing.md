@@ -149,7 +149,8 @@
   and explicit publication-confirmation guards.
 - `tests/release-workflow.sh` — hermetic end-to-end orchestration, including
   resume after every durable stage, dirty/diverged source rejection, duplicate
-  tag/release rejection, hardware-gate failure, and remote hash mismatch.
+  tag/release rejection, hardware-gate failure, remote hash mismatch,
+  hermetic publication-boundary rejection, and unexpected remote assets.
 - `cd app && swift test --enable-code-coverage --disable-sandbox`, followed by
   `tests/quality-contracts.sh` — unit tests plus measured UI and business test
   identities, aggregate coverage, and coverage for the 13 critical sources.
@@ -217,7 +218,7 @@ matching temporary branch. It does not push release metadata directly to
 `main`. It then reuses the
 strict `app/scripts/release.sh` and `app/scripts/publish-release.sh`, installs
 the signed candidate, runs the real power smoke, publishes, and independently
-downloads and hashes every remote asset. `scripts/release-impact` compares the
+lists, downloads, and hashes every remote asset. `scripts/release-impact` compares the
 last published tag with the release source. It selects the supervised
 closed-lid probe only for power, helper, watchdog, lease, assertion, or
 lid-probe impact. Unknown product paths select the closed-lid gate. Its private
