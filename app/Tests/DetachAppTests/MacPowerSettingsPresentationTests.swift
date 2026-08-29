@@ -177,6 +177,30 @@ final class MacPowerSettingsPresentationTests: XCTestCase {
     }
 }
 
+private actor StorageRefreshGate {
+    private var entered = false
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func waitForRelease() async {
+        entered = true
+        let waiters = entryWaiters
+        entryWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        await withCheckedContinuation { releaseContinuation = $0 }
+    }
+
+    func waitUntilEntered() async {
+        if entered { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func release() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+}
+
 @MainActor
 final class MacPowerActiveSessionTests: XCTestCase {
     func testCountsTreatStartingRunningAndRecoveringAsActiveButNotHung() {
@@ -207,22 +231,27 @@ final class MacPowerActiveSessionTests: XCTestCase {
 
     func testHeartbeatStartsBeforeStorageFinishesAndAwaitsCancel() async {
         var events: [String] = []
+        var runFinished = false
+        let storageGate = StorageRefreshGate()
         let task = Task {
             await SystemTabHeartbeatRefresh.run(
                 refreshPower: { events.append("power") },
                 refreshStorage: {
                     events.append("storage-start")
-                    try? await Task.sleep(nanoseconds: 40_000_000)
+                    await storageGate.waitForRelease()
                     events.append("storage-end")
                 },
                 sleepNanoseconds: 1_000_000_000)
+            runFinished = true
         }
-        try? await Task.sleep(nanoseconds: 10_000_000)
-        XCTAssertEqual(events.first, "power")
-        XCTAssertTrue(events.contains("storage-start"))
-        XCTAssertFalse(events.contains("storage-end"))
+        await storageGate.waitUntilEntered()
+        XCTAssertEqual(events, ["power", "storage-start"])
         task.cancel()
+        await Task.yield()
+        XCTAssertFalse(runFinished)
+        await storageGate.release()
         await task.value
+        XCTAssertTrue(runFinished)
         XCTAssertTrue(events.contains("storage-end"))
     }
 
