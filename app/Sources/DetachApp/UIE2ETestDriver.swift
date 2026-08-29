@@ -538,9 +538,7 @@ enum UIE2ETestDriver {
                 throw Failure(message: "Advanced prompt is visible while collapsed")
             }
             let launchControl = try await element(identifier: "new-session-launch")
-            let expectedLaunch = TerminalLaunchPresentation.title(
-                terminalDisplayName: TerminalLaunchPresentation.displayName(
-                    for: TerminalCatalog.defaultBundleIdentifier))
+            let expectedLaunch = L10n.string("Start")
             guard label(launchControl) == expectedLaunch else {
                 throw Failure(
                     message: "launch button is \(label(launchControl) ?? "nil"), expected \(expectedLaunch)")
@@ -559,9 +557,10 @@ enum UIE2ETestDriver {
             try await click(advanced, name: "new session Advanced")
             _ = try await measuredFrame(
                 identifier: "new-session-prompt", name: "new session prompt")
-            _ = try await measuredFrame(
-                identifier: "new-session-terminal", name: "new session terminal")
-            checks.append("new-session-hosts-terminal-picker")
+            guard UIE2EGeometryRegistry.frame(for: "new-session-terminal") == nil else {
+                throw Failure(message: "new-session sheet still hosts a terminal picker")
+            }
+            checks.append("new-session-starts-without-outer-terminal")
             var lastMaxY = pinnedTop
             var lastFrame = sheet.frame
             do {

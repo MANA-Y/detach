@@ -25,6 +25,7 @@ final class OnboardingLivePoller {
     private let providerCheckPassed: @MainActor () -> Bool
     private let reconcile: @MainActor () async -> Bool
     private let locate: () async -> ProviderAvailability
+    private let refreshHeartbeat: @MainActor () -> Void
     private let heartbeatIsHealthy: @MainActor () -> Bool
     private let installedCopyExists: () -> Bool
     private let sleep: (UInt64) async throws -> Void
@@ -41,6 +42,7 @@ final class OnboardingLivePoller {
             providerCheckPassed: { store.providerCheckPassed },
             reconcile: { await store.refreshContext() },
             locate: { await locator.locate() },
+            refreshHeartbeat: { store.refreshPowerProtectionState() },
             heartbeatIsHealthy: { store.watchdogHeartbeat.healthy },
             installedCopyExists: {
                 FileManager.default.fileExists(
@@ -55,6 +57,7 @@ final class OnboardingLivePoller {
         providerCheckPassed: @escaping @MainActor () -> Bool,
         reconcile: @escaping @MainActor () async -> Bool,
         locate: @escaping () async -> ProviderAvailability,
+        refreshHeartbeat: @escaping @MainActor () -> Void = {},
         heartbeatIsHealthy: @escaping @MainActor () -> Bool,
         installedCopyExists: @escaping () -> Bool,
         sleep: @escaping (UInt64) async throws -> Void = defaultSleep
@@ -65,6 +68,7 @@ final class OnboardingLivePoller {
         self.providerCheckPassed = providerCheckPassed
         self.reconcile = reconcile
         self.locate = locate
+        self.refreshHeartbeat = refreshHeartbeat
         self.heartbeatIsHealthy = heartbeatIsHealthy
         self.installedCopyExists = installedCopyExists
         self.sleep = sleep
@@ -151,6 +155,7 @@ final class OnboardingLivePoller {
             if heartbeatWaitStartedAt == nil {
                 heartbeatWaitStartedAt = Date()
             }
+            refreshHeartbeat()
             heartbeatHealthy = heartbeatIsHealthy()
             if heartbeatHealthy {
                 heartbeatWaitIsLong = false

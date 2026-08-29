@@ -4,6 +4,7 @@ import XCTest
 final class FakeCLI: DetachCLIRunning, @unchecked Sendable {
     var responses: [String: Result<CLIResult, Error>] = [:]
     private(set) var calls: [[String]] = []
+    private(set) var currentDirectories: [URL?] = []
 
     func run(arguments: [String], timeout: TimeInterval) async throws -> CLIResult {
         calls.append(arguments)
@@ -12,6 +13,15 @@ final class FakeCLI: DetachCLIRunning, @unchecked Sendable {
             return CLIResult(exitCode: 0, stdout: "", stderr: "", timedOut: false)
         }
         return try response.get()
+    }
+
+    func run(
+        arguments: [String],
+        timeout: TimeInterval,
+        currentDirectoryURL: URL?
+    ) async throws -> CLIResult {
+        currentDirectories.append(currentDirectoryURL)
+        return try await run(arguments: arguments, timeout: timeout)
     }
 }
 
@@ -120,7 +130,7 @@ final class SessionStoreTests: XCTestCase {
             .replacingOccurrences(
                 of: "2026-07-10T10:00:00Z",
                 with: "2026-07-11T10:00:00Z")
-        cli.responses["list --json"] = ok(olderWithoutDate + "\n" + line + "\n" + newest)
+        cli.responses["list --json"] = ok(line + "\n" + olderWithoutDate + "\n" + newest)
         let store = SessionStore(cli: cli)
 
         await store.refresh()
@@ -199,6 +209,117 @@ final class SessionStoreTests: XCTestCase {
         await store.refresh()
         _ = await store.perform(.delete, on: store.sessions[0])
         XCTAssertTrue(cli.calls.contains(["codex", "delete", "--force", "detach-codex-p-1"]))
+    }
+
+    func testStartDetachedUsesProjectAndSelectsTheNewTypedSession() async {
+        let cli = FakeCLI()
+        cli.responses["list --json"] = ok(line)
+        let store = SessionStore(cli: cli)
+        let project = URL(fileURLWithPath: "/tmp/p", isDirectory: true)
+
+        let result = await store.startDetached(
+            provider: .codex,
+            projectDirectory: project,
+            name: "Rev (ai)",
+            prompt: "review this")
+
+        XCTAssertEqual(
+            cli.calls,
+            [
+                ["codex", "--name", "Rev (ai)", "--detach", "--", "review this"],
+                ["list", "--json"],
+            ])
+        XCTAssertEqual(cli.currentDirectories, [project])
+        XCTAssertEqual(result, SessionStartResult(sessionID: "detach-codex-p-1"))
+    }
+
+    func testStartDetachedKeepsFailuresAndTimeoutsInTheCaller() async {
+        let failureCLI = FakeCLI()
+        failureCLI.responses["claude --detach"] = .success(CLIResult(
+            exitCode: 17,
+            stdout: "",
+            stderr: "start refused\n",
+            timedOut: false))
+        let failureStore = SessionStore(cli: failureCLI)
+        let project = URL(fileURLWithPath: "/tmp/p", isDirectory: true)
+        let failure = await failureStore.startDetached(
+            provider: .claude,
+            projectDirectory: project,
+            name: nil,
+            prompt: nil)
+        XCTAssertEqual(failure.message, "start refused")
+
+        let timeoutCLI = FakeCLI()
+        timeoutCLI.responses["codex --detach"] = .success(CLIResult(
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+            timedOut: true))
+        let timeoutStore = SessionStore(cli: timeoutCLI)
+        let timeout = await timeoutStore.startDetached(
+            provider: .codex,
+            projectDirectory: project,
+            name: nil,
+            prompt: nil)
+        XCTAssertEqual(timeout.message, L10n.string("detach start timed out"))
+        XCTAssertEqual(timeoutCLI.calls.last, ["list", "--json"])
+    }
+
+    func testStartDetachedReportsEmptyFailureAndLaunchError() async {
+        let project = URL(fileURLWithPath: "/tmp/p", isDirectory: true)
+        let emptyFailureCLI = FakeCLI()
+        emptyFailureCLI.responses["claude --detach"] = .success(CLIResult(
+            exitCode: 17,
+            stdout: "",
+            stderr: "",
+            timedOut: false))
+
+        let emptyFailure = await SessionStore(cli: emptyFailureCLI).startDetached(
+            provider: .claude,
+            projectDirectory: project,
+            name: nil,
+            prompt: nil)
+
+        XCTAssertEqual(
+            emptyFailure.message,
+            L10n.format("detach exited with status %d", 17))
+
+        let launchFailureCLI = FakeCLI()
+        launchFailureCLI.responses["codex --detach"] = .failure(FakeError())
+
+        let launchFailure = await SessionStore(cli: launchFailureCLI).startDetached(
+            provider: .codex,
+            projectDirectory: project,
+            name: nil,
+            prompt: nil)
+
+        XCTAssertTrue(launchFailure.message?.hasPrefix("Could not run detach: ") == true)
+    }
+
+    func testStartDetachedRejectsAnAmbiguousTypedRefresh() async {
+        let cli = FakeCLI()
+        cli.responses["list --json"] = ok(line)
+        let store = SessionStore(cli: cli)
+        let project = URL(fileURLWithPath: "/tmp/p", isDirectory: true)
+        await store.refresh()
+
+        let second = line
+            .replacingOccurrences(of: "detach-codex-p-1", with: "detach-codex-p-2")
+            .replacingOccurrences(of: #"\"name\":\"p-1\""#, with: #"\"name\":\"p-2\""#)
+        let third = line
+            .replacingOccurrences(of: "detach-codex-p-1", with: "detach-codex-p-3")
+            .replacingOccurrences(of: #"\"name\":\"p-1\""#, with: #"\"name\":\"p-3\""#)
+        cli.responses["list --json"] = ok(line + "\n" + second + "\n" + third)
+
+        let result = await store.startDetached(
+            provider: .codex,
+            projectDirectory: project,
+            name: "",
+            prompt: "")
+
+        XCTAssertEqual(cli.calls.suffix(2), [["codex", "--detach"], ["list", "--json"]])
+        XCTAssertNil(result.sessionID)
+        XCTAssertNil(result.message)
     }
 
     func testPrepareResumeStartsDetachedThenRefreshes() async throws {
