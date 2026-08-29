@@ -13,6 +13,10 @@ final class PowerHelperPlatformTests: XCTestCase {
         }
     }
 
+    func testBootSessionReaderCanBeConstructed() {
+        _ = SysctlBootSessionReader()
+    }
+
     func testRootCommandRunnerTerminatesHungProcess() {
         let runner = RootProcessCommandRunner(
             // Give the child time to install its ignored-TERM handler before

@@ -286,6 +286,15 @@
     },
     {
       "group": "ui",
+      "path": "app/Sources/DetachApp/SettingsView.swift",
+      "region": "system-heartbeat",
+      "scenarios": [
+        "SC-UI-SETTINGS"
+      ],
+      "summary": "XCTest cannot map SwiftUI task modifiers. Unit tests cover the extracted System heartbeat loop."
+    },
+    {
+      "group": "ui",
       "path": "app/Sources/DetachApp/SidebarView.swift",
       "region": "ui-e2e-instrumentation",
       "scenarios": [
@@ -705,7 +714,7 @@
     "mutation_timeout_seconds": 240,
     "pr_feedback_seconds": 600
   },
-  "policy": 52,
+  "policy": 53,
   "release_domains": [
     {
       "gates": "-",

@@ -27,6 +27,7 @@
 "The session has no provider UUID to resume." = "У сессии нет UUID провайдера для продолжения.";
 "detach resume timed out" = "Истекло время ожидания detach resume";
 "detach recover timed out" = "Истекло время ожидания detach recover";
+"detach start timed out" = "Истекло время ожидания detach start";
 "detach exited with status %d" = "detach завершился с кодом %d";
 "Could not run detach: %@" = "Не удалось запустить detach: %@";
 "Session is not eligible for deletion from Finished." = "Сессию нельзя удалить из раздела «Завершены».";
@@ -116,10 +117,8 @@
 "Install Manifest" = "Манифест установки";
 "Install and authenticate Codex CLI or Claude CLI, then retry setup." = "Установите и авторизуйте Codex CLI или Claude CLI, затем повторите настройку.";
 "Installation" = "Установка";
-"Launch Codex or Claude in Terminal" = "Запустить Codex или Claude в терминале";
 "Launch in %@" = "Запустить в %@";
-"Launching…" = "Запуск…";
-"Leave empty and type in the terminal." = "Можно оставить пустым и писать в терминале.";
+"Leave empty and type in the embedded terminal." = "Можно оставить пустым и писать во встроенном терминале.";
 "Live session terminal" = "Интерактивный терминал сессии";
 "Model context used" = "Занятый контекст модели";
 "Move Detach to Applications" = "Переместите Detach в Applications";
@@ -177,7 +176,10 @@
 "Setting Up Detach…" = "Настраиваем Detach…";
 "Something went wrong" = "Не получилось";
 "Sparkle checks in the background on its own schedule." = "Проверки выполняет Sparkle в фоне по собственному расписанию.";
-"Start a managed run in your terminal." = "Запустите управляемый сеанс в терминале.";
+"Start a managed run in Detach." = "Запустите управляемую сессию в Detach.";
+"Start Codex or Claude in Detach" = "Запустить Codex или Claude в Detach";
+"Start" = "Запустить";
+"Starting…" = "Запуск…";
 "Start your first session" = "Запустите первую сессию";
 "Stop" = "Остановить";
 "Technical Details" = "Технические детали";

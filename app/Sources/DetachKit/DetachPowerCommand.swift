@@ -533,6 +533,7 @@ private final class PowerRunThermalSafetyController: @unchecked Sendable {
         guard latch.isActive else { return }
         do {
             try reconcileLocked()
+            safetyReleaseFailure = nil
             transitionFailure = nil
         } catch {
             if latch.isActive {
@@ -551,6 +552,7 @@ private final class PowerRunThermalSafetyController: @unchecked Sendable {
         if latch.isActive {
             do {
                 try reconcileLocked()
+                safetyReleaseFailure = nil
             } catch {
                 if safetyReleaseFailure == nil { safetyReleaseFailure = error }
             }
@@ -573,6 +575,7 @@ private final class PowerRunThermalSafetyController: @unchecked Sendable {
         activityRequiresProtection = state.requiresProtection
         do {
             try reconcileLocked()
+            safetyReleaseFailure = nil
             transitionFailure = nil
         } catch {
             if latch.isActive {
@@ -586,13 +589,21 @@ private final class PowerRunThermalSafetyController: @unchecked Sendable {
     func refresh() throws {
         lock.lock()
         defer { lock.unlock() }
-        if let safetyReleaseFailure { throw safetyReleaseFailure }
+        // Advance the cooldown and retry a retained safety release before
+        // surfacing it, so one transient failure cannot wedge lease renewals
+        // or protection recovery for the rest of the run.
         _ = latch.observe(lastState, now: now(), cooldown: cooldown)
         do {
             try reconcileLocked()
+            safetyReleaseFailure = nil
             transitionFailure = nil
         } catch {
-            transitionFailure = error
+            if latch.isActive {
+                // A still-failing safety release stays retained and surfaced.
+                if safetyReleaseFailure == nil { safetyReleaseFailure = error }
+            } else {
+                transitionFailure = error
+            }
             throw error
         }
     }

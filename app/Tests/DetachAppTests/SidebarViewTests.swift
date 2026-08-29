@@ -17,7 +17,6 @@ final class SidebarViewTests: XCTestCase {
     func testBuildsWithFreshFinishedSelectionState() {
         let view = SidebarView(
             store: SessionStore(cli: SidebarNoopCLI()),
-            detachPath: "/tmp/detach",
             selectedID: .constant(nil),
             navigation: MainNavigation())
 
