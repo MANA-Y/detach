@@ -12,7 +12,6 @@ enum FinishedDeletionPresentation {
 struct SidebarView: View {
     @Environment(\.appFontPointSize) private var fontPointSize
     let store: SessionStore
-    let detachPath: String
     @Binding var selectedID: String?
     @ObservedObject var navigation: MainNavigation
     @State private var showNewSession = false
@@ -60,7 +59,7 @@ struct SidebarView: View {
                                 .foregroundStyle(Brand.gradient)
                         }
                     } description: {
-                        Text(L10n.string("Launch Codex or Claude in Terminal"))
+                        Text(L10n.string("Start Codex or Claude in Detach"))
                     }
                 }
             }
@@ -91,7 +90,7 @@ struct SidebarView: View {
             }
         }
         .sheet(isPresented: $showNewSession) {
-            NewSessionSheet(detachPath: detachPath)
+            NewSessionSheet(store: store, selectedID: $selectedID)
         }
         .confirmationDialog(
             L10n.format(

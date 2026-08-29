@@ -77,11 +77,11 @@ process ownership, recovery, power protection, and operations around them.
 ## The everyday workflow
 
 1. Click **＋** in Detach. Choose a project, provider, and optional session name.
-2. Expand **Advanced** only when you want to change the launch terminal or add
-   an initial prompt. The launch button names the selected terminal.
-3. Select the live session and work in its embedded terminal. The external
-   terminal remains available as a fallback.
-4. Close either terminal or Detach.app whenever you want. The managed agent
+2. Expand **Advanced** only when you want to add an initial prompt. Click
+   **Start**. Detach starts the run in the background and selects it.
+3. Work in the embedded terminal. An external terminal remains available as a
+   fallback.
+4. Close Detach.app whenever you want. The managed agent
    keeps running.
 5. Reopen Detach to answer the agent, inspect progress, stop the run, Resume a
    conversation, or Recover an interrupted managed run.
@@ -109,18 +109,18 @@ detach claude --detach -- "run the test suite and fix failures"
 The app and CLI operate on the same sessions. Start in one and continue in the
 other.
 
-New sessions start through the selected terminal application. Detach uses a
-private startup guard until the temporary command starts. A startup prompt,
-such as an oh-my-zsh update, cannot consume the command path. Detach then
-restores the user's shell startup files for that process. Live work, Resume,
-and Recover are available in the app after the managed session exists.
+New sessions start inside Detach. The app runs the CLI with `--detach` in the
+selected project and refreshes the session list. When Detach identifies one
+new match, it selects the session and opens the embedded terminal. A start
+error stays in the sheet. The selected external terminal remains a fallback
+for Attach, Resume, and Recover.
 
 ## The terminal and control center in one window
 
-Detach.app owns the session lifecycle. A live session is interactive inside
-Detach. Resume and Recover also start inside the app and do not require an
-outer terminal. The selected Terminal, iTerm2, Warp, or other shell-script
-runner remains available from the named fallback button.
+Detach.app owns the session lifecycle. Start, Resume, and Recover run inside
+the app and do not require an outer terminal. The selected Terminal, iTerm2,
+Warp, or other shell-script runner remains available from the named fallback
+button.
 
 The dashboard gives every managed session:
 
