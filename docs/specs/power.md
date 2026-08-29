@@ -18,9 +18,11 @@ validates a recorded inode/mtime/size snapshot and starts an event watcher on th
 exact provider transcript. It then stages the helper lease as
 assertion-inactive, releases the IOKit assertion, and releases the helper lease.
 Any transcript change immediately means `working` and reacquires both layers;
-it does not wait for the idle runtime heartbeat. Missing, changed, or malformed
-handoff state stays `working`. Transition failures are surfaced and must not
-claim that sleep is safe. The provider continues while waiting.
+it does not wait for the idle runtime heartbeat. A transcript event belongs to
+the watch generation that delivered it: an event from a cancelled watch must
+not cancel its replacement or change the reported state. Missing, changed, or
+malformed handoff state stays `working`. Transition failures are surfaced and
+must not claim that sleep is safe. The provider continues while waiting.
 
 Each working session owns a separate helper lease. Outside the low-battery and
 thermal fail-safe states, the helper keeps the machine-wide closed-lid setting
@@ -105,9 +107,12 @@ Thermal safety uses only public `ProcessInfo.thermalState`. `serious` and
 closed-lid sleep, the wrapper releases its IOKit assertion without waiting for
 a checkpoint, and initial acquisition is refused. A notification-time release
 failure is retained and surfaced by the next heartbeat or protected-run result;
-it must never disappear behind best-effort cleanup. `nominal` and `fair` must
-remain stable for 30 seconds before protection can return; the helper persists
-this cooldown across restart, and an unknown reading cannot clear it. The raw
+it must never disappear behind best-effort cleanup. Each heartbeat retries the
+safety release and advances the cooldown. Only a confirmed release clears the
+retained failure; a release that still fails stays surfaced. `nominal` and
+`fair` must remain stable for 30 seconds before protection can return; the
+helper persists this cooldown across restart, and an unknown reading cannot
+clear it. The raw
 `nominal|fair|serious|critical|unknown` value and latch cross helper status, CLI
 JSON, watchdog, tmux, and app. Low battery wins the combined reason when both
 guards are active, while the thermal fields remain visible. Borrowed external
@@ -118,7 +123,10 @@ While the wrapper holds a confirmed protected run, it observes the documented
 IOPMrootDomain clamshell notification. Each physical open-to-closed transition
 requests `/usr/bin/pmset displaysleepnow` as the unprivileged console user so
 macOS follows the user's normal Lock Screen policy without Apple Events,
-Automation, or synthetic input. The initial clamshell state is only a baseline:
+Automation, or synthetic input. The lock request has bounded execution: a
+two-second timeout with SIGTERM-to-SIGKILL escalation. A hung `pmset` must not
+block the clamshell monitor or delay wrapper cleanup. The initial clamshell
+state is only a baseline:
 starting a run while the lid is already closed must not lock an external-display
 workflow. Repeated closed notifications lock only once until the lid reopens.
 This does not rewrite the user's password-delay setting. A MacBook run must

@@ -27,6 +27,7 @@
 "The session has no provider UUID to resume." = "The session has no provider UUID to resume.";
 "detach resume timed out" = "detach resume timed out";
 "detach recover timed out" = "detach recover timed out";
+"detach start timed out" = "detach start timed out";
 "detach exited with status %d" = "detach exited with status %d";
 "Could not run detach: %@" = "Could not run detach: %@";
 "Session is not eligible for deletion from Finished." = "Session is not eligible for deletion from Finished.";
@@ -116,10 +117,8 @@
 "Install Manifest" = "Install Manifest";
 "Install and authenticate Codex CLI or Claude CLI, then retry setup." = "Install and authenticate Codex CLI or Claude CLI, then retry setup.";
 "Installation" = "Installation";
-"Launch Codex or Claude in Terminal" = "Launch Codex or Claude in Terminal";
 "Launch in %@" = "Launch in %@";
-"Launching…" = "Launching…";
-"Leave empty and type in the terminal." = "Leave empty and type in the terminal.";
+"Leave empty and type in the embedded terminal." = "Leave empty and type in the embedded terminal.";
 "Live session terminal" = "Live session terminal";
 "Model context used" = "Model context used";
 "Move Detach to Applications" = "Move Detach to Applications";
@@ -177,7 +176,10 @@
 "Setting Up Detach…" = "Setting Up Detach…";
 "Something went wrong" = "Something went wrong";
 "Sparkle checks in the background on its own schedule." = "Sparkle checks in the background on its own schedule.";
-"Start a managed run in your terminal." = "Start a managed run in your terminal.";
+"Start a managed run in Detach." = "Start a managed run in Detach.";
+"Start Codex or Claude in Detach" = "Start Codex or Claude in Detach";
+"Start" = "Start";
+"Starting…" = "Starting…";
 "Start your first session" = "Start your first session";
 "Stop" = "Stop";
 "Technical Details" = "Technical Details";

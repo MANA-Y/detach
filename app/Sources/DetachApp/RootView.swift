@@ -46,7 +46,6 @@ struct RootView: View {
                     NavigationSplitView {
                         SidebarView(
                             store: store,
-                            detachPath: detachPath,
                             selectedID: $selectedID,
                             navigation: navigation)
                     } detail: {
