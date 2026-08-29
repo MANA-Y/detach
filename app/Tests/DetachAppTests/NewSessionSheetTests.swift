@@ -39,7 +39,7 @@ final class NewSessionSheetTests: XCTestCase {
             initialProjectDir: URL(fileURLWithPath: "/tmp/proj", isDirectory: true)).body
     }
 
-    func testBuildsLaunchFailureBanner() {
+    func testBuildsBothLaunchFailureBannerShapes() {
         _ = NewSessionSheet(
             store: store(),
             initialLaunchFailure: "start refused").body
