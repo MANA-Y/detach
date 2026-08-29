@@ -815,6 +815,7 @@ class QualityGate:
         files: list[Path] = []
         for name in (
             "quality-metrics.json",
+            "quality-metrics-swift.json",
             "coverage-opportunities.json",
             "shards.tsv",
         ):
@@ -1067,6 +1068,7 @@ class QualityGate:
                 raise GateError("resume artifact inventory path is unsafe")
             if not (
                 relative == "quality-metrics.json"
+                or relative == "quality-metrics-swift.json"
                 or relative == "coverage-opportunities.json"
                 or relative == "scenarios.jsonl"
                 or relative == "scenarios.junit.xml"
@@ -1303,6 +1305,16 @@ class QualityGate:
                     )
                 shutil.copyfile(metrics, self.run_dir / "quality-metrics.json")
                 (self.run_dir / "quality-metrics.json").chmod(0o600)
+                swift_metrics = self.resume_dir / "quality-metrics-swift.json"
+                if swift_metrics.exists():
+                    if not swift_metrics.is_file() or swift_metrics.is_symlink():
+                        raise GateError(
+                            "reused quality-contracts evidence has unsafe Swift metrics"
+                        )
+                    shutil.copyfile(
+                        swift_metrics, self.run_dir / "quality-metrics-swift.json"
+                    )
+                    (self.run_dir / "quality-metrics-swift.json").chmod(0o600)
                 opportunities = self.resume_dir / "coverage-opportunities.json"
                 if not opportunities.is_file() or opportunities.is_symlink():
                     raise GateError(

@@ -714,7 +714,7 @@
     "mutation_timeout_seconds": 240,
     "pr_feedback_seconds": 600
   },
-  "policy": 53,
+  "policy": 54,
   "release_domains": [
     {
       "gates": "-",
@@ -1794,7 +1794,7 @@
     {
       "pattern": "scripts/release-version",
       "priority": 900,
-      "release_domain": "lid",
+      "release_domain": "safe",
       "spec": "docs/specs/release.md",
       "test_domain": "release-tool"
     },
@@ -3275,7 +3275,7 @@
     {
       "capabilities": "quality-system",
       "id": "swift-test",
-      "stages": "static,swift,quality-contracts,app,release-budget"
+      "stages": "static,swift,quality-contracts,release-budget"
     },
     {
       "capabilities": "installation,update",

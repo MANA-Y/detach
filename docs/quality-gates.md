@@ -200,6 +200,7 @@ unknown path selects every functional stage and every release impact.
 | Documentation | static |
 | Quality policy or CI | static and gate self-contracts |
 | Swift source | Swift, metrics, app, packaged UI, and required dependencies |
+| Swift tests | Swift and matching-profile metrics |
 | CLI or session lifecycle | app, both providers, distribution, runtime, and dependencies |
 | One provider test | static and that provider; its shard verifies the exact app prerequisite |
 | Install or distribution | app, distribution, runtime, and dependencies |
@@ -219,10 +220,14 @@ its impact does not select `quality-contracts`. An authoritative metric run
 accepts only a digest-bound `quality-metrics.json` from `ci-main`. It never
 reads a manual floor file.
 
-The metric artifact records exact UI and business test identities, aggregate
-line coverage, critical-source coverage, and changed executable Swift lines.
-Swift-test changes run the packaged-app journeys before metrics so the current
-and baseline coverage inputs are equivalent.
+The metric artifact records its `swift` or `combined` profile, exact UI and
+business test identities, aggregate line coverage, critical-source coverage,
+and changed executable Swift lines. The baseline restore selects the newest
+green-main artifact with the same profile. Schema-1 artifacts are combined
+profiles during migration. Each combined run also records a digest-bound Swift
+snapshot for later Swift-profile comparisons without a second ratchet. Thus,
+Swift-test-only changes do not run packaged app journeys only to make coverage
+inputs equivalent.
 CI rejects a removed test or a lower aggregate or critical-source ratio.
 Changed executable lines need at least 90 percent coverage. A new critical
 source needs 100 percent coverage for its first baseline. Missing, stale,

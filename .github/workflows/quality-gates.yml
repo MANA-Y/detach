@@ -86,7 +86,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          baseline_root="$(scripts/quality-baseline)"
+          baseline_root="$(scripts/quality-baseline --profile '${{ matrix.coverage_profile }}')"
           printf 'DETACH_QUALITY_BASELINE_ROOT=%s\n' "$baseline_root" >>"$GITHUB_ENV"
       - name: Restore exact packaged test app
         id: app-cache

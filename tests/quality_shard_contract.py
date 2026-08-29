@@ -42,6 +42,7 @@ class QualityShardContract(unittest.TestCase):
                     "needs_app": False,
                     "needs_cache": False,
                     "needs_metrics": False,
+                    "coverage_profile": "",
                 }
             ],
         )
@@ -76,6 +77,7 @@ class QualityShardContract(unittest.TestCase):
         self.assertTrue(build["needs_app"])
         self.assertTrue(build["needs_cache"])
         self.assertTrue(build["needs_metrics"])
+        self.assertEqual(build["coverage_profile"], "combined")
         contracts = shard_for({"stages": stages}, "contracts-and-runtime")
         self.assertEqual(
             contracts["stages"], "gate-contract,tmux-runtime,release-preflight"
@@ -85,6 +87,14 @@ class QualityShardContract(unittest.TestCase):
         codex = shard_for({"stages": stages}, "codex")
         self.assertTrue(codex["needs_app"])
         self.assertFalse(codex["needs_cache"])
+
+    def test_swift_only_metrics_shard_selects_swift_profile(self) -> None:
+        build = shard_for(
+            {"stages": ["static", "swift", "quality-contracts"]},
+            "build-and-coverage",
+        )
+        self.assertTrue(build["needs_metrics"])
+        self.assertEqual(build["coverage_profile"], "swift")
 
     def test_unowned_or_malformed_plan_fails_closed(self) -> None:
         with self.assertRaisesRegex(ShardError, "no shard owns"):

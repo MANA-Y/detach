@@ -129,6 +129,7 @@ def shard_plan(plan: dict[str, object]) -> list[dict[str, object]]:
         remaining.difference_update(stages)
         needs_app = bool({"app", "codex", "claude", "tmux-runtime"} & set(stages))
         needs_cache = bool({"swift", "app", "ui-e2e"} & set(stages))
+        needs_metrics = "quality-contracts" in stages
         shards.append(
             {
                 "id": identifier,
@@ -136,7 +137,12 @@ def shard_plan(plan: dict[str, object]) -> list[dict[str, object]]:
                 "level": level,
                 "needs_app": needs_app,
                 "needs_cache": needs_cache,
-                "needs_metrics": "quality-contracts" in stages,
+                "needs_metrics": needs_metrics,
+                "coverage_profile": (
+                    "combined" if needs_metrics and "ui-e2e" in stages
+                    else "swift" if needs_metrics
+                    else ""
+                ),
             }
         )
     if remaining:
