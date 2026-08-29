@@ -67,12 +67,12 @@ onboarding or Repair, an enabled watchdog without a fresh heartbeat uses the
 durable unregister/barrier/register transaction. Ordinary activation does not
 replace it for a temporarily stale heartbeat.
 
-The menu bar item is display-only. Its Detach prompt mark uses a filled dot for
-protected, a dim mark for sleep allowed, an exclamation badge for attention,
-and an outline for unknown. With active sessions, green means working and
-orange means waiting. Waiting outranks working. A badge suppresses both tints
-so a power warning stays visible. Monochrome states remain template. Tinted
-states use label or system colors resolved at composite time. VoiceOver names
+The menu bar is display-only. Its prompt mark is filled for protected, dim for
+sleep allowed, badged for attention, and outlined for unknown. Starting,
+running, and recovering sessions are active; hung sessions are not. Green means
+working and orange means waiting. Waiting outranks working. A badge hides both
+tints so power warnings stay visible. Monochrome states remain template; tints
+resolve from label or system colors. VoiceOver names
 the session state. The first menu line is `state · reason · freshness`.
 Protected counts working sessions. Allowed names all-waiting or an unprotected
 working session and never claims no sessions. The shared `checked_at` heartbeat
