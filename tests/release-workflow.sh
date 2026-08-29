@@ -14,7 +14,10 @@ cleanup() {
   if [ "${DETACH_RELEASE_WORKFLOW_TEST_KEEP:-0}" = 1 ]; then
     printf 'Kept release workflow test state: %s\n' "$TMP_ROOT" >&2
   else
+    cleanup_started="$SECONDS"
     rm -rf "$TMP_ROOT"
+    printf 'release-workflow: cleanup completed in %ss\n' \
+      "$((SECONDS - cleanup_started))"
   fi
 }
 trap cleanup EXIT
@@ -720,34 +723,69 @@ run_post_push_main_rejection_case() {
   [ ! -f "$RELEASE_EXISTS" ]
 }
 
-# Each lane owns a separate repository below TMP_ROOT. Run the lanes together.
-# This keeps independent Git and fake-publication work out of the critical path.
+# Each lane owns a separate repository below TMP_ROOT. Admit a bounded set of
+# lanes so independent Git and fake-publication work do not saturate the disk.
+release_case_limit=5
 release_case_pids=()
 release_case_names=()
-for release_case in \
-  run_resume_case \
-  run_timing_override_cases \
-  run_preflight_rejection_cases \
-  run_hardware_rejection_case \
-  run_remote_hash_case \
-  run_test_mode_rejects_unproven_fixture_case \
-  run_unexpected_remote_asset_case \
-  run_post_push_main_rejection_case \
-  run_invalid_resume_artifact_credentials_case; do
-  "$release_case" &
+release_case_status=0
+release_cases=(
+  run_resume_case
+  run_timing_override_cases
+  run_unexpected_remote_asset_case
+  run_remote_hash_case
+  run_hardware_rejection_case
+  run_invalid_resume_artifact_credentials_case
+  run_post_push_main_rejection_case
+  run_test_mode_rejects_unproven_fixture_case
+  run_preflight_rejection_cases
+)
+
+wait_for_release_case_slot() {
+  local index pid
+  while :; do
+    for index in "${!release_case_pids[@]}"; do
+      pid="${release_case_pids[$index]}"
+      if kill -0 "$pid" 2>/dev/null; then
+        continue
+      fi
+      if ! wait "$pid"; then
+        printf 'release workflow lane failed: %s\n' \
+          "${release_case_names[$index]}" >&2
+        release_case_status=1
+      fi
+      unset 'release_case_pids[index]' 'release_case_names[index]'
+      if [ "${#release_case_pids[@]}" -gt 0 ]; then
+        release_case_pids=("${release_case_pids[@]}")
+        release_case_names=("${release_case_names[@]}")
+      fi
+      return
+    done
+    sleep 0.05
+  done
+}
+
+for release_case in "${release_cases[@]}"; do
+  while [ "${#release_case_pids[@]}" -ge "$release_case_limit" ]; do
+    wait_for_release_case_slot
+  done
+  (
+    release_case_started="$SECONDS"
+    trap 'release_case_status=$?; printf "%s\n" "$((SECONDS - release_case_started))" >"$TMP_ROOT/$release_case.seconds"; exit "$release_case_status"' EXIT
+    "$release_case"
+  ) &
   release_case_pids+=("$!")
   release_case_names+=("$release_case")
 done
 
-release_case_status=0
-for release_case_index in "${!release_case_pids[@]}"; do
-  if ! wait "${release_case_pids[$release_case_index]}"; then
-    printf 'release workflow lane failed: %s\n' \
-      "${release_case_names[$release_case_index]}" >&2
-    release_case_status=1
-  fi
+while [ "${#release_case_pids[@]}" -gt 0 ]; do
+  wait_for_release_case_slot
 done
 [ "$release_case_status" -eq 0 ] || exit 1
+for release_case in "${release_cases[@]}"; do
+  printf 'release-workflow: %s completed in %ss\n' \
+    "$release_case" "$(<"$TMP_ROOT/$release_case.seconds")"
+done
 
 "$ROOT/scripts/quality-scenarios" event pass SC-RELEASE-WORKFLOW
 printf 'Detach release workflow tests passed\n'

@@ -26,6 +26,8 @@ grep -F 'name: Validate and partition exact pull-request impact' \
 quality_plan_job="$(sed -n '/^  quality-plan:/,/^  quality-shards:/p' \
   "$ROOT/.github/workflows/quality-gates.yml")"
 printf '%s\n' "$quality_plan_job" | grep -F 'runs-on: ubuntu-latest' >/dev/null
+quality_shards_job="$(sed -n '/^  quality-shards:/,/^  quality-gates:/p' \
+  "$ROOT/.github/workflows/quality-gates.yml")"
 quality_gate_job="$(sed -n '/^  quality-gates:/,/^  quality-dashboard:/p' \
   "$ROOT/.github/workflows/quality-gates.yml")"
 printf '%s\n' "$quality_gate_job" | \
@@ -69,10 +71,34 @@ grep -F "'app/scripts/verify-app.sh'" \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'name: Verify and bind exact packaged test app' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
-grep -F 'DETACH_QUALITY_EXACT_APP=1' \
-  "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F "steps.app-cache.outputs.cache-hit != 'true'" \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
+app_cache_hit_step="$(printf '%s\n' "$quality_shards_job" | sed -n \
+  '/name: Verify and bind exact packaged test app/,/name: Build and bind exact packaged test app/p')"
+printf '%s\n' "$app_cache_hit_step" | \
+  grep -F "steps.app-cache.outputs.cache-hit == 'true'" >/dev/null
+printf '%s\n' "$app_cache_hit_step" | \
+  grep -F 'app/scripts/verify-app.sh' >/dev/null
+printf '%s\n' "$app_cache_hit_step" | \
+  grep -F 'DETACH_QUALITY_EXACT_APP=1' >/dev/null
+app_cache_miss_step="$(printf '%s\n' "$quality_shards_job" | sed -n \
+  '/name: Build and bind exact packaged test app/,/name: Run exact quality shard/p')"
+printf '%s\n' "$app_cache_miss_step" | \
+  grep -F "steps.app-cache.outputs.cache-hit != 'true'" >/dev/null
+printf '%s\n' "$app_cache_miss_step" | \
+  grep -F 'DETACH_QUALITY_APP_SCRATCH: 1' >/dev/null
+printf '%s\n' "$app_cache_miss_step" | \
+  grep -F 'app/scripts/make-app.sh' >/dev/null
+printf '%s\n' "$app_cache_miss_step" | \
+  grep -F 'DETACH_QUALITY_EXACT_APP=1' >/dev/null
+app_build_line="$(printf '%s\n' "$app_cache_miss_step" | \
+  grep -nF 'app/scripts/make-app.sh' | cut -d: -f1)"
+app_bind_line="$(printf '%s\n' "$app_cache_miss_step" | \
+  grep -nF 'DETACH_QUALITY_EXACT_APP=1' | cut -d: -f1)"
+if [ "$app_bind_line" -le "$app_build_line" ]; then
+  printf 'quality workflow bound a fresh app before its build completed\n' >&2
+  exit 1
+fi
 grep -F 'key: detach-quality-products-v1-' \
   "$ROOT/.github/workflows/quality-gates.yml" >/dev/null
 grep -F 'app/.build/quality-products-v1.json' \
@@ -201,7 +227,7 @@ prepare_template() {
   printf '%s\n' actions.log results aggregate tampered-aggregate '*.out' /presentations/ \
     >"$TEMPLATE_REPO/.gitignore"
   for stage in static gate-contract swift quality-contracts app ui-e2e codex claude distribution tmux-runtime release-preflight publish-preflight release-workflow; do
-    printf '#!/bin/bash\nset -eu\nexpected_cache="${GATE_EXPECTED_MODULE_CACHE:?}/%s"\n[ -z "${DETACH_RELEASE_TIMING_OVERRIDE:-}" ] || { printf "release timing override leaked into stage\\n" >&2; exit 1; }\n[ -z "${DETACH_CONFIRM_RELEASE:-}" ] || { printf "release confirmation leaked into stage\\n" >&2; exit 1; }\n[ -z "${DETACH_QUALITY_GATE_RESULT_ROOT:-}" ] || { printf "quality result root leaked into stage\\n" >&2; exit 1; }\n[ "${CLANG_MODULE_CACHE_PATH:-}" = "$expected_cache" ] || { printf "unexpected Clang module cache: %%s\\n" "${CLANG_MODULE_CACHE_PATH:-missing}" >&2; exit 1; }\n[ "${SWIFTPM_MODULECACHE_OVERRIDE:-}" = "$expected_cache" ] || { printf "unexpected SwiftPM module cache: %%s\\n" "${SWIFTPM_MODULECACHE_OVERRIDE:-missing}" >&2; exit 1; }\nprintf "%%s\\n" "%s" >>"${GATE_ACTION_LOG:?}"\nsleep "${STAGE_SLEEP:-0}"\ncase " ${FAIL_STAGES:-} " in *" %s "*) exit 23 ;; esac\n' "$stage" "$stage" "$stage" \
+    printf '#!/bin/bash\nset -eu\nexpected_cache="${GATE_EXPECTED_MODULE_CACHE:?}/%s"\n[ -z "${DETACH_RELEASE_TIMING_OVERRIDE:-}" ] || { printf "release timing override leaked into stage\\n" >&2; exit 1; }\n[ -z "${DETACH_CONFIRM_RELEASE:-}" ] || { printf "release confirmation leaked into stage\\n" >&2; exit 1; }\n[ -z "${DETACH_QUALITY_GATE_RESULT_ROOT:-}" ] || { printf "quality result root leaked into stage\\n" >&2; exit 1; }\n[ "${CLANG_MODULE_CACHE_PATH:-}" = "$expected_cache" ] || { printf "unexpected Clang module cache: %%s\\n" "${CLANG_MODULE_CACHE_PATH:-missing}" >&2; exit 1; }\n[ "${SWIFTPM_MODULECACHE_OVERRIDE:-}" = "$expected_cache" ] || { printf "unexpected SwiftPM module cache: %%s\\n" "${SWIFTPM_MODULECACHE_OVERRIDE:-missing}" >&2; exit 1; }\nprintf "%%s\\n" "%s" >>"${GATE_ACTION_LOG:?}"\n[ "${STAGE_SLEEP:-0}" = 0 ] || sleep "$STAGE_SLEEP"\ncase " ${FAIL_STAGES:-} " in *" %s "*) exit 23 ;; esac\n' "$stage" "$stage" "$stage" \
       >"$TEMPLATE_REPO/tests/quality-gate-fixtures/$stage"
     chmod 0755 "$TEMPLATE_REPO/tests/quality-gate-fixtures/$stage"
   done
@@ -930,7 +956,12 @@ while [ ! -f "$GATE_ORDER_ROOT/app-started" ] && [ "$attempt" -lt 50 ]; do
   sleep 0.1
 done
 [ -f "$GATE_ORDER_ROOT/app-started" ]
-sleep 1
+attempt=0
+while [ ! -f "$GATE_ORDER_ROOT/app" ] && [ "$attempt" -lt 50 ]; do
+  attempt=$((attempt + 1))
+  sleep 0.1
+done
+[ -f "$GATE_ORDER_ROOT/app" ]
 : >"$GATE_ORDER_ROOT/swift"
 SH
 cat >"$REPO/tests/quality-gate-fixtures/app" <<'SH'
@@ -951,7 +982,6 @@ cat >"$REPO/tests/quality-gate-fixtures/quality-contracts" <<'SH'
 set -eu
 [ -f "${GATE_ORDER_ROOT:?}/swift" ]
 [ -f "${GATE_ORDER_ROOT:?}/ui-e2e" ]
-sleep 1
 printf '{}\n' >"${DETACH_QUALITY_METRICS_OUTPUT:?}"
 : >"$GATE_ORDER_ROOT/quality-contracts"
 SH
@@ -970,12 +1000,12 @@ set -eu
 [ -f "$GATE_ORDER_ROOT/gate-contract" ]
 : >"$GATE_ORDER_ROOT/codex-started"
 attempt=0
-while [ ! -f "$GATE_ORDER_ROOT/integration-after-contract" ] && \
+while [ ! -f "$GATE_ORDER_ROOT/release-workflow-started" ] && \
     [ "$attempt" -lt 50 ]; do
   attempt=$((attempt + 1))
   sleep 0.1
 done
-[ -f "$GATE_ORDER_ROOT/integration-after-contract" ]
+[ -f "$GATE_ORDER_ROOT/release-workflow-started" ]
 : >"$GATE_ORDER_ROOT/codex"
 SH
 cat >"$REPO/tests/quality-gate-fixtures/gate-contract" <<'SH'
@@ -984,7 +1014,13 @@ set -eu
 [ -f "${GATE_ORDER_ROOT:?}/ui-e2e" ]
 [ -f "$GATE_ORDER_ROOT/quality-contracts" ]
 : >"$GATE_ORDER_ROOT/gate-contract-started"
-sleep 1
+attempt=0
+while [ ! -f "$GATE_ORDER_ROOT/short-preflight-during-contract" ] && \
+    [ "$attempt" -lt 50 ]; do
+  attempt=$((attempt + 1))
+  sleep 0.1
+done
+[ -f "$GATE_ORDER_ROOT/short-preflight-during-contract" ]
 : >"$GATE_ORDER_ROOT/gate-contract"
 SH
 cat >"$REPO/tests/quality-gate-fixtures/distribution" <<'SH'
@@ -992,13 +1028,14 @@ cat >"$REPO/tests/quality-gate-fixtures/distribution" <<'SH'
 set -eu
 [ -f "${GATE_ORDER_ROOT:?}/gate-contract" ]
 attempt=0
-while [ ! -f "$GATE_ORDER_ROOT/codex-started" ] && [ "$attempt" -lt 50 ]; do
+while [ ! -f "$GATE_ORDER_ROOT/release-workflow" ] && [ "$attempt" -lt 50 ]; do
   attempt=$((attempt + 1))
   sleep 0.1
 done
-[ -f "$GATE_ORDER_ROOT/codex-started" ]
-[ ! -f "$GATE_ORDER_ROOT/codex" ]
-: >"$GATE_ORDER_ROOT/integration-after-contract"
+[ -f "$GATE_ORDER_ROOT/release-workflow" ]
+[ -f "$GATE_ORDER_ROOT/claude-started" ]
+[ ! -f "$GATE_ORDER_ROOT/claude" ]
+: >"$GATE_ORDER_ROOT/integration-after-release"
 SH
 cat >"$REPO/tests/quality-gate-fixtures/publish-preflight" <<'SH'
 #!/bin/bash
@@ -1018,25 +1055,37 @@ cat >"$REPO/tests/quality-gate-fixtures/release-workflow" <<'SH'
 #!/bin/bash
 set -eu
 [ -f "${GATE_ORDER_ROOT:?}/gate-contract" ]
-[ -f "$GATE_ORDER_ROOT/codex" ]
-[ -f "$GATE_ORDER_ROOT/claude" ]
-: >"$GATE_ORDER_ROOT/release-workflow-started"
-sleep 1
-: >"$GATE_ORDER_ROOT/release-workflow"
-SH
-cat >"$REPO/tests/quality-gate-fixtures/claude" <<'SH'
-#!/bin/bash
-set -eu
-[ -f "${GATE_ORDER_ROOT:?}/gate-contract" ]
-[ ! -f "$GATE_ORDER_ROOT/release-workflow-started" ]
-: >"$GATE_ORDER_ROOT/claude-started"
 attempt=0
 while [ ! -f "$GATE_ORDER_ROOT/codex-started" ] && [ "$attempt" -lt 50 ]; do
   attempt=$((attempt + 1))
   sleep 0.1
 done
 [ -f "$GATE_ORDER_ROOT/codex-started" ]
-sleep 1
+[ ! -f "$GATE_ORDER_ROOT/codex" ]
+: >"$GATE_ORDER_ROOT/release-workflow-started"
+attempt=0
+while [ ! -f "$GATE_ORDER_ROOT/claude-started" ] && [ "$attempt" -lt 50 ]; do
+  attempt=$((attempt + 1))
+  sleep 0.1
+done
+[ -f "$GATE_ORDER_ROOT/claude-started" ]
+[ ! -f "$GATE_ORDER_ROOT/claude" ]
+: >"$GATE_ORDER_ROOT/release-workflow"
+SH
+cat >"$REPO/tests/quality-gate-fixtures/claude" <<'SH'
+#!/bin/bash
+set -eu
+[ -f "${GATE_ORDER_ROOT:?}/gate-contract" ]
+[ -f "$GATE_ORDER_ROOT/release-workflow-started" ]
+[ ! -f "$GATE_ORDER_ROOT/release-workflow" ]
+: >"$GATE_ORDER_ROOT/claude-started"
+attempt=0
+while [ ! -f "$GATE_ORDER_ROOT/integration-after-release" ] && \
+    [ "$attempt" -lt 50 ]; do
+  attempt=$((attempt + 1))
+  sleep 0.1
+done
+[ -f "$GATE_ORDER_ROOT/integration-after-release" ]
 : >"$GATE_ORDER_ROOT/claude"
 SH
 for ordered_stage in tmux-runtime release-preflight; do
@@ -1064,8 +1113,8 @@ chmod 0755 \
   "$REPO/tests/quality-gate-fixtures/release-workflow"
 GATE_ORDER_ROOT="$ORDER_ROOT" gate --mode repository >"$REPO/resource-order.out"
 grep -F 'quality-gate: DIAGNOSTIC PASS' "$REPO/resource-order.out" >/dev/null
-[ -f "$ORDER_ROOT/integration-after-contract" ] || {
-  printf 'bounded scheduler did not open integration after gate-contract\n' >&2
+[ -f "$ORDER_ROOT/integration-after-release" ] || {
+  printf 'bounded scheduler did not defer distribution until after release workflow\n' >&2
   exit 1
 }
 [ -f "$ORDER_ROOT/short-preflight-during-contract" ] || {
@@ -1073,7 +1122,7 @@ grep -F 'quality-gate: DIAGNOSTIC PASS' "$REPO/resource-order.out" >/dev/null
   exit 1
 }
 [ -f "$ORDER_ROOT/release-workflow" ] || {
-  printf 'bounded scheduler overlapped the nested release workflow with a heavy peer\n' >&2
+  printf 'bounded scheduler did not complete the provider-overlapped release workflow\n' >&2
   exit 1
 }
 

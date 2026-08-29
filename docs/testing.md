@@ -150,7 +150,9 @@
 - `tests/release-workflow.sh` — hermetic end-to-end orchestration, including
   resume after every durable stage, dirty/diverged source rejection, duplicate
   tag/release rejection, hardware-gate failure, remote hash mismatch,
-  hermetic publication-boundary rejection, and unexpected remote assets.
+  hermetic publication-boundary rejection, and unexpected remote assets. It
+  admits at most five independent fixture repositories and reports each case
+  duration. Every case remains required.
 - `cd app && swift test --enable-code-coverage --disable-sandbox`, followed by
   `tests/quality-contracts.sh` — unit tests plus measured UI and business test
   identities, aggregate coverage, and coverage for the 13 critical sources.

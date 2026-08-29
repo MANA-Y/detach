@@ -135,11 +135,13 @@ jobs:
         run: |
           app/scripts/verify-app.sh
           printf 'DETACH_QUALITY_EXACT_APP=1\n' >>"$GITHUB_ENV"
-      - name: Prepare packaged provider runtime
+      - name: Build and bind exact packaged test app
         if: matrix.needs_app && steps.app-cache.outputs.cache-hit != 'true'
         env:
           DETACH_QUALITY_APP_SCRATCH: 1
-        run: app/scripts/make-app.sh
+        run: |
+          app/scripts/make-app.sh
+          printf 'DETACH_QUALITY_EXACT_APP=1\n' >>"$GITHUB_ENV"
       - name: Run exact quality shard
         run: |
           BASE_SHA="$(git rev-parse HEAD^1)"

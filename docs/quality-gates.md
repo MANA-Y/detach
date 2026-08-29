@@ -148,23 +148,27 @@ Swift tests, the normal app, and the instrumented app use isolated scratch and
 module-cache paths. CI materializes their shared dependency cache once before
 parallel builds. A host with at least three CPUs splits workers and builds all
 three at the same time. Smaller hosts run Swift and app work in sequence.
-The normal bundle is verified. Only the private UI copy gets the instrumented
-executable.
+The normal bundle is verified. On a hosted app-cache miss, the successful
+fresh build becomes the exact app for that job. The selected app stage verifies
+the same bundle and does not build it again. A failed build cannot create this
+binding. Only the private UI copy gets the instrumented executable.
 The short packaged UI lane runs after the verified app and before the
 CPU-intensive provider, runtime, and gate-contract lanes. This prevents
 WindowServer event delivery from competing with those workers. After the UI and metric phases,
 the scheduler starts ready process-heavy stages in descending policy timing
 order. It admits at most two process-heavy top-level lanes. One separate lane
 runs short runtime and release preflights during gate-contract. Distribution
-uses that lane only after gate-contract ends. A free slot starts the next ready
-stage without a fixed wave barrier.
+uses that lane only after gate-contract ends. Gate-contract excludes every
+heavy peer. Release-workflow can overlap one provider lane, but distribution
+waits until release-workflow ends. A free slot starts the next ready stage
+without a fixed wave barrier.
 
 Quality analysis runs after the UI lane. It merges the completed Swift profile
 with all passed packaged-app profiles. It reads the existing Swift log and does
 not run a test twice.
 
 The gate-contract stage keeps lightweight contracts concurrent. It admits
-three process-heavy orchestrator shards on a host with at least eight logical
+four process-heavy orchestrator shards on a host with at least eight logical
 CPUs, and two on a smaller host. This limit prevents process oversubscription
 without increasing the stage budget. At most four contract children run at one
 time, so lightweight contracts do not crowd adjacent preflights.
@@ -176,13 +180,15 @@ evidence. The packaged UI test uses a
 stripped process-private app, fake CLI, and private state. Provider tests use
 private state and socket roots plus the newly bundled `tmux` and
 `detach-state`. Each provider part has private state, socket, log, and failure
-artifact roots. Parts run concurrently. Smaller hosts use three Codex parts and
-two Claude parts; larger hosts use finer parts. Compact layouts reuse
+artifact roots. Parts run concurrently. The bounded large-host Codex lane
+starts the longest measured independent parts first, and still runs every
+part. Smaller hosts use three Codex parts and two Claude parts; larger hosts
+use finer parts. Compact layouts reuse
 checkpoints across recovery and restart, resume and identity, or Claude
 lifecycle and recovery. The parent writes scenario events in one order and
 fails the stage when any part fails. Tests do not use installed product state
 or ambient helpers. Distribution runs its runtime and shell-profile contracts
-as separate parts in private temporary homes.
+concurrently in separate private temporary homes.
 
 There are no quarantined tests. A future quarantine needs an owner, reason, and
 expiry. It cannot remove release evidence.
