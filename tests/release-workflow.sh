@@ -39,7 +39,7 @@ setup_fixture() {
   PUBLISHED_MANIFEST="$FIXTURE/published-manifest.json"
   mkdir -p "$REPO/scripts" "$REPO/tests/quality-gate-fixtures" "$REPO/app/scripts" \
     "$REPO/app/.build/artifacts/sparkle/Sparkle/bin" "$REPO/quality" "$REPO/tools" \
-    "$BIN" "$APPS" \
+    "$BIN" "$APPS" "$FIXTURE/hooks" \
     "$REMOTE_ASSETS"
 
   install -m 0755 "$ROOT/scripts/release-version" "$REPO/scripts/release-version"
@@ -392,6 +392,12 @@ case "${1:-} ${2:-}" in
     [ -f "${FAKE_RELEASE_EXISTS:?}" ] || exit 1
     case " $* " in
       *' --json tagName '*) printf '%s\n' "${FAKE_TARGET_TAG:?}" ;;
+      *' --json assets '*)
+        for path in "${FAKE_REMOTE_ASSETS:?}"/*; do
+          [ -f "$path" ] || continue
+          basename "$path"
+        done
+        ;;
     esac
     ;;
   *) exit 64 ;;
@@ -465,6 +471,7 @@ SH
   git -C "$REPO" tag -a v1.2.3 -m 'published fixture'
   git init -q --bare "$ORIGIN"
   git -C "$REPO" remote add origin "$ORIGIN"
+  git -C "$REPO" config core.hooksPath "$FIXTURE/hooks"
   git -C "$REPO" push -q -u origin main
   git -C "$REPO" push -q origin v1.2.3
 }
@@ -484,6 +491,7 @@ run_workflow() {
       FAKE_TARGET_TAG="$TARGET_TAG" \
       FAKE_DMG_APP="$REPO/app/build/fake-dmg/Detach.app" \
       DETACH_RELEASE_TEST_MODE=1 \
+      DETACH_RELEASE_TEST_FIXTURE_ROOT="${DETACH_RELEASE_TEST_FIXTURE_ROOT-$FIXTURE}" \
       DETACH_QUALITY_GATE_TEST_MODE=1 \
       DETACH_RELEASE_TEST_APPLICATIONS_DIR="$APPS" \
       DETACH_RELEASE_TEST_LID_MIN_SECONDS=0 \
@@ -672,6 +680,32 @@ run_remote_hash_case() {
   [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-verified" ]
 }
 
+run_test_mode_rejects_unproven_fixture_case() {
+  setup_fixture test-mode-rejects-unproven-fixture
+  export DETACH_RELEASE_TEST_FIXTURE_ROOT=
+  expect_failure test-mode-rejects-unproven-fixture \
+    'test-mode push and publication require an absolute hermetic fixture root' \
+    run_workflow
+  [ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-prepared" ]
+  [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-pushed" ]
+  [ ! -f "$RELEASE_EXISTS" ]
+  [ -z "$(git -C "$REPO" ls-remote origin "refs/tags/$TARGET_TAG")" ]
+  [ -z "$(git -C "$REPO" ls-remote origin "refs/heads/detach-release/$TARGET_TAG")" ]
+  ! grep -q '^publish$' "$ACTION_LOG"
+}
+
+run_unexpected_remote_asset_case() {
+  setup_fixture unexpected-remote-asset
+  expect_failure unexpected-remote-asset-prep \
+    'injected safe failure after published' run_workflow published
+  printf '%s\n' extra >"$REMOTE_ASSETS/unexpected-notes.txt"
+  expect_failure unexpected-remote-asset \
+    'published release has unexpected asset: unexpected-notes.txt' \
+    run_workflow
+  [ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-published" ]
+  [ ! -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-verified" ]
+}
+
 run_post_push_main_rejection_case() {
   setup_fixture post-push-main
   expect_failure post-push-artifacts 'injected safe failure after artifacts' \
@@ -696,6 +730,8 @@ for release_case in \
   run_preflight_rejection_cases \
   run_hardware_rejection_case \
   run_remote_hash_case \
+  run_test_mode_rejects_unproven_fixture_case \
+  run_unexpected_remote_asset_case \
   run_post_push_main_rejection_case \
   run_invalid_resume_artifact_credentials_case; do
   "$release_case" &

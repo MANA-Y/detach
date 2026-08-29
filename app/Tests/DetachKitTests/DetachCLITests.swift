@@ -23,6 +23,29 @@ final class DetachCLITests: XCTestCase {
         XCTAssertFalse(result.timedOut)
     }
 
+    func testUsesAnExplicitWorkingDirectory() async throws {
+        let directory = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+            .appendingPathComponent("detach-cli-cwd-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cli = ProcessDetachCLI(executable: try fixture("pwd -P"))
+
+        let result = try await cli.run(
+            arguments: [],
+            timeout: 5,
+            currentDirectoryURL: directory)
+
+        XCTAssertEqual(result.exitCode, 0)
+        let reportedDirectory = result.stdout.trimmingCharacters(
+            in: .whitespacesAndNewlines)
+        XCTAssertEqual(
+            URL(fileURLWithPath: reportedDirectory).lastPathComponent,
+            directory.lastPathComponent)
+        XCTAssertNotEqual(reportedDirectory, FileManager.default.currentDirectoryPath)
+    }
+
     func testLargeOutputDoesNotDeadlock() async throws {
         let cli = ProcessDetachCLI(executable: try fixture("dd if=/dev/zero bs=1024 count=512 2>/dev/null | tr '\\0' 'x'"))
         let result = try await cli.run(arguments: [], timeout: 10)
