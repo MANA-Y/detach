@@ -50,9 +50,10 @@ unsafe identity, build mismatch, or payload fails closed.
 Smoke restores focus and the pointer, then sends ordered AppKit down/up pairs to
 measured SwiftUI controls; semantic locators have no actions. Row clicks select
 sessions even after preview text takes focus.
-Each launch and stage stays within its deadline. Journeys cover main surfaces,
-Settings, onboarding, focus, Codex Recover, Claude Resume, and reconnect after
-an attach client exits. It disconnects Stop before the real control invokes it.
+Each launch and stage meets its deadline. Journeys cover main surfaces,
+Settings, onboarding, focus, Codex Recover, Claude Resume, reconnect, and App
+Start through typed-session selection and embedded PTY attach. It disconnects
+Stop before real control invocation.
 Only visible controls complete onboarding.
 
 Coverage builds the normal bundle, instrumented binary, and Swift tests in
