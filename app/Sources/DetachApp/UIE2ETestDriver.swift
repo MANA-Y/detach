@@ -244,7 +244,6 @@ enum UIE2ETestDriver {
                 throw Failure(message: "cannot enable test app activation")
             }
             try await activate(mainWindow)
-            try await Task.sleep(nanoseconds: 200_000_000)
             trace("test app activated")
 
             let dashboard = try await element(role: .splitGroup)
@@ -527,7 +526,6 @@ enum UIE2ETestDriver {
                 NSApp.windows.allSatisfy(\.sheets.isEmpty)
             }
             try await activate(mainWindow)
-            try await Task.sleep(nanoseconds: 200_000_000)
 
             let newSession = try await element(identifier: "new-session-button")
             try requireSemanticControl(newSession, name: "new session action")
@@ -581,7 +579,6 @@ enum UIE2ETestDriver {
             try await clickMeasuredControl(
                 identifier: "new-session-launch",
                 name: "disabled new session launch")
-            try await Task.sleep(nanoseconds: 200_000_000)
             guard NSApp.windows.contains(where: { !$0.sheets.isEmpty }) else {
                 throw Failure(message: "new-session launch is active without a project")
             }
