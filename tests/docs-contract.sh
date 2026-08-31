@@ -108,6 +108,19 @@ git -C "$ROOT" check-ignore -q docs/work/example.md ||
 git -C "$ROOT" check-ignore -q presentations/internal.html ||
   fail 'internal presentation sources must remain ignored'
 
+skill="$ROOT/.cursor/skills/detach-cli/SKILL.md"
+[ -f "$skill" ] || fail 'detach CLI skill is missing'
+grep -F 'name: detach-cli' "$skill" >/dev/null ||
+  fail 'CLI skill must use name detach-cli'
+grep -F 'detach list --json' "$skill" >/dev/null ||
+  fail 'CLI skill must name detach list --json'
+grep -F 'detach power status --json' "$skill" >/dev/null ||
+  fail 'CLI skill must name detach power status --json'
+grep -F '## Do not' "$skill" >/dev/null ||
+  fail 'CLI skill must refuse unsolicited mutations'
+! grep -E 'tmux send-keys|detach-core ' "$skill" >/dev/null ||
+  fail 'CLI skill must not teach pane injection or detach-core'
+
 grep -F 'Hosted pull-request CI is readiness authority.' "$ROOT/AGENTS.md" >/dev/null ||
   fail 'agent instructions must identify hosted CI as readiness authority'
 grep -F 'They never claim merge readiness.' \
