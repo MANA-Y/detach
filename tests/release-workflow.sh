@@ -40,6 +40,12 @@ setup_fixture() {
   RELEASE_EXISTS="$FIXTURE/release-exists"
   ACTION_LOG="$FIXTURE/actions.log"
   PUBLISHED_MANIFEST="$FIXTURE/published-manifest.json"
+  if [ -n "${FIXTURE_TEMPLATE:-}" ]; then
+    cp -cR "$FIXTURE_TEMPLATE" "$FIXTURE"
+    git -C "$REPO" remote set-url origin "$ORIGIN"
+    git -C "$REPO" config core.hooksPath "$FIXTURE/hooks"
+    return
+  fi
   mkdir -p "$REPO/scripts" "$REPO/tests/quality-gate-fixtures" "$REPO/app/scripts" \
     "$REPO/app/.build/artifacts/sparkle/Sparkle/bin" "$REPO/quality" "$REPO/tools" \
     "$BIN" "$APPS" "$FIXTURE/hooks" \
@@ -606,18 +612,24 @@ run_invalid_resume_artifact_credentials_case() {
   [ ! -f "$RELEASE_EXISTS" ]
 }
 
-run_timing_override_cases() {
+run_timing_override_confirmation_case() {
   setup_fixture timing-override-confirmation
+  grep -F 'DETACH_CONFIRM_RELEASE="$REPOSITORY@$TAG" \' \
+    "$REPO/scripts/release-version" >/dev/null
   expect_failure timing-override-confirmation \
     "confirmation must exactly equal example/detach@$TARGET_TAG" \
     run_workflow '' "example/detach@$TARGET_TAG" wrong-confirmation 1
   [ ! -s "$ACTION_LOG" ]
+}
 
+run_timing_override_invalid_case() {
   setup_fixture timing-override-invalid
   expect_failure timing-override-invalid 'DETACH_RELEASE_IGNORE_TIMING must be 0 or 1' \
     run_workflow '' "example/detach@$TARGET_TAG" "example/detach@$TARGET_TAG" invalid
   [ ! -s "$ACTION_LOG" ]
+}
 
+run_timing_override_case() {
   setup_fixture timing-override
   expect_failure timing-override 'injected safe failure after preflight' \
     run_workflow preflight "example/detach@$TARGET_TAG" "example/detach@$TARGET_TAG" 1
@@ -632,29 +644,37 @@ run_timing_override_cases() {
   [ -f "$REPO/app/build/release-workflow/$TARGET_VERSION/stage-verified" ]
 }
 
-run_preflight_rejection_cases() {
+run_dirty_preflight_rejection_case() {
   setup_fixture dirty
   printf '%s\n' dirty >"$REPO/untracked-note.txt"
   expect_failure dirty 'release workflow requires a clean worktree' run_workflow
   [ ! -s "$ACTION_LOG" ]
+}
 
+run_stale_build_preflight_rejection_case() {
   setup_fixture stale-build
   printf '%s\n' 12 >"$REPO/BUILD"
   git -C "$REPO" add BUILD
   git -C "$REPO" commit -qm 'stale tracked build'
   git -C "$REPO" push -q origin main
   expect_failure stale-build 'tracked BUILD 12 does not match published build 13' run_workflow
+}
 
+run_diverged_preflight_rejection_case() {
   setup_fixture diverged
   printf '%s\n' local >>"$REPO/README.md"
   git -C "$REPO" add README.md
   git -C "$REPO" commit -qm 'local divergence'
   expect_failure diverged 'main must be synchronized with origin/main' run_workflow
+}
 
+run_duplicate_tag_preflight_rejection_case() {
   setup_fixture duplicate-tag
   git -C "$REPO" tag -a "$TARGET_TAG" -m duplicate
   expect_failure duplicate-tag "local tag already exists: $TARGET_TAG" run_workflow
+}
 
+run_duplicate_release_preflight_rejection_case() {
   setup_fixture duplicate-release
   : >"$RELEASE_EXISTS"
   expect_failure duplicate-release "GitHub release already exists: $TARGET_TAG" run_workflow
@@ -711,8 +731,8 @@ run_unexpected_remote_asset_case() {
 
 run_post_push_main_rejection_case() {
   setup_fixture post-push-main
-  expect_failure post-push-artifacts 'injected safe failure after artifacts' \
-    run_workflow artifacts
+  expect_failure post-push-source 'injected safe failure after pushed' \
+    run_workflow pushed
   mkdir -p "$REPO/app/Sources/DetachKit"
   printf '%s\n' 'product change' >"$REPO/app/Sources/DetachKit/TerminalLauncher.swift"
   git -C "$REPO" add app/Sources/DetachKit/TerminalLauncher.swift
@@ -725,20 +745,30 @@ run_post_push_main_rejection_case() {
 
 # Each lane owns a separate repository below TMP_ROOT. Admit a bounded set of
 # lanes so independent Git and fake-publication work do not saturate the disk.
+# Clone one immutable APFS fixture instead of rebuilding the same Git history
+# and fake tools in every lane.
+setup_fixture fixture-template
+FIXTURE_TEMPLATE="$FIXTURE"
 release_case_limit=5
 release_case_pids=()
 release_case_names=()
 release_case_status=0
 release_cases=(
   run_resume_case
-  run_timing_override_cases
+  run_timing_override_case
   run_unexpected_remote_asset_case
   run_remote_hash_case
   run_hardware_rejection_case
   run_invalid_resume_artifact_credentials_case
   run_post_push_main_rejection_case
   run_test_mode_rejects_unproven_fixture_case
-  run_preflight_rejection_cases
+  run_timing_override_confirmation_case
+  run_timing_override_invalid_case
+  run_dirty_preflight_rejection_case
+  run_stale_build_preflight_rejection_case
+  run_diverged_preflight_rejection_case
+  run_duplicate_tag_preflight_rejection_case
+  run_duplicate_release_preflight_rejection_case
 )
 
 wait_for_release_case_slot() {

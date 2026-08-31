@@ -233,6 +233,32 @@ final class SessionAttachTerminalTests: XCTestCase {
         XCTAssertEqual(pasteboard.string(forType: .string), "selected text")
     }
 
+    func testDroppedFileURLsBecomeShellSafeAbsolutePaths() throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let first = URL(fileURLWithPath: "/tmp/photo.png")
+        let second = URL(fileURLWithPath: "/tmp/Project File/a'b.txt")
+        XCTAssertTrue(pasteboard.writeObjects([first as NSURL, second as NSURL]))
+
+        XCTAssertEqual(
+            SessionAttachDroppedPaths.insertionText(from: pasteboard),
+            "/tmp/photo.png '/tmp/Project File/a'\\''b.txt' ")
+    }
+
+    func testDroppedPathsIgnoreNonFileURLs() throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let url = try XCTUnwrap(URL(string: "https://example.com/file.png"))
+        XCTAssertTrue(pasteboard.writeObjects([url as NSURL]))
+        XCTAssertNil(SessionAttachDroppedPaths.insertionText(from: pasteboard))
+    }
+
+    func testDroppedPathNeverInsertsAControlCharacter() {
+        XCTAssertEqual(
+            SessionAttachDroppedPaths.shellEscaped("/tmp/line\nbreak.txt"),
+            "$'/tmp/line\\nbreak.txt'")
+    }
+
     @MainActor
     func testControlVReachesTheProviderAsTheRawClipboardImageShortcut() throws {
         let root = FileManager.default.temporaryDirectory
@@ -311,6 +337,41 @@ final class SessionAttachTerminalTests: XCTestCase {
         XCTAssertNil(SessionAttachKeyboard.providerInput(for: commandV))
     }
 
+    func testNativeTerminalCommandsUsePhysicalCommandKeys() throws {
+        let expected: [(UInt16, String, SessionAttachKeyboard.AppAction)] = [
+            (8, "с", .copy),
+            (9, "м", .paste),
+            (3, "а", .find),
+        ]
+        for (keyCode, characters, action) in expected {
+            let event = try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: [.command, .capsLock],
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                characters: characters,
+                charactersIgnoringModifiers: characters,
+                isARepeat: false,
+                keyCode: keyCode))
+            XCTAssertEqual(SessionAttachKeyboard.appAction(for: event), action)
+        }
+
+        let shiftedPaste = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command, .shift],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "V",
+            charactersIgnoringModifiers: "v",
+            isARepeat: false,
+            keyCode: 9))
+        XCTAssertNil(SessionAttachKeyboard.appAction(for: shiftedPaste))
+    }
+
     @MainActor
     func testScopedKeyboardRouting() throws {
         let terminal = LocalProcessTerminalView(frame: .zero)
@@ -338,6 +399,27 @@ final class SessionAttachTerminalTests: XCTestCase {
             in: terminal,
             send: { received = $0 }))
         XCTAssertEqual(received, [0x16])
+
+        let commandPaste = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "v",
+            charactersIgnoringModifiers: "v",
+            isARepeat: false,
+            keyCode: 9))
+        var action: SessionAttachKeyboard.AppAction?
+        XCTAssertNil(coordinator.routeKeyboardEvent(
+            commandPaste,
+            window: nil,
+            firstResponder: terminal,
+            in: terminal,
+            send: { _ in },
+            performAppAction: { action = $0 }))
+        XCTAssertEqual(action, .paste)
 
         XCTAssertTrue(coordinator.routeKeyboardEvent(
             controlV,

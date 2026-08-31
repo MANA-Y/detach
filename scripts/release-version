@@ -516,7 +516,8 @@ run_full_tests() {
     exact_confirmation DETACH_CONFIRM_RELEASE \
       'Ignoring reference-machine timing budgets for this release'
     note 'owner waived reference-machine timing budgets for this release only'
-    DETACH_RELEASE_TIMING_OVERRIDE="$REPOSITORY@$TAG" \
+    DETACH_CONFIRM_RELEASE="$REPOSITORY@$TAG" \
+      DETACH_RELEASE_TIMING_OVERRIDE="$REPOSITORY@$TAG" \
       "$ROOT/scripts/quality-gate" --mode release --base "$impact_base" \
         --without-release-budget --resume auto
   else

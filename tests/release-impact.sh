@@ -56,8 +56,14 @@ assert_value "$TMP_ROOT/safe.tsv" lid_test_required false
 assert_value "$TMP_ROOT/safe.tsv" unknown_impact false
 ! grep -F 'install_matrix' "$TMP_ROOT/safe.tsv" >/dev/null
 
+QUICK_CHAT_HEAD="$(commit_path app/Sources/DetachApp/QuickChat.swift quick-chat)"
+"$REPO/scripts/release-impact" "$SAFE_HEAD" "$QUICK_CHAT_HEAD" \
+  >"$TMP_ROOT/quick-chat.tsv"
+assert_value "$TMP_ROOT/quick-chat.tsv" lid_test_required false
+assert_value "$TMP_ROOT/quick-chat.tsv" unknown_impact false
+
 MATRIX_HEAD="$(commit_path app/Sources/DetachApp/OnboardingView.swift onboarding)"
-"$REPO/scripts/release-impact" "$SAFE_HEAD" "$MATRIX_HEAD" >"$TMP_ROOT/matrix.tsv"
+"$REPO/scripts/release-impact" "$QUICK_CHAT_HEAD" "$MATRIX_HEAD" >"$TMP_ROOT/matrix.tsv"
 assert_value "$TMP_ROOT/matrix.tsv" lid_test_required false
 assert_value "$TMP_ROOT/matrix.tsv" unknown_impact false
 

@@ -74,7 +74,8 @@ change real power state, upload assets, or claim publication.
   confirm the exact `owner/repository@tag`; this omits only wall and per-stage
   timing enforcement. Every functional, artifact, signing, power, lid, and
   publication gate remains mandatory, and the waiver is recorded in private
-  gate and workflow evidence.
+  gate and workflow evidence. The interactive prompt and environment forms
+  pass the same exact confirmation to the nested release quality gate.
 - The pre-release quality gate classifies the complete diff from the last
   published tag to synchronized `main`. It runs that dependency-closed plan on
   the release Mac and applies the reference-machine budgets. An empty or

@@ -5,6 +5,18 @@ import SwiftTerm
 import DetachKit
 
 final class SessionAttachLocalProcessTerminalView: LocalProcessTerminalView {
+    var onDroppedPaths: ((String) -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        registerForDraggedTypes([.fileURL])
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
@@ -13,11 +25,44 @@ final class SessionAttachLocalProcessTerminalView: LocalProcessTerminalView {
             window.makeFirstResponder(self)
         }
     }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        SessionAttachDroppedPaths.insertionText(from: sender.draggingPasteboard) == nil
+            ? [] : .copy
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        guard let text = SessionAttachDroppedPaths.insertionText(
+            from: sender.draggingPasteboard) else {
+            return false
+        }
+        window?.makeFirstResponder(self)
+        onDroppedPaths?(text)
+        return true
+    }
 }
 
 /// Preserves provider shortcuts that must reach the child as conventional
 /// control bytes, even after the child negotiates an enhanced keyboard mode.
 enum SessionAttachKeyboard {
+    enum AppAction: Equatable {
+        case copy
+        case paste
+        case find
+    }
+
+    static func appAction(for event: NSEvent) -> AppAction? {
+        let flags = event.modifierFlags.intersection(
+            [.command, .control, .option, .shift, .function])
+        guard flags == .command else { return nil }
+        switch event.keyCode {
+        case 8: return .copy
+        case 9: return .paste
+        case 3: return .find
+        default: return nil
+        }
+    }
+
     static func providerInput(for event: NSEvent) -> [UInt8]? {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard flags.contains(.control),
@@ -37,6 +82,55 @@ enum SessionAttachKeyboard {
         guard let bytes = providerInput(for: event) else { return false }
         send(bytes)
         return true
+    }
+}
+
+enum SessionAttachDroppedPaths {
+    static func insertionText(from pasteboard: NSPasteboard) -> String? {
+        let objects = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]) ?? []
+        let paths = objects.compactMap { object -> String? in
+            guard let url = object as? URL, url.isFileURL else { return nil }
+            let path = url.standardizedFileURL.path
+            return path.hasPrefix("/") ? shellEscaped(path) : nil
+        }
+        guard !paths.isEmpty else { return nil }
+        return paths.joined(separator: " ") + " "
+    }
+
+    static func shellEscaped(_ path: String) -> String {
+        if path.unicodeScalars.contains(where: {
+            CharacterSet.controlCharacters.contains($0)
+        }) {
+            let escaped = path.unicodeScalars.map { scalar -> String in
+                switch scalar.value {
+                case 0x27: return "\\'"
+                case 0x5c: return "\\\\"
+                case 0x0a: return "\\n"
+                case 0x0d: return "\\r"
+                case 0x09: return "\\t"
+                default:
+                    guard CharacterSet.controlCharacters.contains(scalar) else {
+                        return String(scalar)
+                    }
+                    if scalar.value <= 0xff {
+                        return String(format: "\\x%02X", scalar.value)
+                    }
+                    if scalar.value <= 0xffff {
+                        return String(format: "\\u%04X", scalar.value)
+                    }
+                    return String(format: "\\U%08X", scalar.value)
+                }
+            }.joined()
+            return "$'\(escaped)'"
+        }
+        let safe = path.unicodeScalars.allSatisfy { scalar in
+            CharacterSet.alphanumerics.contains(scalar)
+                || "/._-+=,:@%".unicodeScalars.contains(scalar)
+        }
+        guard !safe else { return path }
+        return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 
@@ -193,6 +287,9 @@ struct SessionAttachTerminalView: NSViewRepresentable {
 // quality-coverage:begin swiftterm-host
     func makeNSView(context: Context) -> LocalProcessTerminalView {
         let view = SessionAttachLocalProcessTerminalView(frame: .zero)
+        view.onDroppedPaths = { [weak controller = context.coordinator.controller] text in
+            controller?.send(text)
+        }
         context.coordinator.controller.onTerminated = context.coordinator.onTerminated
         context.coordinator.controller.configure(view, fontPointSize: fontPointSize)
         context.coordinator.installKeyboardMonitor(for: view)
@@ -211,6 +308,7 @@ struct SessionAttachTerminalView: NSViewRepresentable {
         coordinator: Coordinator
     ) {
         coordinator.removeKeyboardMonitor()
+        (view as? SessionAttachLocalProcessTerminalView)?.onDroppedPaths = nil
         coordinator.controller.terminateClient()
     }
 // quality-coverage:end swiftterm-host
@@ -244,16 +342,20 @@ struct SessionAttachTerminalView: NSViewRepresentable {
             window: NSWindow?,
             firstResponder: NSResponder?,
             in view: LocalProcessTerminalView,
-            send: ([UInt8]) -> Void
+            send: ([UInt8]) -> Void,
+            performAppAction: ((SessionAttachKeyboard.AppAction) -> Void)? = nil
         ) -> NSEvent? {
             guard window === view.window,
-                  Self.isFocused(view, firstResponder: firstResponder),
-                  SessionAttachKeyboard.routeProviderShortcut(
-                      from: event,
-                      send: send) else {
+                  Self.isFocused(view, firstResponder: firstResponder) else {
                 return event
             }
-            return nil
+            if let action = SessionAttachKeyboard.appAction(for: event) {
+                (performAppAction ?? { Self.perform($0, in: view) })(action)
+                return nil
+            }
+            return SessionAttachKeyboard.routeProviderShortcut(
+                from: event,
+                send: send) ? nil : event
         }
 
         func removeKeyboardMonitor() {
@@ -269,6 +371,22 @@ struct SessionAttachTerminalView: NSViewRepresentable {
             guard let responder = firstResponder else { return false }
             if responder === view { return true }
             return (responder as? NSView)?.isDescendant(of: view) == true
+        }
+
+        private static func perform(
+            _ action: SessionAttachKeyboard.AppAction,
+            in view: LocalProcessTerminalView
+        ) {
+            switch action {
+            case .copy:
+                view.copy(view)
+            case .paste:
+                view.paste(view)
+            case .find:
+                let menuItem = NSMenuItem()
+                menuItem.tag = Int(NSFindPanelAction.showFindPanel.rawValue)
+                view.performFindPanelAction(menuItem)
+            }
         }
 
         deinit {
