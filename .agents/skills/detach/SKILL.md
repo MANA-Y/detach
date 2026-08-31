@@ -17,12 +17,11 @@ wrap this CLI as an MCP server.
 `AGENTS.md` is for people who change Detach. This skill is for any agent that
 operates an installed harness on the same Mac.
 
-## Hosts
+## Location
 
 This file is an Agent Skill (`SKILL.md`). Detach keeps the source at
-`.agents/skills/detach/`. Cursor and Codex load that path in a project.
-Claude Code loads `.claude/skills/`. Copy this folder into a host or personal
-skills directory when the host does not scan `.agents/skills/`.
+`.agents/skills/detach/`. Copy this folder into a host or personal skills
+directory when the host does not scan `.agents/skills/`.
 
 ## Default loop
 

@@ -120,6 +120,8 @@ grep -F '## Do not' "$skill" >/dev/null ||
   fail 'harness skill must refuse unsolicited mutations'
 ! grep -E 'tmux send-keys|detach-core ' "$skill" >/dev/null ||
   fail 'harness skill must not teach pane injection or detach-core'
+! grep -F '.cursor/skills' "$skill" >/dev/null ||
+  fail 'harness skill must not bind to a host-only skills path'
 
 grep -F 'Hosted pull-request CI is readiness authority.' "$ROOT/AGENTS.md" >/dev/null ||
   fail 'agent instructions must identify hosted CI as readiness authority'
