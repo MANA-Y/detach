@@ -90,6 +90,34 @@ final class QuickChatTests: XCTestCase {
         XCTAssertEqual(listCallCount, 2)
     }
 
+    func testQuickChatReconcilesAnEarlySelectionAfterLaunchFailure() async {
+        let directory = try! XCTUnwrap(
+            DirectoryPreference.existingDirectoryURL(path: "/tmp"))
+        let line = #"{"schema":1,"provider":"codex","session_name":"detach-codex-tmp-1","name":"tmp-1","effective_status":"starting","meta_status":"starting","agent_session_id":null,"project_dir":"\#(directory.path)","created_at":"2026-08-31T00:00:00Z","last_checkpoint_at":null,"finished_at":null}"#
+        let cli = SlowQuickChatCLI(listOutput: line)
+        let store = SessionStore(cli: cli)
+        let selected = expectation(description: "starting session selected")
+
+        let launch = Task { @MainActor in
+            await QuickChatLaunch.start(
+                store: store,
+                providerRawValue: Provider.codex.rawValue,
+                directoryPath: "/tmp",
+                onSessionAvailable: { _ in selected.fulfill() },
+                discoverySleep: { _ in
+                    await cli.waitUntilStartBegan()
+                })
+        }
+
+        await fulfillment(of: [selected], timeout: 1)
+        await cli.finishStart(exitCode: 17, stderr: "start refused\n")
+        let result = await launch.value
+        let listCallCount = await cli.listCallCount
+
+        XCTAssertEqual(result.message, "start refused")
+        XCTAssertEqual(listCallCount, 2)
+    }
+
     func testQuickChatRejectsAnUnavailableFolderWithoutCallingTheCLI() async {
         let cli = QuickChatRecordingCLI()
         let missing = "/tmp/detach-missing-\(UUID().uuidString)"
@@ -186,11 +214,12 @@ private actor SlowQuickChatCLI: DetachCLIRunning {
         await withCheckedContinuation { startWaiters.append($0) }
     }
 
-    func finishStart() {
+    func finishStart(exitCode: Int32 = 0, stderr: String = "") {
         startContinuation?.resume(returning: CLIResult(
-            exitCode: 0,
-            stdout: "Started detach-codex-tmp-1 in /tmp\n",
-            stderr: "",
+            exitCode: exitCode,
+            stdout: exitCode == 0
+                ? "Started detach-codex-tmp-1 in /tmp\n" : "",
+            stderr: stderr,
             timedOut: false))
         startContinuation = nil
     }
