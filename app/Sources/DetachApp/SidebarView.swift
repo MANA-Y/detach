@@ -9,17 +9,46 @@ enum FinishedDeletionPresentation {
     }
 }
 
+struct SidebarFailurePresentation: Equatable, Identifiable {
+    enum Kind: Hashable {
+        case finishedDeletion
+        case quickChat
+    }
+
+    let kind: Kind
+    let message: String
+
+    var id: Kind { kind }
+
+    var title: String {
+        switch kind {
+        case .finishedDeletion:
+            L10n.string("Could not delete some sessions")
+        case .quickChat:
+            L10n.string("Could not start quick chat")
+        }
+    }
+}
+
 struct SidebarView: View {
     @Environment(\.appFontPointSize) private var fontPointSize
     let store: SessionStore
     @Binding var selectedID: String?
     @ObservedObject var navigation: MainNavigation
+    @AppStorage(AppSettings.defaultProjectsDirectoryKey, store: AppSettings.defaults)
+    private var defaultProjectsDirectoryPath =
+        AppSettings.defaultProjectsDirectoryPath
+    @AppStorage(AppSettings.quickChatDirectoryKey, store: AppSettings.defaults)
+    private var quickChatDirectoryPath = AppSettings.defaultQuickChatDirectoryPath
+    @AppStorage(AppSettings.quickChatProviderKey, store: AppSettings.defaults)
+    private var quickChatProvider = AppSettings.defaultQuickChatProvider
     @State private var showNewSession = false
+    @State private var isStartingQuickChat = false
+    @State private var failurePresentation: SidebarFailurePresentation?
     @State private var isSelectingFinished = false
     @State private var selectedFinishedIDs: Set<String> = []
     @State private var confirmFinishedDelete = false
     @State private var isDeletingFinished = false
-    @State private var finishedDeleteError: String?
 
     private func sessions(in section: SessionSection) -> [Session] {
         store.sessions.filter { $0.section == section }
@@ -79,6 +108,10 @@ struct SidebarView: View {
                     }
                 }
             }
+            if store.state != .cliMissing {
+                Divider()
+                shortcutGuide
+            }
             if isSelectingFinished {
                 finishedSelectionBar
                 Divider()
@@ -109,7 +142,10 @@ struct SidebarView: View {
             NewSessionSheet(
                 store: store,
                 selectedID: $selectedID,
-                initialProjectDir: uiE2EInitialProjectDirectory
+                initialProjectDir: uiE2EInitialProjectDirectory,
+                projectPickerRoot: DirectoryPreference.configuredOrFallback(
+                    path: defaultProjectsDirectoryPath,
+                    fallback: FileManager.default.homeDirectoryForCurrentUser)
             )
         }
         .confirmationDialog(
@@ -126,15 +162,11 @@ struct SidebarView: View {
             Text(L10n.string(
                 "The selected Detach state directories and checkpoints will be permanently deleted. Provider transcripts in ~/.claude and ~/.codex will not be affected."))
         }
-        .alert(
-            L10n.string("Could not delete some sessions"),
-            isPresented: .init(
-                get: { finishedDeleteError != nil },
-                set: { if !$0 { finishedDeleteError = nil } })
-        ) {
-            Button(L10n.string("OK"), role: .cancel) {}
-        } message: {
-            Text(finishedDeleteError ?? "")
+        .alert(item: $failurePresentation) { failure in
+            Alert(
+                title: Text(failure.title),
+                message: Text(failure.message),
+                dismissButton: .cancel(Text(L10n.string("OK"))))
         }
         // The menu can request a sheet before reopening the main window, so
         // consume an already-pending request on the sidebar's first render.
@@ -142,6 +174,11 @@ struct SidebarView: View {
             guard requested else { return }
             showNewSession = true
             navigation.requestsNewSession = false
+        }
+        .onChange(of: navigation.quickChatRequestID, initial: true) { _, requestID in
+            guard requestID != nil else { return }
+            navigation.quickChatRequestID = nil
+            startQuickChat()
         }
         .onChange(of: deletableFinishedSessions.map(\.id)) { _, currentIDs in
             selectedFinishedIDs.formIntersection(currentIDs)
@@ -152,6 +189,45 @@ struct SidebarView: View {
         .navigationSplitViewColumnWidth(
             min: max(230, fontPointSize * 18),
             ideal: max(260, fontPointSize * 20))
+    }
+
+    private var shortcutGuide: some View {
+        LazyVGrid(
+            columns: [GridItem(.flexible()), GridItem(.flexible())],
+            alignment: .leading,
+            spacing: 6
+        ) {
+            ForEach(SidebarShortcutPresentation.hints) { hint in
+                HStack(spacing: 6) {
+                    Text(hint.shortcut)
+                        .appFont(.caption, weight: .semibold, design: .monospaced)
+                        .foregroundStyle(Brand.indigo)
+                    Text(isStartingQuickChat && hint.shortcut == "⌘T"
+                         ? L10n.string("Starting…") : hint.title)
+                        .appFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L10n.string("Keyboard shortcuts"))
+        .accessibilityIdentifier("sidebar-shortcut-guide")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+        .background {
+            if AppSettings.uiE2E != nil {
+                UIE2EGeometryProbe(
+                    identifier: "sidebar-shortcut-guide",
+                    semanticLabel: L10n.string("Keyboard shortcuts"),
+                    semanticRole: .group)
+            }
+        }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
     }
 
     @ViewBuilder
@@ -351,8 +427,30 @@ struct SidebarView: View {
             if failures.isEmpty {
                 isSelectingFinished = false
             } else {
-                finishedDeleteError = FinishedDeletionPresentation.errorMessage(
-                    for: failures)
+                failurePresentation = SidebarFailurePresentation(
+                    kind: .finishedDeletion,
+                    message: FinishedDeletionPresentation.errorMessage(
+                        for: failures))
+            }
+        }
+    }
+
+    private func startQuickChat() {
+        guard !isStartingQuickChat else { return }
+        isStartingQuickChat = true
+        failurePresentation = nil
+        Task { @MainActor in
+            let result = await QuickChatLaunch.start(
+                store: store,
+                providerRawValue: quickChatProvider,
+                directoryPath: quickChatDirectoryPath)
+            isStartingQuickChat = false
+            if let message = result.message {
+                failurePresentation = SidebarFailurePresentation(
+                    kind: .quickChat,
+                    message: message)
+            } else if let sessionID = result.sessionID {
+                selectedID = sessionID
             }
         }
     }

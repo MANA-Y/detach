@@ -39,4 +39,23 @@ final class SidebarViewTests: XCTestCase {
             FinishedDeletionPresentation.errorMessage(for: failures),
             "First task: still busy\nSecond task: permission denied")
     }
+
+    func testUsesOneTypedPresentationForSidebarFailures() {
+        let deletion = SidebarFailurePresentation(
+            kind: .finishedDeletion,
+            message: "delete failed")
+        let quickChat = SidebarFailurePresentation(
+            kind: .quickChat,
+            message: "start failed")
+
+        XCTAssertEqual(
+            deletion.title,
+            L10n.string("Could not delete some sessions"))
+        XCTAssertEqual(
+            quickChat.title,
+            L10n.string("Could not start quick chat"))
+        XCTAssertNotEqual(deletion.id, quickChat.id)
+        XCTAssertEqual(deletion.message, "delete failed")
+        XCTAssertEqual(quickChat.message, "start failed")
+    }
 }

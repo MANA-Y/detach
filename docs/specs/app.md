@@ -41,26 +41,19 @@ transient SMAppService Code=1 race. Do not replace a helper with active leases:
 defer the update. Report a normal reconciliation outcome and retry on the next
 activation.
 
-Each readiness build stores one `detach-app-build:<UUID>` in its executable and
-signed marker. UI smoke uses a stripped private copy at
-`/private/tmp/detach-ui-e2e.*`. It excludes production CLI, watchdog, helper,
-power, state, and tmux. Injections stay below its root. An escape,
+Each readiness build puts one `detach-app-build:<UUID>` in its executable and
+signed marker. UI smoke uses a stripped private copy below
+`/private/tmp/detach-ui-e2e.*` without production payloads. An escaped path,
 unsafe identity, build mismatch, or payload fails closed.
 
-Smoke restores focus and the pointer, then sends ordered AppKit down/up pairs to
-measured SwiftUI controls; semantic locators have no actions. Row clicks select
-sessions even after preview text takes focus.
-Each launch and stage meets its deadline. Journeys cover main surfaces,
+Smoke restores focus and the pointer and sends ordered AppKit events to measured
+visible controls; semantic probes have no actions. It covers main surfaces,
 Settings, onboarding, focus, Codex Recover, Claude Resume, reconnect, and App
-Start through typed-session selection and embedded PTY attach. It disconnects
-Stop before real control invocation.
-Only visible controls complete onboarding.
-
-Coverage builds the normal bundle, instrumented binary, and Swift tests in
-isolated paths. UI waits for the bundle; metrics wait for UI and Swift tests.
-Only the copy gets it. The binary and profiles stay out of public artifacts.
-If an overlay scroller ignores a page event, the driver reveals the measured
-semantic control, then posts the action to it.
+Start through typed selection and PTY attach. Stop disconnects before control
+invocation. Each stage has a deadline. Coverage isolates the normal bundle,
+instrumented copy, Swift tests, binary, and profiles. UI precedes metrics; only
+the private copy is instrumented. The driver reveals clipped controls before
+posting an action.
 
 The per-user watchdog adds a launch-readiness rule: macOS can report an approved
 agent as enabled while no launchd job loaded after approval. During first
@@ -175,6 +168,11 @@ control characters, blocks launch, and passes one `--name`. The launch button
 starts inside Detach. Advanced holds the prompt and grows down, top fixed. The
 app uses `display_name` as the title, with
 the project/internal name fallback for old records.
+Command-N opens main with New session. Its chooser starts in the General project
+folder or the selection's parent. Command-T opens main and calls
+`SessionStore.startDetached` without a sheet, with the General provider and
+folder (`/tmp` default). An invalid folder blocks launch; it deletes nothing.
+The sidebar shows Command-N, Command-T, Command-comma, and terminal Command-F.
 Notifications are opt-in. One poller deduplicates baseline and transitions.
 
 Sparkle 2 and SwiftTerm 1.19.0 are pinned. The exact SwiftTerm shader bundle is

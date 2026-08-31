@@ -7,6 +7,7 @@ struct NewSessionSheet: View {
 
     let store: SessionStore
     @Binding var selectedID: String?
+    let projectPickerRoot: URL
 
     @State private var projectDir: URL?
     @State private var provider: Provider = .claude
@@ -23,9 +24,11 @@ struct NewSessionSheet: View {
         initialName: String = "",
         showsAdvanced: Bool = false,
         initialProjectDir: URL? = nil,
-        initialLaunchFailure: String? = nil
+        initialLaunchFailure: String? = nil,
+        projectPickerRoot: URL = FileManager.default.homeDirectoryForCurrentUser
     ) {
         self.store = store
+        self.projectPickerRoot = projectPickerRoot
         _selectedID = selectedID
         _name = State(initialValue: initialName)
         _showAdvanced = State(initialValue: showsAdvanced)
@@ -306,7 +309,8 @@ struct NewSessionSheet: View {
     private func presentProjectChooser() {
         ProjectDirectoryChooser.present(
             from: PanelHostWindow.current(),
-            selectedProject: projectDir
+            selectedProject: projectDir,
+            defaultDirectory: projectPickerRoot
         ) { url in
             guard let url else { return }
             projectDir = url

@@ -117,10 +117,18 @@ The embedded terminal keeps the shortcuts that matter:
 
 | Action | Control |
 |---|---|
+| Open the standard New session sheet | `Cmd-N` |
+| Start a Quick chat immediately | `Cmd-T` |
 | Paste text | `Cmd-V` |
 | Give Codex or Claude Code an image from the clipboard | `Ctrl-V` |
 | Find terminal output | `Cmd-F` |
 | Replace an exited terminal client without restarting the agent | **Reconnect** |
+
+Settings → General selects the provider and working folder for Quick chat. The
+default folder is `/tmp`. The same settings page selects the default folder
+where the standard project chooser opens. Quick chat uses the normal managed
+session lifecycle; it does not automatically delete project files, Detach
+state, or provider transcripts.
 
 Start, Resume, and Recover run inside Detach and do not require an outer
 terminal. The selected external terminal remains available as a fallback for
@@ -154,6 +162,9 @@ Codex and Claude Code share one dashboard. Each managed session includes:
 - optional notifications for an answer, completion, failure, or recovery;
 - one stable identity color in the sidebar and the tmux status bar. Current
   Codex and Claude tasks avoid colors that are already in use.
+
+A compact guide below the session list keeps `Cmd-N`, `Cmd-T`, `Cmd-,`, and
+`Cmd-F` visible without opening a help screen.
 
 Sessions that wait for your reply move into **Answer ready**, before agents
 that are still working. Detach reads structured provider lifecycle records for
