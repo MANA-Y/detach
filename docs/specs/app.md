@@ -168,10 +168,10 @@ control characters, blocks launch, and passes one `--name`. The launch button
 starts inside Detach. Advanced holds the prompt and grows down, top fixed. The
 app uses `display_name` as the title, with
 the project/internal name fallback for old records.
-Command-N opens main with New session. Its chooser starts in the General project
-folder or the selection's parent. Command-T opens main and calls
-`SessionStore.startDetached` without a sheet, with the General provider and
-folder (`/tmp` default). An invalid folder blocks launch; it deletes nothing.
+Command-N opens New session in main. Its chooser starts at the configured project
+folder or the selection's parent. Command-T opens Quick Chat in main with the
+configured provider and folder (`/tmp` default). It selects the new typed
+`starting` session before runtime checks finish. Invalid folders block launch.
 The sidebar shows Command-N, Command-T, Command-comma, and terminal Command-F.
 Notifications are opt-in. One poller deduplicates baseline and transitions.
 
