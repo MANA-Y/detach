@@ -151,6 +151,7 @@ enum UIE2ETestDriver {
     }
 
     private static var started = false
+    private static var scenarioStartedAt = ProcessInfo.processInfo.systemUptime
     private static var scenarioDeadline = TimeInterval.greatestFiniteMagnitude
     private static var nextMouseEventNumber = Int(
         ProcessInfo.processInfo.systemUptime * 1_000)
@@ -163,7 +164,8 @@ enum UIE2ETestDriver {
         guard let configuration = AppSettings.uiE2E, !started else { return }
         started = true
         Task { @MainActor in
-            scenarioDeadline = ProcessInfo.processInfo.systemUptime
+            scenarioStartedAt = ProcessInfo.processInfo.systemUptime
+            scenarioDeadline = scenarioStartedAt
                 + Double(configuration.driverBudgetSeconds)
             trace(
                 "\(configuration.scenario) driver started "
@@ -178,7 +180,7 @@ enum UIE2ETestDriver {
             // A SwiftUI sheet can defer normal termination even after it is
             // dismissed. The validated test copy owns no durable state, so keep
             // the harness bounded after the atomic report is safely on disk.
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.25) {
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) {
                 _exit(EXIT_SUCCESS)
             }
         }
@@ -308,7 +310,7 @@ enum UIE2ETestDriver {
                     .count ?? 0
                 return attachCount >= 2
             }
-            try await waitUntil("reconnected session terminal", attempts: 40) {
+            try await waitUntil("reconnected session terminal", attempts: 80) {
                 find(identifier: "session-preview-terminal") != nil
             }
             checks.append(
@@ -337,13 +339,13 @@ enum UIE2ETestDriver {
                 name: "session UUID chip text",
                 offset: CGSize(width: 24, height: 0),
                 size: CGSize(width: 36, height: 18))
-            try await waitUntil("copied full UUID and confirmation", attempts: 15) {
+            try await waitUntil("copied full UUID and confirmation", attempts: 30) {
                 find(identifier: "session-uuid-chip").flatMap(label)
                     == L10n.string("Copied")
                     && NSPasteboard.general.changeCount > pasteboardGeneration
                     && NSPasteboard.general.string(forType: .string) == copiedUUID
             }
-            try await waitUntil("UUID copy confirmation reset", attempts: 25) {
+            try await waitUntil("UUID copy confirmation reset", attempts: 50) {
                 find(identifier: "session-uuid-chip").flatMap(label)
                     == L10n.string("Copy session UUID")
             }
@@ -365,7 +367,7 @@ enum UIE2ETestDriver {
                 return actions?.contains(
                     "resume --detach a9f58f1d-1234-5678-9abc-def012342ed9") == true
             }
-            try await waitUntil("resumed session attaches in app", attempts: 40) {
+            try await waitUntil("resumed session attaches in app", attempts: 80) {
                 find(identifier: "session-preview-terminal") != nil
             }
             checks.append("resume-runs-in-app-with-terminal-fallback")
@@ -377,16 +379,16 @@ enum UIE2ETestDriver {
                 runningRow,
                 name: "running session row",
                 resultIdentifier: "session-detail-\(runningID)")
-            try await waitUntil("live attach terminal", attempts: 40) {
+            try await waitUntil("live attach terminal", attempts: 80) {
                 find(identifier: "session-preview-terminal") != nil
             }
             checks.append("live-session-hosts-attach-client")
-            try await waitUntil("live terminal input readiness", attempts: 40) {
+            try await waitUntil("live terminal input readiness", attempts: 80) {
                 FileManager.default.fileExists(atPath: configuration.root
                     .appendingPathComponent("fake/control-v-ready").path)
             }
             try await keyPress("v", keyCode: 9, modifiers: [.control])
-            try await waitUntil("raw control-V reaches attach PTY", attempts: 40) {
+            try await waitUntil("raw control-V reaches attach PTY", attempts: 80) {
                 (try? Data(contentsOf: configuration.root
                     .appendingPathComponent("fake/control-v.bin"))) == Data([0x16])
             }
@@ -566,7 +568,7 @@ enum UIE2ETestDriver {
             var lastMaxY = pinnedTop
             var lastFrame = sheet.frame
             do {
-                try await waitUntil("new-session top edge stays fixed", attempts: 20) {
+                try await waitUntil("new-session top edge stays fixed", attempts: 40) {
                     guard let current = NSApp.windows.flatMap(\.sheets).first else {
                         return false
                     }
@@ -586,10 +588,10 @@ enum UIE2ETestDriver {
             guard NSApp.windows.contains(where: { !$0.sheets.isEmpty }) else {
                 throw Failure(message: "new-session launch is active without a project")
             }
-            try await clickMeasuredControl(
+            try await clickMeasuredUntil(
                 identifier: "new-session-cancel",
-                name: "new session cancel")
-            try await waitUntil("new-session sheet closes") {
+                name: "new session cancel",
+                outcome: "new-session sheet closes") {
                 NSApp.windows.allSatisfy(\.sheets.isEmpty)
             }
             checks.append("new-session-sheet-semantics")
@@ -620,7 +622,7 @@ enum UIE2ETestDriver {
             try await waitUntil("new session selection") {
                 find(identifier: "session-detail-\(startedID)") != nil
             }
-            try await waitUntil("new session embedded terminal", attempts: 40) {
+            try await waitUntil("new session embedded terminal", attempts: 80) {
                 find(identifier: "session-preview-terminal") != nil
                     && FileManager.default.fileExists(atPath: configuration.root
                         .appendingPathComponent(
@@ -721,7 +723,7 @@ enum UIE2ETestDriver {
         try requireSemanticControl(
             quickChatFolder, name: "quick chat folder")
         checks.append("settings-session-defaults-visible")
-        let codexProvider = try await buttonLabeled("Codex", attempts: 20)
+        let codexProvider = try await buttonLabeled("Codex", attempts: 40)
         try await clickUntil(
             codexProvider,
             name: "Codex quick chat provider",
@@ -759,7 +761,7 @@ enum UIE2ETestDriver {
         }
         checks.append("settings-window-stays-on-screen")
         let systemTab = try await buttonLabeled(
-            L10n.string("System"), attempts: 20)
+            L10n.string("System"), attempts: 40)
         try await click(systemTab, name: "System settings tab")
         try await revealGeometry(identifier: "settings-storage", name: "Storage")
         try await revealGeometry(
@@ -843,7 +845,9 @@ enum UIE2ETestDriver {
     }
 
     private static func trace(_ message: String) {
-        FileHandle.standardError.write(Data("UI e2e: \(message)\n".utf8))
+        let elapsed = ProcessInfo.processInfo.systemUptime - scenarioStartedAt
+        FileHandle.standardError.write(Data(String(
+            format: "UI e2e: +%.3fs %@\n", elapsed, message).utf8))
     }
 
     private static func captureGeneralPasteboard() -> [[NSPasteboard.PasteboardType: Data]] {
@@ -873,7 +877,7 @@ enum UIE2ETestDriver {
 
     private static func buttonLabeled(
         _ name: String,
-        attempts: Int = 100
+        attempts: Int = 200
     ) async throws -> any NSAccessibilityProtocol {
         var result: (any NSAccessibilityProtocol)?
         try await waitUntil("button \(name)", attempts: attempts) {
@@ -929,7 +933,7 @@ enum UIE2ETestDriver {
 
     private static func sheetButton(
         label: String,
-        attempts: Int = 100
+        attempts: Int = 200
     ) async throws
         -> any NSAccessibilityProtocol
     {
@@ -955,7 +959,7 @@ enum UIE2ETestDriver {
         for _ in 0..<3 {
             try await click(control, name: name)
             do {
-                return try await sheetButton(label: label, attempts: 10)
+                return try await sheetButton(label: label, attempts: 20)
             } catch {
                 continue
             }
@@ -965,7 +969,7 @@ enum UIE2ETestDriver {
 
     private static func waitUntil(
         _ description: String,
-        attempts: Int = 100,
+        attempts: Int = 200,
         condition: () -> Bool
     ) async throws {
         for _ in 0..<attempts {
@@ -974,7 +978,7 @@ enum UIE2ETestDriver {
                 throw Failure(
                     message: "scenario budget expired while waiting for \(description)")
             }
-            try await Task.sleep(nanoseconds: 100_000_000)
+            try await Task.sleep(nanoseconds: 50_000_000)
         }
         throw Failure(message: "timed out waiting for \(description)")
     }
@@ -1086,7 +1090,7 @@ enum UIE2ETestDriver {
                 name: "scroll toward \(name)",
                 owningWindow: measuredView.window)
             do {
-                try await waitUntil("visible \(name)", attempts: 10) {
+                try await waitUntil("visible \(name)", attempts: 4) {
                     measuredView.publishFrame()
                     guard let moved = UIE2EGeometryRegistry.frame(for: identifier)
                     else { return false }
@@ -1101,7 +1105,7 @@ enum UIE2ETestDriver {
                 if let scrollView = measuredView.enclosingScrollView {
                     scrollView.reflectScrolledClipView(scrollView.contentView)
                 }
-                try await waitUntil("fallback reveal for \(name)", attempts: 10) {
+                try await waitUntil("fallback reveal for \(name)", attempts: 20) {
                     measuredView.publishFrame()
                     guard let moved = UIE2EGeometryRegistry.frame(for: identifier)
                     else { return false }
@@ -1129,7 +1133,7 @@ enum UIE2ETestDriver {
             try await click(control, name: name)
             do {
                 try await waitUntil(
-                    "accessibility element \(resultIdentifier)", attempts: 10
+                    "accessibility element \(resultIdentifier)", attempts: 20
                 ) {
                     result = find(identifier: resultIdentifier)
                     return result != nil
@@ -1151,7 +1155,7 @@ enum UIE2ETestDriver {
         for _ in 0..<3 {
             try await click(control, name: name)
             do {
-                try await waitUntil(outcome, attempts: 10, condition: condition)
+                try await waitUntil(outcome, attempts: 20, condition: condition)
                 return
             } catch {
                 continue
@@ -1194,12 +1198,30 @@ enum UIE2ETestDriver {
         try await click(frame: screen, name: name, owningWindow: window)
     }
 
+    private static func clickMeasuredUntil(
+        identifier: String,
+        name: String,
+        outcome: String,
+        condition: () -> Bool
+    ) async throws {
+        for _ in 0..<3 {
+            try await clickMeasuredControl(identifier: identifier, name: name)
+            do {
+                try await waitUntil(outcome, attempts: 20, condition: condition)
+                return
+            } catch {
+                continue
+            }
+        }
+        throw Failure(message: "\(name) did not produce \(outcome)")
+    }
+
     private static func revealGeometry(
         identifier: String,
         name: String
     ) async throws {
         var view: UIE2EGeometryView?
-        try await waitUntil("\(name) geometry", attempts: 20) {
+        try await waitUntil("\(name) geometry", attempts: 40) {
             view = elements().compactMap { $0 as? UIE2EGeometryView }.first {
                 $0.identifierValue == identifier
             }
@@ -1299,7 +1321,7 @@ enum UIE2ETestDriver {
             mouseUp.post()
         }
         NSApp.postEvent(events[0], atStart: true)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await Task.sleep(nanoseconds: 60_000_000)
     }
 
     private static func moveCursor(
@@ -1346,7 +1368,7 @@ enum UIE2ETestDriver {
                 keyCode: keyCode)
             else { throw Failure(message: "cannot create settings keyboard event") }
             NSApp.postEvent(event, atStart: false)
-            try await Task.sleep(nanoseconds: 100_000_000)
+            try await Task.sleep(nanoseconds: 60_000_000)
         }
     }
 
