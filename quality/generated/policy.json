@@ -1463,6 +1463,13 @@
       "test_domain": "session-ui-source"
     },
     {
+      "pattern": "app/Sources/DetachApp/QuickChat.swift",
+      "priority": 870,
+      "release_domain": "safe",
+      "spec": "docs/specs/app.md",
+      "test_domain": "session-ui-source"
+    },
+    {
       "pattern": "app/Sources/DetachApp/TerminalPreferencePicker.swift",
       "priority": 870,
       "release_domain": "safe",
@@ -2813,6 +2820,7 @@
         "app/Sources/DetachApp/MenuBar*.swift",
         "app/Sources/DetachApp/NewSessionSheet.swift",
         "app/Sources/DetachApp/Onboarding*.swift",
+        "app/Sources/DetachApp/QuickChat.swift",
         "app/Sources/DetachApp/RootView.swift",
         "app/Sources/DetachApp/Session*.swift",
         "app/Sources/DetachApp/Settings*.swift",

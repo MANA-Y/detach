@@ -28,6 +28,26 @@ final class MacPowerSettingsPresentationTests: XCTestCase {
             "The native power helper is not registered yet.")
     }
 
+    func testPowerHelperHealthDoesNotReportFailureWhileChecking() {
+        for registrationStatus in [
+            PowerHelperRegistrationStatus.unavailable,
+            .enabled,
+        ] {
+            let presentation = PowerHelperSettingsPresentation(
+                registrationStatus: registrationStatus,
+                readinessConfirmed: false,
+                isChecking: true)
+            XCTAssertEqual(presentation.status, .unknown)
+            XCTAssertNil(presentation.detailLocalizationKey)
+        }
+
+        let approval = PowerHelperSettingsPresentation(
+            registrationStatus: .requiresApproval,
+            readinessConfirmed: false,
+            isChecking: true)
+        XCTAssertEqual(approval.status, .error)
+    }
+
     func testPowerHelperHealthExplainsRegistrationFailures() {
         let expected: [(PowerHelperRegistrationStatus, String)] = [
             (
