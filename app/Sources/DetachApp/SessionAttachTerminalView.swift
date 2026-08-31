@@ -27,13 +27,20 @@ final class SessionAttachLocalProcessTerminalView: LocalProcessTerminalView {
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        SessionAttachDroppedPaths.insertionText(from: sender.draggingPasteboard) == nil
-            ? [] : .copy
+        acceptedDragOperation(from: sender.draggingPasteboard)
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        acceptDroppedPaths(from: sender.draggingPasteboard)
+    }
+
+    func acceptedDragOperation(from pasteboard: NSPasteboard) -> NSDragOperation {
+        SessionAttachDroppedPaths.insertionText(from: pasteboard) == nil ? [] : .copy
+    }
+
+    func acceptDroppedPaths(from pasteboard: NSPasteboard) -> Bool {
         guard let text = SessionAttachDroppedPaths.insertionText(
-            from: sender.draggingPasteboard) else {
+            from: pasteboard) else {
             return false
         }
         window?.makeFirstResponder(self)
@@ -373,7 +380,7 @@ struct SessionAttachTerminalView: NSViewRepresentable {
             return (responder as? NSView)?.isDescendant(of: view) == true
         }
 
-        private static func perform(
+        static func perform(
             _ action: SessionAttachKeyboard.AppAction,
             in view: LocalProcessTerminalView
         ) {
