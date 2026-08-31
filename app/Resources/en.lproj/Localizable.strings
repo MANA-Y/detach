@@ -417,6 +417,18 @@
 "The live runtime disappeared, but a valid checkpoint can be recovered." = "The live runtime disappeared, but a valid checkpoint can be recovered.";
 "The live runtime disappeared without a valid recovery checkpoint." = "The live runtime disappeared without a valid recovery checkpoint.";
 
+/* Session shortcuts and defaults */
+"Quick chat" = "Quick chat";
+"Settings" = "Settings";
+"Find output" = "Find output";
+"Session defaults" = "Session defaults";
+"Default project folder" = "Default project folder";
+"Quick chat provider" = "Quick chat provider";
+"Quick chat folder" = "Quick chat folder";
+"⌘N opens New session. ⌘T starts Quick chat immediately." = "⌘N opens New session. ⌘T starts Quick chat immediately.";
+"Could not start quick chat" = "Could not start quick chat";
+"Quick chat folder is unavailable: %@" = "Quick chat folder is unavailable: %@";
+
 /* Menu bar item */
 "Open Detach" = "Open Detach";
 "New Session…" = "New Session…";

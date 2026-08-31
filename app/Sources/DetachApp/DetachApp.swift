@@ -136,6 +136,10 @@ private struct UIE2EConfigurationError: LocalizedError {
 
 enum AppSettings {
     static let defaultDetachPath = ("~/.local/bin/detach" as NSString).expandingTildeInPath
+    static let defaultProjectsDirectoryPath =
+        FileManager.default.homeDirectoryForCurrentUser.path
+    static let defaultQuickChatDirectoryPath = "/tmp"
+    static let defaultQuickChatProvider = Provider.claude.rawValue
     static let uiE2E = UIE2EConfiguration.fromEnvironment()
     static let initialDetachPath = uiE2E?.cli.path ?? defaultDetachPath
     static let defaults = makeDefaults(
@@ -165,6 +169,9 @@ enum AppSettings {
     static let lastShownTipIdentifierKey = "lastShownTipIdentifier"
     static let menuBarIconEnabledKey = "menuBarIconEnabled"
     static let menuBarShowsSessionCountKey = "menuBarShowsSessionCount"
+    static let defaultProjectsDirectoryKey = "defaultProjectsDirectory"
+    static let quickChatDirectoryKey = "quickChatDirectory"
+    static let quickChatProviderKey = "quickChatProvider"
 }
 
 /// App-level navigation requests from surfaces that live outside the main
@@ -172,6 +179,41 @@ enum AppSettings {
 final class MainNavigation: ObservableObject {
     @Published var requestedSessionID: String?
     @Published var requestsNewSession = false
+    @Published var quickChatRequestID: UUID?
+
+    func requestNewSession() {
+        requestsNewSession = true
+    }
+
+    func requestQuickChat() {
+        quickChatRequestID = UUID()
+    }
+}
+
+struct SessionCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+    @ObservedObject var navigation: MainNavigation
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button(L10n.string("New session")) {
+                navigation.requestNewSession()
+                showMainWindow()
+            }
+            .keyboardShortcut("n", modifiers: .command)
+
+            Button(L10n.string("Quick chat")) {
+                navigation.requestQuickChat()
+                showMainWindow()
+            }
+            .keyboardShortcut("t", modifiers: .command)
+        }
+    }
+
+    private func showMainWindow() {
+        openWindow(id: "main")
+        NSApp.activate(ignoringOtherApps: true)
+    }
 }
 
 /// Closing the last window must not terminate the app while the menu bar item
@@ -223,6 +265,7 @@ struct DetachApp: App {
                 .id(activeDetachPath) // reattach tasks when the CLI path changes
         }
         .commands {
+            SessionCommands(navigation: mainNavigation)
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesCommand(updater: updater)
             }

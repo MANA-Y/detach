@@ -417,6 +417,18 @@
 "The live runtime disappeared, but a valid checkpoint can be recovered." = "Живой runtime исчез, но доступна корректная контрольная точка для восстановления.";
 "The live runtime disappeared without a valid recovery checkpoint." = "Живой runtime исчез без корректной контрольной точки для восстановления.";
 
+/* Session shortcuts and defaults */
+"Quick chat" = "Быстрый чат";
+"Settings" = "Настройки";
+"Find output" = "Поиск в выводе";
+"Session defaults" = "Настройки сессий";
+"Default project folder" = "Папка проектов по умолчанию";
+"Quick chat provider" = "Провайдер быстрого чата";
+"Quick chat folder" = "Папка быстрого чата";
+"⌘N opens New session. ⌘T starts Quick chat immediately." = "⌘N открывает новую сессию. ⌘T сразу запускает быстрый чат.";
+"Could not start quick chat" = "Не удалось запустить быстрый чат";
+"Quick chat folder is unavailable: %@" = "Папка быстрого чата недоступна: %@";
+
 /* Menu bar item */
 "Open Detach" = "Открыть Detach";
 "New Session…" = "Новая сессия…";

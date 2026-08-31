@@ -175,7 +175,7 @@ private extension SettingsDestination {
     /// the selected tab like classic AppKit preference panes.
     var baseHeight: CGFloat {
         switch self {
-        case .general: 450
+        case .general: 620
         case .terminal: 460
         case .notifications: 350
         case .system: 780
@@ -211,6 +211,13 @@ struct SettingsView: View {
     private var menuBarIconEnabled = true
     @AppStorage(AppSettings.menuBarShowsSessionCountKey, store: AppSettings.defaults)
     private var menuBarShowsSessionCount = true
+    @AppStorage(AppSettings.defaultProjectsDirectoryKey, store: AppSettings.defaults)
+    private var defaultProjectsDirectoryPath =
+        AppSettings.defaultProjectsDirectoryPath
+    @AppStorage(AppSettings.quickChatDirectoryKey, store: AppSettings.defaults)
+    private var quickChatDirectoryPath = AppSettings.defaultQuickChatDirectoryPath
+    @AppStorage(AppSettings.quickChatProviderKey, store: AppSettings.defaults)
+    private var quickChatProvider = AppSettings.defaultQuickChatProvider
 
     @State private var terminalApplications: [TerminalApplication] = []
     @State private var terminalIcons: [String: NSImage] = [:]
@@ -518,6 +525,30 @@ struct SettingsView: View {
 #endif
 // quality-coverage:end ui-e2e-instrumentation
             }
+            Section(L10n.string("Session defaults")) {
+                directoryPreferenceRow(
+                    title: L10n.string("Default project folder"),
+                    path: $defaultProjectsDirectoryPath,
+                    accessibilityIdentifier: "settings-default-project-folder")
+                Picker(
+                    L10n.string("Quick chat provider"),
+                    selection: $quickChatProvider
+                ) {
+                    ForEach(Provider.allCases, id: \.self) { provider in
+                        Text(verbatim: provider == .claude ? "Claude Code" : "Codex")
+                            .tag(provider.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("settings-quick-chat-provider")
+                directoryPreferenceRow(
+                    title: L10n.string("Quick chat folder"),
+                    path: $quickChatDirectoryPath,
+                    accessibilityIdentifier: "settings-quick-chat-folder")
+                Text(L10n.string(
+                    "⌘N opens New session. ⌘T starts Quick chat immediately."))
+                    .settingsMessage()
+            }
             Section(L10n.string("Menu Bar")) {
                 Toggle(
                     L10n.string("Show Detach in the menu bar"),
@@ -554,6 +585,43 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func directoryPreferenceRow(
+        title: String,
+        path: Binding<String>,
+        accessibilityIdentifier: String
+    ) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+            Spacer(minLength: 12)
+            Text(path.wrappedValue)
+                .appFont(.body, design: .monospaced)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(path.wrappedValue)
+            Button(L10n.string("Choose…")) {
+                presentDirectoryChooser(path: path)
+            }
+            .accessibilityIdentifier(accessibilityIdentifier)
+        }
+    }
+
+    @MainActor
+    private func presentDirectoryChooser(path: Binding<String>) {
+        let fallback = FileManager.default.homeDirectoryForCurrentUser
+        let start = DirectoryPreference.configuredOrFallback(
+            path: path.wrappedValue,
+            fallback: fallback)
+        ProjectDirectoryChooser.present(
+            from: PanelHostWindow.current(),
+            selectedProject: nil,
+            defaultDirectory: start
+        ) { url in
+            guard let url else { return }
+            path.wrappedValue = url.standardizedFileURL.path
+        }
     }
 
     private func applyFontPointSize() {

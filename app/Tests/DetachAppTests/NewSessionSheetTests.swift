@@ -198,6 +198,17 @@ final class NewSessionSheetTests: XCTestCase {
             FileManager.default.homeDirectoryForCurrentUser)
     }
 
+    func testProjectChooserUsesTheConfiguredRootWhenNothingIsSelected() {
+        let configured = URL(
+            fileURLWithPath: "/tmp/Projects",
+            isDirectory: true)
+        XCTAssertEqual(
+            ProjectDirectoryChooser.startingDirectory(
+                selectedProject: nil,
+                defaultDirectory: configured),
+            configured)
+    }
+
     func testOpenPanelPresentationKeepsOnlyAnOKSelection() {
         let url = URL(fileURLWithPath: "/Applications/Terminal.app")
         XCTAssertEqual(
