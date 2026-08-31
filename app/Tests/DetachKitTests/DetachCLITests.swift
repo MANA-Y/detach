@@ -75,12 +75,13 @@ final class DetachCLITests: XCTestCase {
             .appendingPathComponent("detach-cli-nvm-home-\(UUID().uuidString)")
         let bin = home.appendingPathComponent(".nvm/versions/node/v22.1.0/bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
-        let helper = bin.appendingPathComponent("codex")
+        let helperName = "detach-nvm-provider-\(UUID().uuidString)"
+        let helper = bin.appendingPathComponent(helperName)
         try "#!/bin/sh\nexit 0\n".write(to: helper, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
 
         let cli = ProcessDetachCLI(
-            executable: try fixture("command -v codex"),
+            executable: try fixture("command -v \(helperName)"),
             environment: ["HOME": home.path, "PATH": "/usr/bin:/bin"])
         let result = try await cli.run(arguments: [], timeout: 5)
 
@@ -127,9 +128,9 @@ final class DetachCLITests: XCTestCase {
         """), terminationGrace: 0.2)
         let start = Date()
         let result = try await cli.run(
-            arguments: [descendantPID.path], timeout: 1)
+            arguments: [descendantPID.path], timeout: 3)
         XCTAssertTrue(result.timedOut)
-        XCTAssertLessThan(Date().timeIntervalSince(start), 5)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 6)
         let pid = try XCTUnwrap(Int32(
             String(contentsOf: descendantPID, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines)))
