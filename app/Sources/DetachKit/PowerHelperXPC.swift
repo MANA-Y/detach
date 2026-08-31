@@ -37,6 +37,11 @@ public enum PowerHelperXPCContract {
 
     @objc(cancelUnregistrationWithReply:)
     func cancelUnregistration(reply: @escaping (NSError?) -> Void)
+
+    @objc(setLowBatteryThresholdWithPercent:reply:)
+    func setLowBatteryThreshold(
+        percent: Int,
+        reply: @escaping (NSError?) -> Void)
 }
 
 public protocol PowerHelperXPCTransport: Sendable {
@@ -52,16 +57,19 @@ public protocol PowerHelperXPCTransport: Sendable {
     func releaseLease(_ identity: PowerLeaseIdentity) throws
     func prepareForUnregistration() throws
     func cancelUnregistration() throws
+    func setLowBatteryThreshold(_ percent: Int) throws
 }
 
 public protocol PowerHelperLifecycleClient: Sendable {
     func prepareForUnregistration() throws
     func cancelUnregistration() throws
+    func setLowBatteryThreshold(_ percent: Int) throws
 }
 
 public enum PowerHelperLifecycleError: Error, Equatable, Sendable {
     case activeLeases
     case serviceQuiescing
+    case invalidLowBatteryThreshold
 }
 
 extension PowerHelperLifecycleError: LocalizedError {
@@ -71,6 +79,8 @@ extension PowerHelperLifecycleError: LocalizedError {
             return "active power leases prevent helper unregistration"
         case .serviceQuiescing:
             return "power helper is preparing to unregister"
+        case .invalidLowBatteryThreshold:
+            return "low-battery threshold must be 10, 15, or 20"
         }
     }
 }
@@ -263,6 +273,18 @@ public final class NSXPCPowerHelperTransport: PowerHelperXPCTransport, @unchecke
         }
     }
 
+    public func setLowBatteryThreshold(_ percent: Int) throws {
+        let _: Bool = try perform { proxy, completion in
+            proxy.setLowBatteryThreshold(percent: percent) { error in
+                if let error {
+                    completion(.failure(error))
+                } else {
+                    completion(.success(true))
+                }
+            }
+        }
+    }
+
     private func perform<Value>(
         timeout requestTimeout: TimeInterval? = nil,
         _ request: (
@@ -354,6 +376,14 @@ public struct PowerHelperXPCClient: PowerHelperClient, PowerHelperLifecycleClien
         }
     }
 
+    public func setLowBatteryThreshold(_ percent: Int) throws {
+        do {
+            try transport.setLowBatteryThreshold(percent)
+        } catch {
+            throw Self.lifecycleError(for: error)
+        }
+    }
+
     private static func lifecycleError(for error: Error) -> Error {
         let nsError = error as NSError
         guard nsError.domain == PowerHelperXPCService.errorDomain else {
@@ -364,6 +394,8 @@ public struct PowerHelperXPCClient: PowerHelperClient, PowerHelperLifecycleClien
             return PowerHelperLifecycleError.activeLeases
         case PowerHelperXPCService.ErrorCode.serviceQuiescing.rawValue:
             return PowerHelperLifecycleError.serviceQuiescing
+        case PowerHelperXPCService.ErrorCode.invalidLowBatteryThreshold.rawValue:
+            return PowerHelperLifecycleError.invalidLowBatteryThreshold
         default:
             return error
         }

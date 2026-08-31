@@ -132,7 +132,7 @@ the next launch. An ordinary helper SIGTERM/SIGINT uses only the process-local
 termination gate and must not create persistent update state.
 
 Settings → System owns one **Mac Power** block. It shows the sleep state,
-component health, the 10% battery rule, and the correct action. Helper Ready
+component health, the 10–20% battery floor, and the correct action. Helper Ready
 requires a doctor-confirmed live XPC connection. Registration alone is Needs
 attention. Power state comes from a healthy watchdog heartbeat no older than
 three minutes. A missing, stale, or malformed snapshot means `unknown`. Refresh
