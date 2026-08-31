@@ -103,6 +103,14 @@ final class QuickChatTests: XCTestCase {
                 L10n.string("Settings"),
                 L10n.string("Find output"),
             ])
+        XCTAssertEqual(
+            SidebarShortcutPresentation.hints.map(\.id),
+            ["⌘N", "⌘T", "⌘,", "⌘F"])
+    }
+
+    func testSessionCommandsBuildWithTheSharedNavigation() {
+        let commands = SessionCommands(navigation: MainNavigation())
+        _ = commands.body
     }
 }
 

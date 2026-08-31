@@ -213,7 +213,21 @@ struct SidebarView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L10n.string("Keyboard shortcuts"))
         .accessibilityIdentifier("sidebar-shortcut-guide")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+        .background {
+            if AppSettings.uiE2E != nil {
+                UIE2EGeometryProbe(
+                    identifier: "sidebar-shortcut-guide",
+                    semanticLabel: L10n.string("Keyboard shortcuts"),
+                    semanticRole: .group)
+            }
+        }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
     }
 
     @ViewBuilder

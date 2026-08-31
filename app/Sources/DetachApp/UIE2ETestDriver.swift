@@ -250,6 +250,10 @@ enum UIE2ETestDriver {
             try requireGeometry(dashboard, name: "dashboard")
             checks.append("dashboard-accessible")
             trace("dashboard accessible")
+            let shortcutGuide = try await element(
+                identifier: "sidebar-shortcut-guide")
+            try requireGeometry(shortcutGuide, name: "sidebar shortcut guide")
+            checks.append("sidebar-shortcut-guide-visible")
 
             let recoverableID = "detach-codex-ui-recoverable"
             let recoverableRow = try await element(
@@ -593,9 +597,11 @@ enum UIE2ETestDriver {
 
             try Data().write(to: configuration.root.appendingPathComponent(
                 "fake/enable-new-session-project"), options: .atomic)
-            try await click(newSession, name: "new session action")
+            try await activate(mainWindow)
+            try await keyPress("n", keyCode: 45, modifiers: [.command])
             _ = try await measuredFrame(
                 identifier: "new-session-sheet", name: "new session sheet")
+            checks.append("new-session-command-opens-sheet")
             try await waitUntil("enabled new session launch") {
                 find(identifier: "new-session-launch").map(isEnabled) == true
             }
@@ -634,6 +640,19 @@ enum UIE2ETestDriver {
                 to: configuration.fixtureState, options: .atomic)
             checks.append(try await verifyFailurePresentation(in: mainWindow))
             checks.append(contentsOf: try await verifySettings(in: mainWindow))
+
+            try Data("sessions\n".utf8).write(
+                to: configuration.fixtureState, options: .atomic)
+            try await activate(mainWindow)
+            try await keyPress("t", keyCode: 17, modifiers: [.command])
+            try await waitUntil("quick chat reaches fake CLI") {
+                FileManager.default.fileExists(atPath: configuration.root
+                    .appendingPathComponent("fake/quick-chat-started").path)
+            }
+            try await waitUntil("quick chat selection") {
+                find(identifier: "session-detail-detach-codex-ui-quick") != nil
+            }
+            checks.append("quick-chat-command-starts-session")
 
             try await restoreFocus(
                 to: previousFrontmost, policy: previousActivationPolicy)
@@ -689,6 +708,44 @@ enum UIE2ETestDriver {
                     forKey: AppSettings.tipsEnabledKey) != priorTips
             }
         checks.append("settings-change-persists")
+        let defaultProjectFolder = try await element(
+            identifier: "settings-default-project-folder")
+        let quickChatProvider = try await element(
+            identifier: "settings-quick-chat-provider")
+        let quickChatFolder = try await element(
+            identifier: "settings-quick-chat-folder")
+        try requireSemanticControl(
+            defaultProjectFolder, name: "default project folder")
+        try requireSemanticControl(
+            quickChatProvider, name: "quick chat provider")
+        try requireSemanticControl(
+            quickChatFolder, name: "quick chat folder")
+        checks.append("settings-session-defaults-visible")
+        let codexProvider = try await buttonLabeled("Codex", attempts: 20)
+        try await clickUntil(
+            codexProvider,
+            name: "Codex quick chat provider",
+            outcome: "quick chat provider persists") {
+                AppSettings.defaults.string(
+                    forKey: AppSettings.quickChatProviderKey)
+                    == Provider.codex.rawValue
+            }
+        checks.append("settings-quick-chat-provider-persists")
+        _ = try await clickUntilElement(
+            quickChatFolder,
+            name: "quick chat folder",
+            resultIdentifier: "open-panel")
+        let openPanels = (NSApp.windows + NSApp.windows.flatMap(\.sheets))
+            .compactMap { $0 as? NSOpenPanel }
+        guard let openPanel = openPanels.first else {
+            throw Failure(message: "quick chat folder panel is not an open panel")
+        }
+        openPanel.cancel(nil)
+        try await waitUntil("quick chat folder panel closes") {
+            find(identifier: "open-panel") == nil
+                && NSApp.windows.allSatisfy(\.sheets.isEmpty)
+        }
+        checks.append("settings-quick-chat-folder-panel")
         guard let settingsWindow = UIE2EEventWindowResolver.owner(of: tipsToggle)
         else {
             throw Failure(message: "Settings window is missing")
@@ -986,6 +1043,8 @@ enum UIE2ETestDriver {
     private static func usesMeasuredGeometry(_ identifier: String) -> Bool {
         identifier == "new-session-button"
             || identifier == "settings-show-tips"
+            || identifier.hasPrefix("settings-default-project-")
+            || identifier.hasPrefix("settings-quick-chat-")
             || identifier.hasPrefix("new-session-")
             || identifier.hasPrefix("onboarding-")
             || identifier.hasPrefix("finished-")

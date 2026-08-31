@@ -23,6 +23,8 @@ approved_invocation() {
     'resume --detach a9f58f1d-1234-5678-9abc-def012342ed9'|\
     'claude attach detach-claude-ui-completed'|\
     'claude --detach'|\
+    'codex --detach'|\
+    'codex attach detach-codex-ui-quick'|\
     'claude attach detach-claude-ui-new'|\
     'codex stop detach-codex-ui-running'|\
     'codex delete --force detach-codex-ui-stopped'|\
@@ -315,11 +317,13 @@ run_app_scenario() {
       new-session-starts-without-outer-terminal|\
       new-session-start-opens-embedded-terminal) ;;
       dashboard-accessible) pass=SC-UI-DASHBOARD ;;
+      sidebar-shortcut-guide-visible) ;;
       sidebar-selects-completed-session) ;;
       bulk-delete-reaches-fake-cli) pass=SC-UI-SESSION-DELETE ;;
       session-signals-stay-distinct) pass=SC-UI-SESSION-DETAIL ;;
       safe-action-reaches-fake-cli) pass=SC-UI-SESSION-STOP ;;
       new-session-sheet-semantics) pass=SC-UI-NEW-SESSION ;;
+      new-session-command-opens-sheet) ;;
       empty-dashboard-state) pass=SC-UI-EMPTY ;;
       installed-app-focus-restored) pass=SC-UI-FOCUS ;;
       actionable-failure-presentation) pass=SC-UI-FAILURE ;;
@@ -327,6 +331,10 @@ run_app_scenario() {
       onboarding-detects-provider) pass=SC-UI-ONBOARD-PROVIDER ;;
       onboarding-explains-approval) pass=SC-UI-ONBOARD-APPROVAL ;;
       settings-change-persists) pass=SC-UI-SETTINGS ;;
+      settings-session-defaults-visible) ;;
+      settings-quick-chat-provider-persists) ;;
+      settings-quick-chat-folder-panel) ;;
+      quick-chat-command-starts-session) ;;
       *) printf 'UI e2e: unowned check: %s\n' "$check" >&2; exit 1 ;;
     esac
     if [ -n "${pass:-}" ]; then
@@ -341,6 +349,7 @@ run_app_scenario() {
 run_app_scenario main sessions 32 \
   background-app-starts-without-focus \
   dashboard-accessible \
+  sidebar-shortcut-guide-visible \
   recover-and-reconnect-run-in-app-with-terminal-fallback \
   sidebar-selects-completed-session \
   session-uuid-copies-from-text-side \
@@ -355,12 +364,17 @@ run_app_scenario main sessions 32 \
   new-session-starts-without-outer-terminal \
   new-session-advanced-keeps-top-edge \
   new-session-sheet-semantics \
+  new-session-command-opens-sheet \
   new-session-start-opens-embedded-terminal \
   empty-dashboard-state \
   actionable-failure-presentation \
   settings-change-persists \
+  settings-session-defaults-visible \
+  settings-quick-chat-provider-persists \
+  settings-quick-chat-folder-panel \
   settings-window-stays-on-screen \
   settings-system-reveals-storage-and-installation \
+  quick-chat-command-starts-session \
   installed-app-focus-restored
 run_app_scenario onboarding-first-run empty 8 onboarding-first-run-completes
 run_app_scenario onboarding-provider empty 8 onboarding-detects-provider
@@ -380,6 +394,9 @@ done <"$FAKE_DIR/invocations.log"
 [ "$(grep -Fxc 'codex attach detach-codex-ui-recoverable' \
   "$FAKE_DIR/invocations.log")" -ge 2 ]
 [ "$(grep -Fxc 'claude --detach' "$FAKE_DIR/invocations.log")" -eq 1 ]
+[ "$(grep -Fxc 'codex --detach' "$FAKE_DIR/invocations.log")" -eq 1 ]
+[ "$(grep -Fxc 'codex attach detach-codex-ui-quick' \
+  "$FAKE_DIR/invocations.log")" -ge 1 ]
 [ "$(grep -Fxc 'claude attach detach-claude-ui-new' \
   "$FAKE_DIR/invocations.log")" -ge 1 ]
 

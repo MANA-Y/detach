@@ -541,6 +541,18 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("settings-quick-chat-provider")
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                .overlay {
+                    if AppSettings.uiE2E != nil {
+                        UIE2EGeometryProbe(
+                            identifier: "settings-quick-chat-provider",
+                            semanticLabel: L10n.string("Quick chat provider"),
+                            semanticRole: .radioGroup)
+                    }
+                }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
                 directoryPreferenceRow(
                     title: L10n.string("Quick chat folder"),
                     path: $quickChatDirectoryPath,
@@ -605,6 +617,18 @@ struct SettingsView: View {
                 presentDirectoryChooser(path: path)
             }
             .accessibilityIdentifier(accessibilityIdentifier)
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+            .overlay {
+                if AppSettings.uiE2E != nil {
+                    UIE2EGeometryProbe(
+                        identifier: accessibilityIdentifier,
+                        semanticLabel: title,
+                        semanticRole: .button)
+                }
+            }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
         }
     }
 
