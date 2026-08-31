@@ -443,7 +443,10 @@ struct SidebarView: View {
             let result = await QuickChatLaunch.start(
                 store: store,
                 providerRawValue: quickChatProvider,
-                directoryPath: quickChatDirectoryPath)
+                directoryPath: quickChatDirectoryPath,
+                onSessionAvailable: { sessionID in
+                    selectedID = sessionID
+                })
             isStartingQuickChat = false
             if let message = result.message {
                 failurePresentation = SidebarFailurePresentation(
