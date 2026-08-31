@@ -1,24 +1,33 @@
 ---
-name: detach-cli
+name: detach
 description: >-
-  Inspects managed Codex and Claude Code sessions through the installed
-  detach CLI. Use when the user asks whether a Detach session finished,
-  is waiting, can sleep, or when they mention detach list, detach logs,
-  detach power, a managed tmux run, or Mac sleep protection.
+  Operates the installed Detach harness through the public detach CLI.
+  Inspects managed Codex and Claude Code sessions. Use when the user
+  asks whether a Detach session finished, is waiting, or whether the Mac
+  can sleep, or when they mention detach list, detach logs, detach power,
+  a managed tmux run, or Mac sleep protection.
 ---
 
-# Detach CLI
+# Detach harness
 
-`detach` is the public CLI. Prefer `--json`. Do not invent flags. Do not wrap
-this CLI as an MCP server.
+Detach is the process, recovery, and power layer around Codex CLI and Claude
+Code. `detach` is the public CLI. Prefer `--json`. Do not invent flags. Do not
+wrap this CLI as an MCP server.
 
-`AGENTS.md` is for people who change Detach. This skill is for operators of an
-installed `detach` on the same Mac.
+`AGENTS.md` is for people who change Detach. This skill is for any agent that
+operates an installed harness on the same Mac.
+
+## Hosts
+
+This file is an Agent Skill (`SKILL.md`). Detach keeps the source at
+`.agents/skills/detach/`. Cursor and Codex load that path in a project.
+Claude Code loads `.claude/skills/`. Copy this folder into a host or personal
+skills directory when the host does not scan `.agents/skills/`.
 
 ## Default loop
 
-Use this path when the user asks about a long Detach run (migration, test-and-fix,
-audit) after they closed the terminal.
+Use this path when the user asks about a long Detach run (migration,
+test-and-fix, audit) after they closed the terminal.
 
 1. Confirm `detach` is on `PATH`. If it is missing, tell the user to open
    Detach.app and finish setup. Do not install from the git URL.
@@ -37,8 +46,8 @@ cd ~/work/billing
 detach codex --detach --name "billing migration" -- "run the queued schema migration and fix the test suite"
 ```
 
-Next morning, "Did the billing migration finish? Can the Mac sleep?" means
-steps 2–6. It does not mean Attach, Stop, or a second start in that worktree.
+Later, "Did the billing migration finish? Can the Mac sleep?" means steps 2–6.
+It does not mean Attach, Stop, or a second start in that worktree.
 
 ## JSON fields
 
@@ -78,7 +87,7 @@ detach cleanup --dry-run --json
 ```
 
 Pass `--` before a `session_name` that could look like an option. Bound log
-quotes. Do not dump a whole retained pane into chat.
+quotes. Do not dump a whole retained pane into the conversation.
 
 ## Start
 
