@@ -9,6 +9,27 @@ enum FinishedDeletionPresentation {
     }
 }
 
+struct SidebarFailurePresentation: Equatable, Identifiable {
+    enum Kind: Hashable {
+        case finishedDeletion
+        case quickChat
+    }
+
+    let kind: Kind
+    let message: String
+
+    var id: Kind { kind }
+
+    var title: String {
+        switch kind {
+        case .finishedDeletion:
+            L10n.string("Could not delete some sessions")
+        case .quickChat:
+            L10n.string("Could not start quick chat")
+        }
+    }
+}
+
 struct SidebarView: View {
     @Environment(\.appFontPointSize) private var fontPointSize
     let store: SessionStore
@@ -23,12 +44,11 @@ struct SidebarView: View {
     private var quickChatProvider = AppSettings.defaultQuickChatProvider
     @State private var showNewSession = false
     @State private var isStartingQuickChat = false
-    @State private var quickChatFailure: String?
+    @State private var failurePresentation: SidebarFailurePresentation?
     @State private var isSelectingFinished = false
     @State private var selectedFinishedIDs: Set<String> = []
     @State private var confirmFinishedDelete = false
     @State private var isDeletingFinished = false
-    @State private var finishedDeleteError: String?
 
     private func sessions(in section: SessionSection) -> [Session] {
         store.sessions.filter { $0.section == section }
@@ -142,25 +162,11 @@ struct SidebarView: View {
             Text(L10n.string(
                 "The selected Detach state directories and checkpoints will be permanently deleted. Provider transcripts in ~/.claude and ~/.codex will not be affected."))
         }
-        .alert(
-            L10n.string("Could not delete some sessions"),
-            isPresented: .init(
-                get: { finishedDeleteError != nil },
-                set: { if !$0 { finishedDeleteError = nil } })
-        ) {
-            Button(L10n.string("OK"), role: .cancel) {}
-        } message: {
-            Text(finishedDeleteError ?? "")
-        }
-        .alert(
-            L10n.string("Could not start quick chat"),
-            isPresented: .init(
-                get: { quickChatFailure != nil },
-                set: { if !$0 { quickChatFailure = nil } })
-        ) {
-            Button(L10n.string("OK"), role: .cancel) {}
-        } message: {
-            Text(quickChatFailure ?? "")
+        .alert(item: $failurePresentation) { failure in
+            Alert(
+                title: Text(failure.title),
+                message: Text(failure.message),
+                dismissButton: .cancel(Text(L10n.string("OK"))))
         }
         // The menu can request a sheet before reopening the main window, so
         // consume an already-pending request on the sidebar's first render.
@@ -407,8 +413,10 @@ struct SidebarView: View {
             if failures.isEmpty {
                 isSelectingFinished = false
             } else {
-                finishedDeleteError = FinishedDeletionPresentation.errorMessage(
-                    for: failures)
+                failurePresentation = SidebarFailurePresentation(
+                    kind: .finishedDeletion,
+                    message: FinishedDeletionPresentation.errorMessage(
+                        for: failures))
             }
         }
     }
@@ -416,7 +424,7 @@ struct SidebarView: View {
     private func startQuickChat() {
         guard !isStartingQuickChat else { return }
         isStartingQuickChat = true
-        quickChatFailure = nil
+        failurePresentation = nil
         Task { @MainActor in
             let result = await QuickChatLaunch.start(
                 store: store,
@@ -424,7 +432,9 @@ struct SidebarView: View {
                 directoryPath: quickChatDirectoryPath)
             isStartingQuickChat = false
             if let message = result.message {
-                quickChatFailure = message
+                failurePresentation = SidebarFailurePresentation(
+                    kind: .quickChat,
+                    message: message)
             } else if let sessionID = result.sessionID {
                 selectedID = sessionID
             }
