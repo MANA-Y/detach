@@ -6,6 +6,7 @@ ROOT="$(cd -P "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/app/build/Detach.app"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/detach-ui-e2e-contract.XXXXXX")"
 FAKE_ROOT=""
+FAKE_QUICK_ROOT=""
 
 cleanup() {
   case "$TMP_ROOT" in
@@ -13,6 +14,9 @@ cleanup() {
   esac
   case "$FAKE_ROOT" in
     /private/tmp/detach-ui-e2e.contract.*) rm -rf "$FAKE_ROOT" ;;
+  esac
+  case "$FAKE_QUICK_ROOT" in
+    /private/tmp/detach-chat-contract.*) rm -rf "$FAKE_QUICK_ROOT" ;;
   esac
 }
 trap cleanup EXIT
@@ -95,6 +99,19 @@ if run_fake config tmux-style detach >/dev/null 2>&1; then
   printf 'Fake UI CLI accepted a Settings mutation\n' >&2
   exit 1
 fi
+
+FAKE_QUICK_ROOT="$(mktemp -d /private/tmp/detach-chat-contract.XXXXXX)"
+chmod 0700 "$FAKE_QUICK_ROOT"
+(
+  cd "$FAKE_QUICK_ROOT"
+  run_fake codex --detach
+)
+printf 'sessions\n' >"$FAKE_STATE"
+quick_json="$(run_fake list --json | tail -n 1)"
+[ "$(printf '%s\n' "$quick_json" \
+  | plutil -extract session_name raw -o - -)" = detach-codex-ui-quick ]
+[ "$(printf '%s\n' "$quick_json" \
+  | plutil -extract project_dir raw -o - -)" = "$FAKE_QUICK_ROOT" ]
 
 mkdir -p "$TMP_ROOT/mismatch.app/Contents/MacOS" \
   "$TMP_ROOT/mismatch.app/Contents/Resources"
