@@ -2,6 +2,7 @@ import AppKit
 import Darwin
 import DetachKit
 import Foundation
+import SwiftTerm
 
 @MainActor
 enum UIE2EControlFault {
@@ -396,6 +397,28 @@ enum UIE2ETestDriver {
                 find(identifier: "session-preview-terminal") != nil
             }
             checks.append("live-session-hosts-attach-client")
+            try await waitUntil("event-driven terminal renderer", attempts: 80) {
+                guard let terminal = find(
+                    identifier: "session-preview-terminal")
+                    as? LocalProcessTerminalView else {
+                    return false
+                }
+                return SessionAttachRendering
+                    .hasEnergyEfficientMetalRenderer(in: terminal)
+            }
+            guard let liveTerminal = find(
+                identifier: "session-preview-terminal")
+                as? LocalProcessTerminalView else {
+                throw Failure(message: "live terminal is not a SwiftTerm view")
+            }
+            liveTerminal.terminal.setCursorStyle(.blinkUnderline)
+            guard liveTerminal.terminal.options.cursorStyle.tagName
+                    == CursorStyle.steadyUnderline.tagName,
+                  SessionAttachRendering.hasEnergyEfficientMetalRenderer(
+                    in: liveTerminal) else {
+                throw Failure(message: "live terminal retained a blinking cursor timer")
+            }
+            checks.append("live-terminal-renders-on-demand")
             try await waitUntil("live terminal input readiness", attempts: 80) {
                 FileManager.default.fileExists(atPath: configuration.root
                     .appendingPathComponent("fake/control-v-ready").path)

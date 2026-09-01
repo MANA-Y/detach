@@ -307,6 +307,7 @@ run_app_scenario() {
       background-app-starts-without-focus|disconnected-stop-blocks-action|\
       finished-selection-clears-scrollbar|session-uuid-copies-from-text-side|\
       live-session-hosts-attach-client|\
+      live-terminal-renders-on-demand|\
       live-terminal-routes-control-v|\
       recover-and-reconnect-run-in-app-with-terminal-fallback|\
       resume-runs-in-app-with-terminal-fallback|\
@@ -359,6 +360,7 @@ run_app_scenario main sessions 32 \
   resume-runs-in-app-with-terminal-fallback \
   session-shortcut-selects-assigned-session \
   live-session-hosts-attach-client \
+  live-terminal-renders-on-demand \
   live-terminal-routes-control-v \
   session-signals-stay-distinct \
   disconnected-stop-blocks-action \

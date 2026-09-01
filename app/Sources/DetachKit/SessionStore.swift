@@ -103,35 +103,44 @@ public final class SessionStore {
         foreground ? baseInterval : max(baseInterval * 5, 10)
     }
 
-    public func refresh() async {
+    /// Returns this request's valid typed snapshot even when a newer refresh
+    /// owns publication to the shared store.
+    @discardableResult
+    public func refresh() async -> [Session] {
         refreshGeneration &+= 1
         let generation = refreshGeneration
         let cli = self.cli
         do {
             let result = try await cli.run(arguments: ["list", "--json"], timeout: 5)
-            // Polling, explicit refreshes, and CLI reconfiguration may overlap
-            // while their subprocesses are suspended. Only the latest request
-            // may publish state or notify transition consumers.
-            guard generation == refreshGeneration else { return }
             guard result.exitCode == 0, !result.timedOut else {
-                state = .error(result.timedOut ? L10n.string("detach list timed out")
-                               : result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
-                return
+                if generation == refreshGeneration {
+                    state = .error(result.timedOut ? L10n.string("detach list timed out")
+                                   : result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+                }
+                return []
             }
             let parsed = SessionListParser.parse(result.stdout)
             if parsed.hadInvalidLines {
-                state = .incompatible // spec: never update the list from bad data
-                return
+                if generation == refreshGeneration {
+                    state = .incompatible // spec: never update the list from bad data
+                }
+                return []
             }
-            sessions = parsed.sessions.sorted {
+            let snapshot = parsed.sessions.sorted {
                 ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast)
             }
+            // Polling, explicit refreshes, and CLI reconfiguration may overlap
+            // while their subprocesses are suspended. Only the latest request
+            // may publish state or notify transition consumers.
+            guard generation == refreshGeneration else { return snapshot }
+            sessions = snapshot
             lastUpdated = Date()
             state = .ok
             if let onSnapshot { await onSnapshot(sessions) }
+            return snapshot
         } catch {
-            guard generation == refreshGeneration else { return }
-            state = .cliMissing
+            if generation == refreshGeneration { state = .cliMissing }
+            return []
         }
     }
 
@@ -185,9 +194,9 @@ public final class SessionStore {
                     : stderr)
             }
 
-            await refresh()
+            let refreshedSessions = await refresh()
             let projectPath = Self.canonicalProjectPath(projectDirectory.path)
-            let candidates = sessions.filter {
+            let candidates = refreshedSessions.filter {
                 !existingIDs.contains($0.id)
                     && $0.provider == provider
                     && $0.projectDir.map(Self.canonicalProjectPath) == projectPath
