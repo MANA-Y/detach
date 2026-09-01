@@ -57,6 +57,46 @@ private actor DelayedCLI: DetachCLIRunning {
     }
 }
 
+private actor OverlappingStartCLI: DetachCLIRunning {
+    private let listOutput: String
+    private var listCallCount = 0
+    private var listContinuations: [Int: CheckedContinuation<CLIResult, Never>] = [:]
+    private var listWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+    init(listOutput: String) {
+        self.listOutput = listOutput
+    }
+
+    func run(
+        arguments: [String], timeout: TimeInterval
+    ) async throws -> CLIResult {
+        guard arguments == ["list", "--json"] else {
+            return CLIResult(exitCode: 0, stdout: "", stderr: "", timedOut: false)
+        }
+        listCallCount += 1
+        let call = listCallCount
+        let ready = listWaiters.filter { $0.0 <= call }
+        listWaiters.removeAll { $0.0 <= call }
+        ready.forEach { $0.1.resume() }
+        return await withCheckedContinuation { continuation in
+            listContinuations[call] = continuation
+        }
+    }
+
+    func waitForListCall(_ call: Int) async {
+        if listCallCount >= call { return }
+        await withCheckedContinuation { listWaiters.append((call, $0)) }
+    }
+
+    func finishListCall(_ call: Int) {
+        listContinuations.removeValue(forKey: call)?.resume(returning: CLIResult(
+            exitCode: 0,
+            stdout: listOutput,
+            stderr: "",
+            timedOut: false))
+    }
+}
+
 private actor PollSleepProbe {
     private(set) var intervals: [UInt64] = []
     private var startedWaiters: [CheckedContinuation<Void, Never>] = []
@@ -231,6 +271,31 @@ final class SessionStoreTests: XCTestCase {
             ])
         XCTAssertEqual(cli.currentDirectories, [project])
         XCTAssertEqual(result, SessionStartResult(sessionID: "detach-codex-p-1"))
+    }
+
+    func testStartDetachedKeepsItsSelectionWhenABackgroundPollSupersedesPublication() async {
+        let cli = OverlappingStartCLI(listOutput: line)
+        let store = SessionStore(cli: cli)
+        let project = URL(fileURLWithPath: "/tmp/p", isDirectory: true)
+
+        let launch = Task { @MainActor in
+            await store.startDetached(
+                provider: .codex,
+                projectDirectory: project,
+                name: nil,
+                prompt: nil)
+        }
+        await cli.waitForListCall(1)
+        let backgroundPoll = Task { @MainActor in await store.refresh() }
+        await cli.waitForListCall(2)
+
+        await cli.finishListCall(1)
+        let result = await launch.value
+        await cli.finishListCall(2)
+        _ = await backgroundPoll.value
+
+        XCTAssertEqual(result.sessionID, "detach-codex-p-1")
+        XCTAssertEqual(store.sessions.first?.id, "detach-codex-p-1")
     }
 
     func testStartDetachedKeepsFailuresAndTimeoutsInTheCaller() async {
@@ -670,7 +735,7 @@ final class SessionStoreTests: XCTestCase {
         await store.configure(cli: second)
         await first.finish(with: CLIResult(
             exitCode: 0, stdout: line, stderr: "", timedOut: false))
-        await staleRefresh.value
+        _ = await staleRefresh.value
 
         XCTAssertEqual(store.sessions, [])
         XCTAssertEqual(store.state, .ok)

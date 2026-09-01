@@ -164,11 +164,11 @@ Reconnect. The external terminal stays a `.command` fallback.
 New session accepts an optional printable UTF-8 name of at most 100 bytes
 and rejects invalid input. Launch runs in Detach. Advanced holds the prompt
 below a fixed top. Titles use `display_name`, then the project or internal name.
-Command-N opens New session in main. Its chooser starts at the configured project
-folder or the selection's parent. Command-T uses the configured provider and
-creates a private 0700 `detach-chat-<UUID>` project under the configured folder
-(`/tmp` default). It selects the `starting` session before runtime checks
-finish. Invalid folders block launch.
+Command-N opens New session. Its chooser starts at the default project or the
+selection's parent. Command-T starts the chosen provider in a private 0700
+`detach-chat-<UUID>` directory in the quick-chat folder (`/tmp` default). It
+selects the typed `starting` session despite an overlapping poll, before runtime
+readiness. Invalid folders block launch.
 Command-1 through Command-9 open main and select numbered Working or Answer
 ready sessions. Numbers appear in rows and stay stable across both sections.
 When a session leaves them, the earliest waiting session gets its number;
