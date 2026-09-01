@@ -343,6 +343,18 @@ final class SessionAttachTerminalTests: XCTestCase {
         XCTAssertTrue(SessionAttachRendering.enableOnDemandMetal {})
     }
 
+    @MainActor
+    func testRealtimeRendererKeepsTheCoreGraphicsTerminalInteractive() {
+        let terminal = SessionAttachLocalProcessTerminalView(frame: .zero)
+
+        XCTAssertFalse(
+            SessionAttachRendering.hasEnergyEfficientMetalRenderer(in: terminal))
+        terminal.cursorStyleChanged(
+            source: terminal.terminal,
+            newStyle: .steadyBlock)
+        XCTAssertFalse(terminal.isUsingMetalRenderer)
+    }
+
     func testDroppedPathNeverInsertsAControlCharacter() {
         XCTAssertEqual(
             SessionAttachDroppedPaths.shellEscaped("/tmp/line\nbreak.txt"),

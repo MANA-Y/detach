@@ -106,7 +106,7 @@ public final class SessionStore {
     /// Returns this request's valid typed snapshot even when a newer refresh
     /// owns publication to the shared store.
     @discardableResult
-    public func refresh() async -> [Session]? {
+    public func refresh() async -> [Session] {
         refreshGeneration &+= 1
         let generation = refreshGeneration
         let cli = self.cli
@@ -117,14 +117,14 @@ public final class SessionStore {
                     state = .error(result.timedOut ? L10n.string("detach list timed out")
                                    : result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
                 }
-                return nil
+                return []
             }
             let parsed = SessionListParser.parse(result.stdout)
             if parsed.hadInvalidLines {
                 if generation == refreshGeneration {
                     state = .incompatible // spec: never update the list from bad data
                 }
-                return nil
+                return []
             }
             let snapshot = parsed.sessions.sorted {
                 ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast)
@@ -140,7 +140,7 @@ public final class SessionStore {
             return snapshot
         } catch {
             if generation == refreshGeneration { state = .cliMissing }
-            return nil
+            return []
         }
     }
 
@@ -194,7 +194,7 @@ public final class SessionStore {
                     : stderr)
             }
 
-            let refreshedSessions = await refresh() ?? sessions
+            let refreshedSessions = await refresh()
             let projectPath = Self.canonicalProjectPath(projectDirectory.path)
             let candidates = refreshedSessions.filter {
                 !existingIDs.contains($0.id)
