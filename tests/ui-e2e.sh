@@ -310,6 +310,7 @@ run_app_scenario() {
       live-terminal-routes-control-v|\
       recover-and-reconnect-run-in-app-with-terminal-fallback|\
       resume-runs-in-app-with-terminal-fallback|\
+      session-shortcut-selects-assigned-session|\
       settings-window-stays-on-screen|\
       settings-system-reveals-storage-and-installation|\
       new-session-advanced-keeps-top-edge|\
@@ -356,6 +357,7 @@ run_app_scenario main sessions 32 \
   sidebar-selects-completed-session \
   session-uuid-copies-from-text-side \
   resume-runs-in-app-with-terminal-fallback \
+  session-shortcut-selects-assigned-session \
   live-session-hosts-attach-client \
   live-terminal-routes-control-v \
   session-signals-stay-distinct \

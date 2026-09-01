@@ -18,7 +18,8 @@ final class SidebarViewTests: XCTestCase {
         let view = SidebarView(
             store: SessionStore(cli: SidebarNoopCLI()),
             selectedID: .constant(nil),
-            navigation: MainNavigation())
+            navigation: MainNavigation(),
+            shortcutAssignments: [])
 
         _ = view.body
     }

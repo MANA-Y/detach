@@ -420,6 +420,10 @@
 
 /* Session shortcuts and defaults */
 "Quick chat" = "Quick chat";
+"Sessions" = "Sessions";
+"Session %d" = "Session %d";
+"%@, Command-%d" = "%@, Command-%d";
+"Switch to %@ with Command-%d" = "Switch to %@ with Command-%d";
 "Settings" = "Settings";
 "Find output" = "Find output";
 "Keyboard shortcuts" = "Keyboard shortcuts";

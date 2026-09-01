@@ -18,11 +18,13 @@ struct RootView: View {
     /// stops it, so notifications and the menu bar stay fed after close.
     let store: SessionStore
     @ObservedObject var navigation: MainNavigation
+    @ObservedObject var shortcuts: SessionShortcutRegistry
     @ObservedObject var notifications: SessionNotificationService
     @ObservedObject var tips: TipSession
     @ObservedObject var settingsNavigation: SettingsNavigation
 
     @State private var selectedID: String?
+    @State private var shortcutAssignments: [SessionShortcutAssignment] = []
 
     private var selectedSession: Session? {
         store.sessions.first { $0.id == selectedID }
@@ -47,7 +49,8 @@ struct RootView: View {
                         SidebarView(
                             store: store,
                             selectedID: $selectedID,
-                            navigation: navigation)
+                            navigation: navigation,
+                            shortcutAssignments: shortcutAssignments)
                     } detail: {
                         if store.sessions.isEmpty && store.state == .ok {
                             EmptySessionsView()
@@ -93,7 +96,8 @@ struct RootView: View {
             // keep notifications fed from the same single poller. The
             // transition detector baselines on its first successful snapshot,
             // so historical sessions never fire as fresh notifications.
-            store.onSnapshot = { [weak notifications] sessions in
+            store.onSnapshot = { [weak notifications, weak shortcuts] sessions in
+                shortcuts?.reconcile(sessions)
                 await notifications?.observe(sessions)
             }
             await store.configure(cli: ProcessDetachCLI(
@@ -105,7 +109,12 @@ struct RootView: View {
             await notifications.configure(enabled: notificationsEnabled)
         }
 // quality-coverage:begin ui-e2e-instrumentation
-        .task { await UIE2ETestDriver.runIfRequested(installation: installation, store: store) }
+        .task {
+            await UIE2ETestDriver.runIfRequested(
+                installation: installation,
+                store: store,
+                shortcuts: shortcuts)
+        }
 // quality-coverage:end ui-e2e-instrumentation
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
@@ -122,6 +131,12 @@ struct RootView: View {
             guard let requested else { return }
             selectedID = requested
             navigation.requestedSessionID = nil
+        }
+        .onChange(of: store.sessions, initial: true) { _, sessions in
+            shortcuts.reconcile(sessions)
+        }
+        .onReceive(shortcuts.$assignments) { assignments in
+            shortcutAssignments = assignments
         }
         .onAppear { store.updateCadence(foreground: true) }
         .onDisappear { store.updateCadence(foreground: false) }

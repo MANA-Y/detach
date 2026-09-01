@@ -420,6 +420,10 @@
 
 /* Session shortcuts and defaults */
 "Quick chat" = "Быстрый чат";
+"Sessions" = "Сессии";
+"Session %d" = "Сессия %d";
+"%@, Command-%d" = "%@, Command-%d";
+"Switch to %@ with Command-%d" = "Переключиться на «%@»: Command-%d";
 "Settings" = "Настройки";
 "Find output" = "Поиск в выводе";
 "Keyboard shortcuts" = "Сочетания клавиш";

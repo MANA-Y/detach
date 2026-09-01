@@ -7,12 +7,10 @@
 bundles signed arm64-only executables, the immutable CLI payload, pinned tmux
 sources/licenses/provenance, Sparkle, SwiftTerm, and their license notices.
 
-`ANSIParser` is the terminal-preview decoder. It strips non-SGR sequences and
-keeps terminal foreground/background colors, bold, dim,
-italic, underline, strikethrough, and reverse video. Reverse video swaps
-against `ANSIParser.terminalBackground`, also the `LogTextView` background;
-keep one canvas color. Font scaling changes only the font and keeps every ANSI
-attribute.
+`ANSIParser` strips non-SGR sequences and preserves colors, bold, dim, italic,
+underline, strikethrough, and reverse video. Reverse swaps colors against
+`ANSIParser.terminalBackground`, also the `LogTextView` background. Font
+scaling changes only the font.
 
 Onboarding uses the pure reducer in `SetupGuidance.step(for:)`; a setup failure
 outranks provider discovery. A bare
@@ -81,10 +79,10 @@ Mac Power status and approval controls. The Settings window follows the hosting
 screen; System scrolls. Temperature safety has its own warning shape and the
 text **Mac can sleep: temperature**.
 
-The dashboard shows identity, status, and Mac Power separately. Identity is a
-thin tmux-colored capsule. Status is a filled circle. Power has a neutral
-surface and semantic color. The UUID chip is one copy control. Any click copies
-the full UUID and shows **Copied**.
+The dashboard separates identity, status, and Mac Power. Identity is a thin
+tmux-colored capsule. Status is a filled circle. Power uses a neutral surface
+and semantic color. Clicking the single UUID chip copies the full UUID and
+shows **Copied**.
 
 **Finished** bulk Delete stays outside `List`, uses typed Delete, asks once,
 tolerates failures, and keeps transcripts. Select/Done keeps 12-point clearance.
@@ -164,16 +162,18 @@ stores no images or dropped files. Live views move typed Mac Power to metadata
 and omit the duplicate strip. An exited client offers Reconnect without an
 agent restart. The selected terminal remains an `NSWorkspace` `.command`
 fallback.
-The new-session sheet accepts an optional UTF-8 name up to 100 bytes. It rejects
-control characters, blocks launch, and passes one `--name`. The launch button
-starts inside Detach. Advanced holds the prompt and grows down, top fixed. The
-app uses `display_name` as the title, with
-the project/internal name fallback for old records.
+New session accepts an optional printable UTF-8 name of at most 100 bytes
+and rejects invalid input. Launch runs in Detach. Advanced holds the prompt
+below a fixed top. Titles use `display_name`, then the project or internal name.
 Command-N opens New session in main. Its chooser starts at the configured project
-folder or the selection's parent. Command-T opens Quick Chat in main with the
-configured provider and folder (`/tmp` default). It selects the new typed
+folder or the selection's parent. Command-T opens Quick Chat with the
+configured provider and folder (`/tmp` default). It selects the
 `starting` session before runtime checks finish. Invalid folders block launch.
-The sidebar shows Command-N, Command-T, Command-comma, and terminal Command-F.
+Command-1 through Command-9 open main and select numbered Working or Answer
+ready sessions. Numbers appear in rows and stay stable across both sections.
+When a session leaves them, the earliest waiting session gets its number;
+extras stay unnumbered. The sidebar guide shows Command-N, Command-T,
+Command-comma, and terminal Command-F.
 Notifications are opt-in. One poller deduplicates baseline and transitions.
 
 Sparkle 2 and SwiftTerm 1.19.0 are pinned. The exact SwiftTerm shader bundle is

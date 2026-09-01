@@ -159,7 +159,8 @@ enum UIE2ETestDriver {
 
     static func runIfRequested(
         installation: InstallationStore,
-        store: SessionStore
+        store: SessionStore,
+        shortcuts: SessionShortcutRegistry
     ) async {
         guard let configuration = AppSettings.uiE2E, !started else { return }
         started = true
@@ -173,7 +174,8 @@ enum UIE2ETestDriver {
             let report = await runScenario(
                 configuration: configuration,
                 installation: installation,
-                store: store)
+                store: store,
+                shortcuts: shortcuts)
             trace("\(configuration.scenario) driver finished: \(report.passed)")
             try? write(report, to: configuration.result)
             NSApp.terminate(nil)
@@ -189,7 +191,8 @@ enum UIE2ETestDriver {
     private static func runScenario(
         configuration: UIE2EConfiguration,
         installation: InstallationStore,
-        store: SessionStore
+        store: SessionStore,
+        shortcuts: SessionShortcutRegistry
     ) async -> Report {
         cursorRestorePoint = CGEvent(source: nil)?.location
         defer {
@@ -216,13 +219,15 @@ enum UIE2ETestDriver {
         default:
             return await runMainScenario(
                 configuration: configuration,
-                store: store)
+                store: store,
+                shortcuts: shortcuts)
         }
     }
 
     private static func runMainScenario(
         configuration: UIE2EConfiguration,
-        store: SessionStore
+        store: SessionStore,
+        shortcuts: SessionShortcutRegistry
     ) async -> Report {
         var checks: [String] = []
         let previousFrontmost = NSWorkspace.shared.frontmostApplication
@@ -375,10 +380,18 @@ enum UIE2ETestDriver {
             let runningRow = try await element(
                 identifier: "session-row-\(runningID)")
             try requireSemanticControl(runningRow, name: "running session row")
-            _ = try await clickUntilElement(
-                runningRow,
-                name: "running session row",
-                resultIdentifier: "session-detail-\(runningID)")
+            try await waitUntil("running session Command-1 assignment") {
+                shortcuts.slot(for: runningID) == 1
+            }
+            let shortcutBadge = try await element(
+                identifier: "session-shortcut-\(runningID)")
+            try requireGeometry(shortcutBadge, name: "running session shortcut")
+            guard label(shortcutBadge) == "Command-1" else {
+                throw Failure(message: "running session badge is not Command-1")
+            }
+            try await keyPress("1", keyCode: 18, modifiers: [.command])
+            _ = try await element(identifier: "session-detail-\(runningID)")
+            checks.append("session-shortcut-selects-assigned-session")
             try await waitUntil("live attach terminal", attempts: 80) {
                 find(identifier: "session-preview-terminal") != nil
             }
