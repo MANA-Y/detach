@@ -35,6 +35,7 @@ struct SidebarView: View {
     let store: SessionStore
     @Binding var selectedID: String?
     @ObservedObject var navigation: MainNavigation
+    let shortcutAssignments: [SessionShortcutAssignment]
     @AppStorage(AppSettings.defaultProjectsDirectoryKey, store: AppSettings.defaults)
     private var defaultProjectsDirectoryPath =
         AppSettings.defaultProjectsDirectoryPath
@@ -277,6 +278,9 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func sessionRow(_ session: Session) -> some View {
+        let shortcutSlot = shortcutAssignments.first {
+            $0.sessionID == session.id
+        }?.slot
         if isSelectingFinished && session.canDeleteFromFinishedList {
             HStack(spacing: 8) {
                 Button {
@@ -314,7 +318,7 @@ struct SidebarView: View {
                 }
 #endif
 // quality-coverage:end ui-e2e-instrumentation
-                SessionRow(session: session)
+                SessionRow(session: session, shortcutSlot: shortcutSlot)
             }
 // quality-coverage:begin ui-e2e-instrumentation
 #if !DEBUG
@@ -323,7 +327,9 @@ struct SidebarView: View {
 // quality-coverage:end ui-e2e-instrumentation
             .tag(session.id)
             .accessibilityElement(children: .contain)
-            .accessibilityLabel(session.displayTitle)
+            .accessibilityLabel(SessionShortcutPresentation.accessibilityLabel(
+                title: session.displayTitle,
+                slot: shortcutSlot))
             .accessibilityIdentifier("session-row-\(session.id)")
             .listRowBackground(
                 session.isWaitingForUser ? Color.orange.opacity(0.10) : nil)
@@ -331,7 +337,7 @@ struct SidebarView: View {
             Button {
                 selectedID = session.id
             } label: {
-                SessionRow(session: session)
+                SessionRow(session: session, shortcutSlot: shortcutSlot)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
@@ -343,7 +349,9 @@ struct SidebarView: View {
 // quality-coverage:end ui-e2e-instrumentation
             .tag(session.id)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(session.displayTitle)
+            .accessibilityLabel(SessionShortcutPresentation.accessibilityLabel(
+                title: session.displayTitle,
+                slot: shortcutSlot))
             .accessibilityIdentifier("session-row-\(session.id)")
             .listRowBackground(
                 session.isWaitingForUser ? Color.orange.opacity(0.10) : nil)
@@ -472,6 +480,7 @@ struct SidebarView: View {
 
 struct SessionRow: View {
     let session: Session
+    let shortcutSlot: Int?
 
     private var dotColor: Color {
         SessionIdentity.statusColor(for: session)
@@ -516,6 +525,34 @@ struct SessionRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(session.displayTitle).appFont(.body, weight: .semibold).lineLimit(1)
+                    if let shortcutSlot {
+                        Text(SessionShortcutPresentation.badge(slot: shortcutSlot))
+                            .appFont(.caption2, weight: .semibold, design: .monospaced)
+                            .foregroundStyle(Brand.indigo)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(
+                                Brand.indigo.opacity(0.12),
+                                in: RoundedRectangle(cornerRadius: 4))
+                            .fixedSize()
+                            .help(L10n.format(
+                                "Switch to %@ with Command-%d",
+                                session.displayTitle,
+                                shortcutSlot))
+                            .accessibilityHidden(true)
+// quality-coverage:begin ui-e2e-instrumentation
+#if !DEBUG
+                            .background {
+                                if AppSettings.uiE2E != nil {
+                                    UIE2EGeometryProbe(
+                                        identifier: "session-shortcut-\(session.id)",
+                                        semanticLabel: "Command-\(shortcutSlot)",
+                                        semanticRole: .staticText)
+                                }
+                            }
+#endif
+// quality-coverage:end ui-e2e-instrumentation
+                    }
                     Text(session.provider.rawValue)
                         .appFont(.caption2)
                         .foregroundStyle(Brand.tint(for: session.provider))

@@ -119,6 +119,7 @@ The embedded terminal keeps the shortcuts that matter:
 |---|---|
 | Open the standard New session sheet | `Cmd-N` |
 | Start a Quick chat immediately | `Cmd-T` |
+| Switch to a numbered Working or Answer ready session | `Cmd-1` … `Cmd-9` |
 | Paste text | `Cmd-V` |
 | Give Codex or Claude Code an image from the clipboard | `Ctrl-V` |
 | Find terminal output | `Cmd-F` |
@@ -129,6 +130,11 @@ default folder is `/tmp`. The same settings page selects the default folder
 where the standard project chooser opens. Quick chat uses the normal managed
 session lifecycle; it does not automatically delete project files, Detach
 state, or provider transcripts.
+
+Detach shows each assigned session shortcut beside its name. The number stays
+with the session while it is in Working or Answer ready. Detach reuses the
+number after the session leaves both sections. If more than nine sessions are
+eligible, each extra session waits for the first free number.
 
 Start, Resume, and Recover run inside Detach and do not require an outer
 terminal. The selected external terminal remains available as a fallback for

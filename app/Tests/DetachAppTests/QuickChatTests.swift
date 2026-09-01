@@ -152,6 +152,10 @@ final class QuickChatTests: XCTestCase {
         XCTAssertFalse(navigation.requestsNewSession)
         navigation.requestNewSession()
         XCTAssertTrue(navigation.requestsNewSession)
+        navigation.requestSession("detach-codex-project-12345678")
+        XCTAssertEqual(
+            navigation.requestedSessionID,
+            "detach-codex-project-12345678")
     }
 
     func testSidebarGuideListsImplementedAndStandardShortcuts() {
@@ -172,7 +176,10 @@ final class QuickChatTests: XCTestCase {
     }
 
     func testSessionCommandsBuildWithTheSharedNavigation() {
-        let commands = SessionCommands(navigation: MainNavigation())
+        let commands = SessionCommands(
+            navigation: MainNavigation(),
+            store: SessionStore(cli: QuickChatRecordingCLI()),
+            shortcuts: SessionShortcutRegistry())
         _ = commands.body
     }
 }
