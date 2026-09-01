@@ -29,6 +29,7 @@ final class SessionAttachLocalProcessTerminalView: LocalProcessTerminalView {
         }
     }
 
+// quality-coverage:begin swiftterm-metal
     func configureRealtimeRendererIfNeeded() {
         guard !didConfigureRealtimeRenderer else { return }
         didConfigureRealtimeRenderer = true
@@ -56,6 +57,7 @@ final class SessionAttachLocalProcessTerminalView: LocalProcessTerminalView {
         }
         super.cursorStyleChanged(source: source, newStyle: steadyStyle)
     }
+// quality-coverage:end swiftterm-metal
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
         acceptedDragOperation(from: sender.draggingPasteboard)
@@ -112,6 +114,7 @@ enum SessionAttachRendering {
             && !view.autoResizeDrawable
     }
 
+// quality-coverage:begin swiftterm-metal
     static func hasEnergyEfficientMetalRenderer(
         in terminalView: LocalProcessTerminalView
     ) -> Bool {
@@ -125,6 +128,7 @@ enum SessionAttachRendering {
         let style = terminalView.terminal.options.cursorStyle
         return steadyCursorStyle(for: style).tagName == style.tagName
     }
+// quality-coverage:end swiftterm-metal
 }
 
 /// Preserves provider shortcuts that must reach the child as conventional

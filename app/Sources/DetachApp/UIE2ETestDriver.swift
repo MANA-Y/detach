@@ -406,6 +406,18 @@ enum UIE2ETestDriver {
                 return SessionAttachRendering
                     .hasEnergyEfficientMetalRenderer(in: terminal)
             }
+            guard let liveTerminal = find(
+                identifier: "session-preview-terminal")
+                as? LocalProcessTerminalView else {
+                throw Failure(message: "live terminal is not a SwiftTerm view")
+            }
+            liveTerminal.terminal.setCursorStyle(.blinkUnderline)
+            guard liveTerminal.terminal.options.cursorStyle.tagName
+                    == CursorStyle.steadyUnderline.tagName,
+                  SessionAttachRendering.hasEnergyEfficientMetalRenderer(
+                    in: liveTerminal) else {
+                throw Failure(message: "live terminal retained a blinking cursor timer")
+            }
             checks.append("live-terminal-renders-on-demand")
             try await waitUntil("live terminal input readiness", attempts: 80) {
                 FileManager.default.fileExists(atPath: configuration.root
