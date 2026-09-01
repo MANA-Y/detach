@@ -1,11 +1,13 @@
 import AppKit
 import Darwin
+import MetalKit
 import SwiftUI
 import SwiftTerm
 import DetachKit
 
 final class SessionAttachLocalProcessTerminalView: LocalProcessTerminalView {
     var onDroppedPaths: ((String) -> Void)?
+    private var didConfigureRealtimeRenderer = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -20,10 +22,39 @@ final class SessionAttachLocalProcessTerminalView: LocalProcessTerminalView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
+        configureRealtimeRendererIfNeeded()
         DispatchQueue.main.async { [weak self] in
             guard let self, let window = self.window else { return }
             window.makeFirstResponder(self)
         }
+    }
+
+    func configureRealtimeRendererIfNeeded() {
+        guard !didConfigureRealtimeRenderer else { return }
+        didConfigureRealtimeRenderer = true
+        let enabled = SessionAttachRendering.enableOnDemandMetal {
+            try setUseMetal(true)
+        }
+        if enabled {
+            terminal.setCursorStyle(SessionAttachRendering.steadyCursorStyle(
+                for: terminal.options.cursorStyle))
+        }
+    }
+
+    override func cursorStyleChanged(
+        source: Terminal,
+        newStyle: CursorStyle
+    ) {
+        guard isUsingMetalRenderer else {
+            super.cursorStyleChanged(source: source, newStyle: newStyle)
+            return
+        }
+        let steadyStyle = SessionAttachRendering.steadyCursorStyle(for: newStyle)
+        if steadyStyle.tagName != newStyle.tagName {
+            source.setCursorStyle(steadyStyle)
+            return
+        }
+        super.cursorStyleChanged(source: source, newStyle: steadyStyle)
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
@@ -46,6 +77,53 @@ final class SessionAttachLocalProcessTerminalView: LocalProcessTerminalView {
         window?.makeFirstResponder(self)
         onDroppedPaths?(text)
         return true
+    }
+}
+
+enum SessionAttachRendering {
+    /// SwiftTerm's Metal view is paused and redraws only on terminal events.
+    /// A renderer failure keeps the default CoreGraphics terminal active.
+    @discardableResult
+    static func enableOnDemandMetal(
+        _ activate: () throws -> Void
+    ) -> Bool {
+        do {
+            try activate()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    static func steadyCursorStyle(for style: CursorStyle) -> CursorStyle {
+        switch style {
+        case .blinkBlock, .steadyBlock:
+            return .steadyBlock
+        case .blinkUnderline, .steadyUnderline:
+            return .steadyUnderline
+        case .blinkBar, .steadyBar:
+            return .steadyBar
+        }
+    }
+
+    static func isPausedOnDemand(_ view: MTKView) -> Bool {
+        view.isPaused
+            && view.enableSetNeedsDisplay
+            && !view.autoResizeDrawable
+    }
+
+    static func hasEnergyEfficientMetalRenderer(
+        in terminalView: LocalProcessTerminalView
+    ) -> Bool {
+        guard terminalView.isUsingMetalRenderer,
+              let metalView = terminalView.subviews.compactMap({
+                  $0 as? MTKView
+              }).first,
+              isPausedOnDemand(metalView) else {
+            return false
+        }
+        let style = terminalView.terminal.options.cursorStyle
+        return steadyCursorStyle(for: style).tagName == style.tagName
     }
 }
 
@@ -170,7 +248,7 @@ final class SessionAttachController: NSObject, LocalProcessTerminalViewDelegate 
 
     func send(_ text: String) {
         let bytes = Array(text.utf8)
-        terminalView?.process.send(data: bytes[...])
+        terminalView?.send(data: bytes[...])
     }
 
     func copySelection(to pasteboard: NSPasteboard = .general) -> String {

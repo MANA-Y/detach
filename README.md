@@ -125,11 +125,13 @@ The embedded terminal keeps the shortcuts that matter:
 | Find terminal output | `Cmd-F` |
 | Replace an exited terminal client without restarting the agent | **Reconnect** |
 
-Settings → General selects the provider and working folder for Quick chat. The
-default folder is `/tmp`. The same settings page selects the default folder
-where the standard project chooser opens. Quick chat uses the normal managed
-session lifecycle; it does not automatically delete project files, Detach
-state, or provider transcripts.
+Settings → General selects the provider and parent folder for Quick chat. The
+default is `/tmp`. Each `Cmd-T` creates a private
+`detach-chat-<uuid>` project inside that folder, so another Quick chat can
+start while earlier chats are still running. The same settings page selects
+the default folder for the standard project chooser. Quick chat uses the
+normal managed session lifecycle. Detach does not automatically delete its
+project files, state, or provider transcripts.
 
 Detach shows each assigned session shortcut beside its name. The number stays
 with the session while it is in Working or Answer ready. Detach reuses the
@@ -139,6 +141,10 @@ eligible, each extra session waits for the first free number.
 Start, Resume, and Recover run inside Detach and do not require an outer
 terminal. The selected external terminal remains available as a fallback for
 Attach, Resume, and Recover.
+
+The live terminal processes PTY input and output as events. Its on-demand GPU
+renderer repaints only when content changes. A steady cursor avoids an idle
+redraw timer. If Metal is unavailable, Detach keeps the CoreGraphics renderer.
 
 <details>
 <summary><strong>How a new in-app session starts</strong></summary>

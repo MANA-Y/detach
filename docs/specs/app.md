@@ -151,24 +151,24 @@ user-specific path. Native power protection requires no Apple Events or
 Automation entitlement.
 
 Bootstrap runs only from `/Applications`, not a DMG or App Translocation path.
-App Start runs the provider with `--detach` in its project, keeps an error in
-the sheet, refreshes state, and selects one unambiguous new
-session. Start, Resume, and Recover attach through an ephemeral PTY on
-`detach <provider> attach <session>`. Closing the view or app ends that client.
-In a focused terminal, `Command-C/V/F` stay native copy, text paste, and find in
-extended keyboard mode. `Ctrl-V` reaches provider image paste. A Finder file
-drop sends shell-safe absolute paths without reading files. Detach
-stores no images or dropped files. Live views move typed Mac Power to metadata
-and omit the duplicate strip. An exited client offers Reconnect without an
-agent restart. The selected terminal remains an `NSWorkspace` `.command`
-fallback.
+App Start uses `--detach`, keeps sheet errors, and selects one new session.
+Start, Resume, and Recover use an ephemeral PTY on
+`detach <provider> attach <session>`. Closing its view ends the client.
+Terminal I/O is event-driven. Paused Metal redraws changes with a steady
+cursor and no timer. Failure keeps CoreGraphics. No poller or continuous frame
+loop runs. In a focused terminal, `Command-C/V/F`
+stay native copy, paste, and find. `Ctrl-V` reaches provider image paste. A
+Finder drop sends shell-safe paths without reading or storing files. Live views
+move typed Mac Power to metadata and omit its strip. An exited client offers
+Reconnect. The external terminal stays a `.command` fallback.
 New session accepts an optional printable UTF-8 name of at most 100 bytes
 and rejects invalid input. Launch runs in Detach. Advanced holds the prompt
 below a fixed top. Titles use `display_name`, then the project or internal name.
 Command-N opens New session in main. Its chooser starts at the configured project
-folder or the selection's parent. Command-T opens Quick Chat with the
-configured provider and folder (`/tmp` default). It selects the
-`starting` session before runtime checks finish. Invalid folders block launch.
+folder or the selection's parent. Command-T uses the configured provider and
+creates a private 0700 `detach-chat-<UUID>` project under the configured folder
+(`/tmp` default). It selects the `starting` session before runtime checks
+finish. Invalid folders block launch.
 Command-1 through Command-9 open main and select numbered Working or Answer
 ready sessions. Numbers appear in rows and stay stable across both sections.
 When a session leaves them, the earliest waiting session gets its number;

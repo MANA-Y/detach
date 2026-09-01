@@ -27,6 +27,22 @@ enum DirectoryPreference {
     }
 }
 
+enum QuickChatProjectDirectory {
+    static func create(
+        inside parent: URL,
+        fileManager: FileManager = .default,
+        id: UUID = UUID()
+    ) throws -> URL {
+        let name = "detach-chat-\(id.uuidString.lowercased())"
+        let directory = parent.appendingPathComponent(name, isDirectory: true)
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        return directory.resolvingSymlinksInPath().standardizedFileURL
+    }
+}
+
 @MainActor
 enum QuickChatLaunch {
     static func provider(rawValue: String) -> Provider {
@@ -39,6 +55,9 @@ enum QuickChatLaunch {
         directoryPath: String,
         fileManager: FileManager = .default,
         onSessionAvailable: (@MainActor (String) -> Void)? = nil,
+        createProjectDirectory: (URL, FileManager) throws -> URL = {
+            try QuickChatProjectDirectory.create(inside: $0, fileManager: $1)
+        },
         discoverySleep: @escaping @Sendable (UInt64) async throws -> Void = {
             try await Task.sleep(nanoseconds: $0)
         }
@@ -50,11 +69,19 @@ enum QuickChatLaunch {
                 "Quick chat folder is unavailable: %@",
                 directoryPath))
         }
+        let projectDirectory: URL
+        do {
+            projectDirectory = try createProjectDirectory(directory, fileManager)
+        } catch {
+            return SessionStartResult(message: L10n.format(
+                "Quick chat folder is unavailable: %@",
+                directoryPath))
+        }
         let provider = provider(rawValue: providerRawValue)
         guard let onSessionAvailable else {
             return await store.startDetached(
                 provider: provider,
-                projectDirectory: directory,
+                projectDirectory: projectDirectory,
                 name: nil,
                 prompt: nil)
         }
@@ -65,7 +92,7 @@ enum QuickChatLaunch {
             defer { launchFinished = true }
             return await store.startDetached(
                 provider: provider,
-                projectDirectory: directory,
+                projectDirectory: projectDirectory,
                 name: nil,
                 prompt: nil)
         }
@@ -86,7 +113,7 @@ enum QuickChatLaunch {
                 in: store.sessions,
                 excluding: existingIDs,
                 provider: provider,
-                projectDirectory: directory) {
+                projectDirectory: projectDirectory) {
                 selectedEarly = true
                 onSessionAvailable(sessionID)
                 break

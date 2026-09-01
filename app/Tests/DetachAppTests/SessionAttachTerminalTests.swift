@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import MetalKit
 import SwiftUI
 import XCTest
 import SwiftTerm
@@ -305,6 +306,41 @@ final class SessionAttachTerminalTests: XCTestCase {
         XCTAssertTrue(terminal.acceptDroppedPaths(from: filePasteboard))
         XCTAssertEqual(insertedText, "'/tmp/Project File/image.png' ")
         XCTAssertTrue(window.firstResponder === terminal)
+    }
+
+    func testRealtimeRendererRequiresPausedOnDemandMetal() {
+        let view = MTKView(frame: .zero)
+        view.isPaused = true
+        view.enableSetNeedsDisplay = true
+        view.autoResizeDrawable = false
+        XCTAssertTrue(SessionAttachRendering.isPausedOnDemand(view))
+
+        view.isPaused = false
+        XCTAssertFalse(SessionAttachRendering.isPausedOnDemand(view))
+    }
+
+    func testRealtimeRendererUsesSteadyCursorVariants() {
+        let mappings: [(CursorStyle, String)] = [
+            (.blinkBlock, CursorStyle.steadyBlock.tagName),
+            (.steadyBlock, CursorStyle.steadyBlock.tagName),
+            (.blinkUnderline, CursorStyle.steadyUnderline.tagName),
+            (.steadyUnderline, CursorStyle.steadyUnderline.tagName),
+            (.blinkBar, CursorStyle.steadyBar.tagName),
+            (.steadyBar, CursorStyle.steadyBar.tagName),
+        ]
+        for (input, expected) in mappings {
+            XCTAssertEqual(
+                SessionAttachRendering.steadyCursorStyle(for: input).tagName,
+                expected)
+        }
+    }
+
+    func testRealtimeRendererFailureKeepsTheFallbackAvailable() {
+        enum Failure: Error { case unavailable }
+        XCTAssertFalse(SessionAttachRendering.enableOnDemandMetal {
+            throw Failure.unavailable
+        })
+        XCTAssertTrue(SessionAttachRendering.enableOnDemandMetal {})
     }
 
     func testDroppedPathNeverInsertsAControlCharacter() {
