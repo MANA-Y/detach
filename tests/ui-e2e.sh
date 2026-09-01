@@ -191,7 +191,7 @@ printf '#!/bin/bash\nprintf breach >%q\nexit 91\n' "$BREACH" \
   >"$TEST_HOME/.local/bin/detach"
 chmod 0755 "$TEST_HOME/.local/bin/detach"
 
-for scenario in \
+"$ROOT/scripts/quality-scenarios" event begin \
   SC-UI-DASHBOARD \
   SC-UI-SESSION-DETAIL \
   SC-UI-SESSION-DELETE \
@@ -203,13 +203,12 @@ for scenario in \
   SC-UI-ONBOARD-FIRST-RUN \
   SC-UI-ONBOARD-PROVIDER \
   SC-UI-ONBOARD-APPROVAL \
-  SC-UI-SETTINGS; do
-  "$ROOT/scripts/quality-scenarios" event begin "$scenario"
-done
+  SC-UI-SETTINGS
 
 run_app_scenario() {
   local scenario="$1" fixture="$2" scenario_budget="$3"
-  local app_status check_index=0 actual check scenario_deadline driver_budget
+  local app_status check_index=0 actual check scenario_deadline driver_budget pass
+  local passed_scenarios=()
   local scenario_started="$SECONDS"
   shift 3
   scenario_deadline=$((SECONDS + scenario_budget))
@@ -338,11 +337,14 @@ run_app_scenario() {
       *) printf 'UI e2e: unowned check: %s\n' "$check" >&2; exit 1 ;;
     esac
     if [ -n "${pass:-}" ]; then
-      "$ROOT/scripts/quality-scenarios" event pass "$pass"
+      passed_scenarios+=("$pass")
       pass=""
     fi
     check_index=$((check_index + 1))
   done
+  if [ "${#passed_scenarios[@]}" -gt 0 ]; then
+    "$ROOT/scripts/quality-scenarios" event pass "${passed_scenarios[@]}"
+  fi
   printf 'UI e2e: %s passed in %ss\n' "$scenario" "$((SECONDS - scenario_started))"
 }
 

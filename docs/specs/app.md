@@ -131,14 +131,12 @@ recorded and the journal cleared. Approval and retry failures remain pending for
 the next launch. An ordinary helper SIGTERM/SIGINT uses only the process-local
 termination gate and must not create persistent update state.
 
-Settings → System owns one **Mac Power** block. It shows the sleep state,
-component health, the 10–20% battery floor, and the correct action. Helper Ready
-requires a doctor-confirmed live XPC connection. Registration alone is Needs
-attention. Power state comes from a healthy watchdog heartbeat no older than
-three minutes. A missing, stale, or malformed snapshot means `unknown`. Refresh
-the installation context when Settings appears or the app becomes active.
-While this tab is visible, publish a heartbeat snapshot every ten seconds so
-the state does not stay stale when SwiftUI does not re-render.
+Settings → System owns **Mac Power** status, 10–20% floor, and approval.
+Helper Ready requires a doctor live XPC check. Registration alone is Needs
+attention. During doctor or reconciliation, show Checking, not failure. Power
+requires a healthy watchdog heartbeat no older than three minutes; otherwise it
+is `unknown`. Refresh on Settings open, app activation, and every ten seconds
+while visible.
 
 The watchdog heartbeat carries the effective power state and typed raw
 thermal state/latch. With notifications enabled, the app emits one
@@ -159,19 +157,22 @@ App Start runs the provider with `--detach` in its project, keeps an error in
 the sheet, refreshes state, and selects one unambiguous new
 session. Start, Resume, and Recover attach through an ephemeral PTY on
 `detach <provider> attach <session>`. Closing the view or app ends that client.
-`Ctrl-V` reaches provider image paste; Detach stores no image. Live views move
-typed Mac Power to metadata and omit the duplicate strip. An exited client
-offers Reconnect without an agent restart. The selected terminal remains an
-`NSWorkspace` `.command` fallback.
+In a focused terminal, `Command-C/V/F` stay native copy, text paste, and find in
+extended keyboard mode. `Ctrl-V` reaches provider image paste. A Finder file
+drop sends shell-safe absolute paths without reading files. Detach
+stores no images or dropped files. Live views move typed Mac Power to metadata
+and omit the duplicate strip. An exited client offers Reconnect without an
+agent restart. The selected terminal remains an `NSWorkspace` `.command`
+fallback.
 The new-session sheet accepts an optional UTF-8 name up to 100 bytes. It rejects
 control characters, blocks launch, and passes one `--name`. The launch button
 starts inside Detach. Advanced holds the prompt and grows down, top fixed. The
 app uses `display_name` as the title, with
 the project/internal name fallback for old records.
-Command-N opens main with New session. Its chooser starts in the General project
-folder or the selection's parent. Command-T opens main and calls
-`SessionStore.startDetached` without a sheet, with the General provider and
-folder (`/tmp` default). An invalid folder blocks launch; it deletes nothing.
+Command-N opens New session in main. Its chooser starts at the configured project
+folder or the selection's parent. Command-T opens Quick Chat in main with the
+configured provider and folder (`/tmp` default). It selects the new typed
+`starting` session before runtime checks finish. Invalid folders block launch.
 The sidebar shows Command-N, Command-T, Command-comma, and terminal Command-F.
 Notifications are opt-in. One poller deduplicates baseline and transitions.
 

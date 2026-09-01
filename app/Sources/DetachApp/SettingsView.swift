@@ -146,10 +146,18 @@ struct PowerHelperSettingsPresentation: Equatable {
 
     init(
         registrationStatus: PowerHelperRegistrationStatus,
-        readinessConfirmed: Bool
+        readinessConfirmed: Bool,
+        isChecking: Bool = false
     ) {
         if registrationStatus == .enabled, readinessConfirmed {
             status = .ok
+            detailLocalizationKey = nil
+            return
+        }
+
+        if isChecking,
+           registrationStatus == .enabled || registrationStatus == .unavailable {
+            status = .unknown
             detailLocalizationKey = nil
             return
         }
@@ -1280,7 +1288,8 @@ struct SettingsView: View {
     {
         PowerHelperSettingsPresentation(
             registrationStatus: installation.powerHelperStatus,
-            readinessConfirmed: installation.powerHelperReadinessConfirmed)
+            readinessConfirmed: installation.powerHelperReadinessConfirmed,
+            isChecking: installation.phase == .idle || installation.isBusy)
     }
 
     private func requiredComponentStatus(
@@ -1291,7 +1300,7 @@ struct SettingsView: View {
             Text(label)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 12)
-            StatusIndicator(healthy: status == .ok)
+            StatusIndicator(status: status)
         }
     }
 

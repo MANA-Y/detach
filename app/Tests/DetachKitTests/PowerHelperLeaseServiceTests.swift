@@ -733,7 +733,10 @@ final class PowerHelperLeaseServiceTests: XCTestCase {
         XCTAssertEqual(battery.lastThreshold, 10)
 
         let raised = try first.setLowBatteryThreshold(.percent15)
-        XCTAssertEqual(raised.state, .lowBattery)
+        // The helper restores the owned closed-lid layer, but the wrapper
+        // still holds its assertion. Status must not claim sleep is safe.
+        XCTAssertEqual(raised.state, .unavailable)
+        XCTAssertTrue(raised.lowBattery)
         XCTAssertEqual(raised.lowBatteryThreshold, .percent15)
         XCTAssertEqual(store.state?.lowBatteryThreshold, .percent15)
         XCTAssertEqual(battery.lastThreshold, 15)
@@ -747,7 +750,8 @@ final class PowerHelperLeaseServiceTests: XCTestCase {
             now: { self.now },
             leaseTimeout: 120)
         let status = try restarted.reconcile()
-        XCTAssertEqual(status.state, .lowBattery)
+        XCTAssertEqual(status.state, .unavailable)
+        XCTAssertTrue(status.lowBattery)
         XCTAssertEqual(status.lowBatteryThreshold, .percent15)
         XCTAssertEqual(store.state?.lowBatteryThreshold, .percent15)
     }

@@ -179,6 +179,7 @@ It lists current specification ownership and verification links.
 - `app/Sources/DetachApp/MenuBar*.swift`
 - `app/Sources/DetachApp/NewSessionSheet.swift`
 - `app/Sources/DetachApp/Onboarding*.swift`
+- `app/Sources/DetachApp/QuickChat.swift`
 - `app/Sources/DetachApp/RootView.swift`
 - `app/Sources/DetachApp/Session*.swift`
 - `app/Sources/DetachApp/Settings*.swift`

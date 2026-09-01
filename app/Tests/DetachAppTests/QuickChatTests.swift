@@ -55,6 +55,69 @@ final class QuickChatTests: XCTestCase {
         XCTAssertEqual(cli.calls.first?.currentDirectory?.path, directory.path)
     }
 
+    func testQuickChatSelectsTheTypedStartingSessionBeforeLaunchFinishes() async {
+        let directory = try! XCTUnwrap(
+            DirectoryPreference.existingDirectoryURL(path: "/tmp"))
+        let line = #"{"schema":1,"provider":"codex","session_name":"detach-codex-tmp-1","name":"tmp-1","effective_status":"starting","meta_status":"starting","agent_session_id":null,"project_dir":"\#(directory.path)","created_at":"2026-08-31T00:00:00Z","last_checkpoint_at":null,"finished_at":null}"#
+        let cli = SlowQuickChatCLI(listOutput: line)
+        let store = SessionStore(cli: cli)
+        let selected = expectation(description: "starting session selected")
+        var selectedID: String?
+
+        let launch = Task { @MainActor in
+            await QuickChatLaunch.start(
+                store: store,
+                providerRawValue: Provider.codex.rawValue,
+                directoryPath: "/tmp",
+                onSessionAvailable: { sessionID in
+                    selectedID = sessionID
+                    selected.fulfill()
+                },
+                discoverySleep: { _ in
+                    await cli.waitUntilStartBegan()
+                })
+        }
+
+        await fulfillment(of: [selected], timeout: 1)
+        XCTAssertEqual(selectedID, "detach-codex-tmp-1")
+        XCTAssertEqual(store.sessions.first?.effectiveStatus, .starting)
+
+        await cli.finishStart()
+        let result = await launch.value
+        let listCallCount = await cli.listCallCount
+
+        XCTAssertEqual(result.sessionID, "detach-codex-tmp-1")
+        XCTAssertEqual(listCallCount, 2)
+    }
+
+    func testQuickChatReconcilesAnEarlySelectionAfterLaunchFailure() async {
+        let directory = try! XCTUnwrap(
+            DirectoryPreference.existingDirectoryURL(path: "/tmp"))
+        let line = #"{"schema":1,"provider":"codex","session_name":"detach-codex-tmp-1","name":"tmp-1","effective_status":"starting","meta_status":"starting","agent_session_id":null,"project_dir":"\#(directory.path)","created_at":"2026-08-31T00:00:00Z","last_checkpoint_at":null,"finished_at":null}"#
+        let cli = SlowQuickChatCLI(listOutput: line)
+        let store = SessionStore(cli: cli)
+        let selected = expectation(description: "starting session selected")
+
+        let launch = Task { @MainActor in
+            await QuickChatLaunch.start(
+                store: store,
+                providerRawValue: Provider.codex.rawValue,
+                directoryPath: "/tmp",
+                onSessionAvailable: { _ in selected.fulfill() },
+                discoverySleep: { _ in
+                    await cli.waitUntilStartBegan()
+                })
+        }
+
+        await fulfillment(of: [selected], timeout: 1)
+        await cli.finishStart(exitCode: 17, stderr: "start refused\n")
+        let result = await launch.value
+        let listCallCount = await cli.listCallCount
+
+        XCTAssertEqual(result.message, "start refused")
+        XCTAssertEqual(listCallCount, 2)
+    }
+
     func testQuickChatRejectsAnUnavailableFolderWithoutCallingTheCLI() async {
         let cli = QuickChatRecordingCLI()
         let missing = "/tmp/detach-missing-\(UUID().uuidString)"
@@ -111,6 +174,54 @@ final class QuickChatTests: XCTestCase {
     func testSessionCommandsBuildWithTheSharedNavigation() {
         let commands = SessionCommands(navigation: MainNavigation())
         _ = commands.body
+    }
+}
+
+private actor SlowQuickChatCLI: DetachCLIRunning {
+    private let listOutput: String
+    private var startContinuation: CheckedContinuation<CLIResult, Never>?
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var startBegan = false
+    private(set) var listCallCount = 0
+
+    init(listOutput: String) {
+        self.listOutput = listOutput
+    }
+
+    func run(
+        arguments: [String], timeout: TimeInterval
+    ) async throws -> CLIResult {
+        if arguments == ["list", "--json"] {
+            listCallCount += 1
+            return CLIResult(
+                exitCode: 0,
+                stdout: listOutput,
+                stderr: "",
+                timedOut: false)
+        }
+
+        startBegan = true
+        let waiters = startWaiters
+        startWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        return await withCheckedContinuation { continuation in
+            startContinuation = continuation
+        }
+    }
+
+    func waitUntilStartBegan() async {
+        if startBegan { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func finishStart(exitCode: Int32 = 0, stderr: String = "") {
+        startContinuation?.resume(returning: CLIResult(
+            exitCode: exitCode,
+            stdout: exitCode == 0
+                ? "Started detach-codex-tmp-1 in /tmp\n" : "",
+            stderr: stderr,
+            timedOut: false))
+        startContinuation = nil
     }
 }
 
