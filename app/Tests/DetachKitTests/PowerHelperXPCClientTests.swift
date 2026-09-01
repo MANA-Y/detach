@@ -114,6 +114,18 @@ final class PowerHelperXPCClientTests: XCTestCase {
             NSXPCPowerHelperTransport.defaultTimeout / 3 + 0.001)
     }
 
+    func testVoidReplyMapsSuccessAndFailureWithoutGuessing() {
+        var succeeded: Result<Bool, Error>?
+        PowerHelperXPCVoidReply.finish(nil) { succeeded = $0 }
+        XCTAssertEqual(try? succeeded?.get(), true)
+
+        var failed: Result<Bool, Error>?
+        PowerHelperXPCVoidReply.finish(ExpectedFailure()) { failed = $0 }
+        XCTAssertThrowsError(try failed?.get()) {
+            XCTAssertTrue($0 is ExpectedFailure)
+        }
+    }
+
     func testPublicErrorsDescribeFailuresPrecisely() {
         XCTAssertEqual(
             PowerHelperLifecycleError.activeLeases.localizedDescription,

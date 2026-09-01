@@ -79,6 +79,24 @@ final class PowerHelperServiceTests: XCTestCase {
         ])
     }
 
+    func testServiceSetsTheLowBatteryFloorThroughTheLifecycle() async throws {
+        let backend = FakePowerHelperBackend(
+            status: .enabled, registrations: [])
+        let lifecycle = FakePowerHelperLifecycle()
+        let fixture = makeFixture(backend: backend, lifecycle: lifecycle)
+        defer { fixture.cleanup() }
+
+        try await fixture.service.setLowBatteryThreshold(.percent20)
+        XCTAssertEqual(lifecycle.thresholdCalls, [.percent20])
+
+        lifecycle.setThresholdError =
+            PowerHelperServiceError.lifecycleCommandFailed("threshold failed")
+        await XCTAssertThrowsErrorAsync {
+            try await fixture.service.setLowBatteryThreshold(.percent15)
+        }
+        XCTAssertEqual(lifecycle.thresholdCalls, [.percent20, .percent15])
+    }
+
     func testLifecycleRunnerSetsTheLowBatteryFloorThroughDetachPower() async throws {
         let cli = LifecycleCLI(responses: [
             .success(CLIResult(
@@ -1467,8 +1485,10 @@ private final class FakePowerHelperBackend: PowerHelperRegistrationBackend {
 private final class FakePowerHelperLifecycle: PowerHelperLifecycleRunning {
     var preparations: [Result<PowerHelperUnregistrationPreparation, Error>]
     var cancelError: Error?
+    var setThresholdError: Error?
     private(set) var prepareCalls = 0
     private(set) var cancelCalls = 0
+    private(set) var thresholdCalls: [PowerLowBatteryThreshold] = []
 
     init(
         preparations: [Result<PowerHelperUnregistrationPreparation, Error>] = [
@@ -1493,7 +1513,10 @@ private final class FakePowerHelperLifecycle: PowerHelperLifecycleRunning {
         if let cancelError { throw cancelError }
     }
 
-    func setLowBatteryThreshold(_ threshold: PowerLowBatteryThreshold) async throws {}
+    func setLowBatteryThreshold(_ threshold: PowerLowBatteryThreshold) async throws {
+        thresholdCalls.append(threshold)
+        if let setThresholdError { throw setThresholdError }
+    }
 }
 
 private final class MemoryPowerHelperHandoffStore: PowerHelperHandoffStoring {

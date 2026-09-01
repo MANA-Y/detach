@@ -885,7 +885,7 @@ struct SettingsView: View {
 
     // MARK: - System
 
-    private var systemTab: some View {
+    var systemTab: some View {
         Form {
             Section {
                 NightSceneIllustration()
@@ -1137,7 +1137,7 @@ struct SettingsView: View {
         }
     }
 
-    private var lowBatteryThresholdBinding: Binding<PowerLowBatteryThreshold> {
+    var lowBatteryThresholdBinding: Binding<PowerLowBatteryThreshold> {
         Binding(
             get: { installation.lowBatteryThreshold },
             set: { newValue in

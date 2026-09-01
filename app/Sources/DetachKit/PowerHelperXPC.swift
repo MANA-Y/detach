@@ -104,6 +104,19 @@ extension PowerHelperXPCError: LocalizedError {
     }
 }
 
+enum PowerHelperXPCVoidReply {
+    static func finish(
+        _ error: Error?,
+        completion: (Result<Bool, Error>) -> Void
+    ) {
+        if let error {
+            completion(.failure(error))
+        } else {
+            completion(.success(true))
+        }
+    }
+}
+
 final class PowerHelperXPCReply<Value>: @unchecked Sendable {
     private let lock = NSLock()
     private let semaphore = DispatchSemaphore(value: 0)
@@ -276,11 +289,7 @@ public final class NSXPCPowerHelperTransport: PowerHelperXPCTransport, @unchecke
     public func setLowBatteryThreshold(_ percent: Int) throws {
         let _: Bool = try perform { proxy, completion in
             proxy.setLowBatteryThreshold(percent: percent) { error in
-                if let error {
-                    completion(.failure(error))
-                } else {
-                    completion(.success(true))
-                }
+                PowerHelperXPCVoidReply.finish(error, completion: completion)
             }
         }
     }
