@@ -767,6 +767,10 @@ enum UIE2ETestDriver {
         try await revealGeometry(
             identifier: "settings-installation", name: "Installation")
         checks.append("settings-system-reveals-storage-and-installation")
+        settingsWindow.performClose(nil)
+        try await waitUntil("settings window closes") {
+            !settingsWindow.isVisible
+        }
         return checks
     }
 
