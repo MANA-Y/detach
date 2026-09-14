@@ -37,6 +37,9 @@ TERM then KILL. Parallel calls cannot starve drains. Truncation makes typed
 consumers keep the last valid state. Pipe descendants cannot extend deadlines.
 The event process uses `exec` and ends on cancellation. GUI PATH sorts
 NVM/mise Node directories by semantic version.
+CLI children start with an empty signal mask. A dispatch thread's blocked
+signals must not reach the private tmux server or its workers. The caller's
+signal mask does not change.
 If the bounded transcript tail has no Codex model, JSON List reads the model
 from the provider database. The session ID and rollout path must both match.
 An old database without the model column leaves the transcript result intact.

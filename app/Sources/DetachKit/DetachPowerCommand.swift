@@ -206,6 +206,26 @@ public struct POSIXChildProcessLauncher: ChildProcessLaunching {
                 operation: "posix_spawn_file_actions_addchdir")
         }
 
+        var attributes: posix_spawnattr_t?
+        let attributesResult = posix_spawnattr_init(&attributes)
+        guard attributesResult == 0 else {
+            throw posixError(attributesResult, operation: "posix_spawnattr_init")
+        }
+        defer { posix_spawnattr_destroy(&attributes) }
+        // Providers must receive terminal and termination signals even when
+        // the wrapper's calling thread blocks them. Keep the foreground group.
+        var signalMask = sigset_t()
+        sigemptyset(&signalMask)
+        let maskResult = posix_spawnattr_setsigmask(&attributes, &signalMask)
+        guard maskResult == 0 else {
+            throw posixError(maskResult, operation: "posix_spawnattr_setsigmask")
+        }
+        let flagsResult = posix_spawnattr_setflags(
+            &attributes, Int16(POSIX_SPAWN_SETSIGMASK))
+        guard flagsResult == 0 else {
+            throw posixError(flagsResult, operation: "posix_spawnattr_setflags")
+        }
+
         let argumentStrings =
             [request.executableURL.path] + request.arguments
         let environmentStrings = request.environment
@@ -221,7 +241,7 @@ public struct POSIXChildProcessLauncher: ChildProcessLaunching {
                         &childPID,
                         executablePath,
                         &fileActions,
-                        nil,
+                        &attributes,
                         argumentPointers,
                         environmentPointers)
                 }

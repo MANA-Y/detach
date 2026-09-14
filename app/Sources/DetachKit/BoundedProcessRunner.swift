@@ -355,8 +355,18 @@ public struct BoundedProcessRunner: Sendable {
                 operation: "posix_spawnattr_init", code: attributesResult)
         }
         defer { posix_spawnattr_destroy(&attributes) }
+        // Dispatch workers can block termination and terminal signals. A CLI
+        // child must not pass that thread mask into a persistent tmux server.
+        // Set only the child's mask; the caller keeps its own signal policy.
+        var signalMask = sigset_t()
+        sigemptyset(&signalMask)
+        let maskResult = posix_spawnattr_setsigmask(&attributes, &signalMask)
+        guard maskResult == 0 else {
+            throw BoundedProcessError.posix(
+                operation: "posix_spawnattr_setsigmask", code: maskResult)
+        }
         let flagsResult = posix_spawnattr_setflags(
-            &attributes, Int16(POSIX_SPAWN_SETPGROUP))
+            &attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGMASK))
         guard flagsResult == 0 else {
             throw BoundedProcessError.posix(
                 operation: "posix_spawnattr_setflags", code: flagsResult)
