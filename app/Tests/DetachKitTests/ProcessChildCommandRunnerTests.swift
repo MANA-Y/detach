@@ -119,6 +119,32 @@ final class ProcessChildCommandRunnerTests: XCTestCase {
         XCTAssertEqual(exitCode, 42)
     }
 
+    func testFailedSpawnPreservesCallerMaskAndAllowsNextLaunch() throws {
+        try withBlockedSignals {
+            let launcher = POSIXChildProcessLauncher()
+            let missing = FileManager.default.temporaryDirectory
+                .appendingPathComponent("detach-missing-provider-\(UUID().uuidString)")
+            XCTAssertThrowsError(try launcher.run(ChildProcessRequest(
+                executableURL: missing,
+                arguments: [],
+                environment: [:],
+                currentDirectoryURL: URL(fileURLWithPath: "/"),
+                inheritsStandardIO: false))) { error in
+                    let error = error as NSError
+                    XCTAssertEqual(error.domain, NSPOSIXErrorDomain)
+                    XCTAssertEqual(error.code, Int(ENOENT))
+                    XCTAssertTrue(error.localizedDescription.contains("posix_spawn"))
+                }
+            let exitCode = try launcher.run(ChildProcessRequest(
+                executableURL: URL(fileURLWithPath: "/usr/bin/perl"),
+                arguments: ["-e", signalMaskProbe],
+                environment: ProcessInfo.processInfo.environment,
+                currentDirectoryURL: URL(fileURLWithPath: "/"),
+                inheritsStandardIO: false))
+            XCTAssertEqual(exitCode, 42)
+        }
+    }
+
     func testBoundedRunnerClearsInheritedSignalMask() throws {
         let result = try withBlockedSignals {
             try BoundedProcessRunner().run(BoundedProcessRequest(
