@@ -91,6 +91,8 @@ The completion hook requires the exact pane ID and run token. It targets the
 original tmux session ID. A dead user split cannot disconnect those clients.
 The retained provider pane, metadata, and checkpoints remain available.
 Ctrl-C that leaves the provider running does not detach its clients.
+Completion without attached clients does not run a client command. The next
+attachment shows the provider screen without a stored tmux client error.
 
 Default starts form a provider/project history series. A fresh start refuses a
 live member or second writer; otherwise it allocates a successor without
