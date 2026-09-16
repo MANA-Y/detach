@@ -34,7 +34,7 @@ test-and-fix, audit) after they closed the terminal.
 3. Match `display_name`, `session_name`, and `project_dir` to the user's project.
 4. Read `effective_status`, `agent_turn_state`, and `power_protection_state`.
 5. If the user needs recent output, run
-   `detach <provider> logs -- <session_name>` and quote a short tail.
+   `detach <provider> logs <session_name>` and quote a short tail.
 6. If they ask whether the Mac can sleep, run `detach power status --json`.
    Report that document. Do not call `pmset`.
 
@@ -64,9 +64,10 @@ It does not mean Attach, Stop, or a second start in that worktree.
 | `cleanup_eligible` | Required before Delete or typed cleanup |
 | `health_reason` | Why health is not `healthy` |
 
-`waiting` means the provider finished a turn and wants a reply. Tell the user
-to Attach in the terminal selected in Detach Settings. Do not type into the
-pane.
+`waiting` means the provider finished a turn. It does not mean the provider
+asked a question or needs another reply. Open the session in the Detach.app
+embedded terminal if the user wants to inspect that turn. Do not type into
+the pane.
 
 `working` plus a quiet log is not hung. A long provider turn stays `running`
 while the owned worker and provider are alive.
@@ -75,8 +76,8 @@ while the owned worker and provider are alive.
 
 ```bash
 detach list --json
-detach <provider> status -- <session_name>
-detach <provider> logs -- <session_name>
+detach <provider> status <session_name>
+detach <provider> logs <session_name>
 detach power status --json
 detach storage --json
 detach doctor --json
@@ -85,8 +86,8 @@ detach storage cleanup --dry-run --json
 detach cleanup --dry-run --json
 ```
 
-Pass `--` before a `session_name` that could look like an option. Bound log
-quotes. Do not dump a whole retained pane into the conversation.
+Use the internal `session_name` from `list --json`. Bound log quotes. Do not
+dump a whole retained pane into the conversation.
 
 ## Start
 
@@ -108,8 +109,9 @@ that collide with Detach flags after `--`.
 
 - Do not run `stop`, `recover`, `delete`, or `cleanup` without an explicit
   user request and `ownership_proven` (and `cleanup_eligible` for delete).
-- Do not Attach from this skill. Attach is interactive. Name the action for
-  the user: `detach <provider> attach -- <session_name>`.
+- Do not Attach from this skill. Attach is interactive. Tell the user to
+  open the session in the Detach.app embedded terminal. The CLI form is
+  `detach <provider> attach <session_name>`.
 - Do not send keys into tmux or the provider pane. Detach has no follow-up
   prompt API.
 - Do not invoke `detach-core`, edit session JSON, or read
