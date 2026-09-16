@@ -41,7 +41,9 @@ text **Mac can sleep: temperature**.
 
 Settings → System owns the only **Mac Power** status, 10–20% floor, and
 approval block. The live floor changes the System explanation and the
-low-battery reason. Helper
+low-battery reason. The latest picker write wins. A late completion cannot
+replace it. A healthy heartbeat with a new helper floor replaces a pending
+value. A rejected write returns to the last accepted floor. Helper
 Ready requires a doctor live XPC check. Registration alone is Needs attention.
 During doctor or reconciliation, show Checking, not failure. Power
 requires a healthy watchdog heartbeat no older than three minutes; otherwise it
