@@ -42,6 +42,7 @@ final class UpdaterService: ObservableObject {
     @Published private(set) var canCheckForUpdates = false
     @Published private(set) var automaticallyChecksForUpdates = false
     @Published private(set) var automaticallyDownloadsUpdates = false
+    @Published private(set) var allowsAutomaticUpdates = false
     @Published private(set) var updateErrorMessage: String?
     @Published private(set) var lastCheckFoundNoUpdate = false
 
@@ -81,6 +82,7 @@ final class UpdaterService: ObservableObject {
         let updater = updaterController.updater
         automaticallyChecksForUpdates = updater.automaticallyChecksForUpdates
         automaticallyDownloadsUpdates = updater.automaticallyDownloadsUpdates
+        allowsAutomaticUpdates = updater.allowsAutomaticUpdates
 
         updater.publisher(for: \.canCheckForUpdates)
             .sink { [weak self] value in
@@ -97,6 +99,12 @@ final class UpdaterService: ObservableObject {
         updater.publisher(for: \.automaticallyDownloadsUpdates)
             .sink { [weak self] value in
                 self?.automaticallyDownloadsUpdates = value
+            }
+            .store(in: &cancellables)
+
+        updater.publisher(for: \.allowsAutomaticUpdates)
+            .sink { [weak self] value in
+                self?.allowsAutomaticUpdates = value
             }
             .store(in: &cancellables)
 
@@ -136,34 +144,23 @@ final class UpdaterService: ObservableObject {
         updaterController.updater.automaticallyChecksForUpdates = enabled
     }
 
-    /// Sparkle consults automatic download only while automatic checks are on.
+    /// Sparkle owns availability: automatic checks, or `SUAllowsAutomaticUpdates`.
     var canAutomaticallyDownloadUpdates: Bool {
         Self.canAutomaticallyDownloadUpdates(
             isAvailable: isAvailable,
-            checksEnabled: automaticallyChecksForUpdates)
+            allowsAutomaticUpdates: allowsAutomaticUpdates)
     }
 
     func setAutomaticallyDownloadsUpdates(_ enabled: Bool) {
-        guard Self.canChangeAutomaticDownload(
-            enable: enabled,
-            isAvailable: isAvailable,
-            checksEnabled: automaticallyChecksForUpdates) else { return }
+        guard isAvailable, updaterController.updater.allowsAutomaticUpdates else { return }
         updaterController.updater.automaticallyDownloadsUpdates = enabled
     }
 
     static func canAutomaticallyDownloadUpdates(
         isAvailable: Bool,
-        checksEnabled: Bool
+        allowsAutomaticUpdates: Bool
     ) -> Bool {
-        isAvailable && checksEnabled
-    }
-
-    static func canChangeAutomaticDownload(
-        enable: Bool,
-        isAvailable: Bool,
-        checksEnabled: Bool
-    ) -> Bool {
-        isAvailable && (!enable || checksEnabled)
+        isAvailable && allowsAutomaticUpdates
     }
 
     private func recordUpdateCycleResult(_ error: Error?) {
