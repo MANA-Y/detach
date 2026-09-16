@@ -2,13 +2,14 @@
 
 ## Supported versions
 
-Only the latest signed GitHub Release is supported. Source builds and ad-hoc
-previews are research targets, not supported products.
+The owner supports only the latest signed GitHub Release. Source builds and
+ad-hoc previews are research targets, not supported products.
 
 ## Report a vulnerability
 
 Use GitHub private vulnerability reporting on this repository. Do not open a
-public issue for helper, state, or update bugs.
+public issue for a suspected security vulnerability. Ordinary functional bugs
+in the helper, state, and update subsystems remain public issues.
 
 Include the Detach version or commit, the macOS version, whether the helper is
 registered, and a minimal local repro. Do not attach live checkpoints or
@@ -26,7 +27,7 @@ root, are out of scope.
 
 ## Disclosure
 
-We aim to publish a short advisory 90 days after the report, or 7 days after
-a fixed signed release, whichever is first. The advisory names the affected
-versions, the fixed tag, and the user action. It does not include exploit
-steps.
+The owner publishes a short advisory 90 days after the report, or 7 days
+after a fixed signed release, whichever is first. The advisory names the
+affected versions, the fixed tag, and the user action. It does not include
+exploit steps.
