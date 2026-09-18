@@ -8,6 +8,8 @@ Power protection has two required layers and one observable combined state:
    user-idle-system-sleep assertion and a root-helper lease over XPC while its
    provider is working. It runs the provider with inherited
    cwd/environment/stdio and returns its exit code.
+   The provider starts with an empty signal mask and stays in the wrapper's
+   foreground process group. The launch does not change the caller's mask.
 2. `DetachPowerHelper` is a demand-launched root daemon registered from the app.
    It manages only the machine-wide closed-lid setting through absolute
    `/usr/bin/pmset` invocations and a renewable lease registry.

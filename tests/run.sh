@@ -1870,6 +1870,81 @@ run_codex delete --force interrupt-terminal >/dev/null
 tmux -L "$OUTER_SOCKET" kill-server >/dev/null 2>&1 || true
 tmux -L "$SOCKET" kill-session -t =completion-unrelated
 
+# Completion with no attached clients must not leave a server-wide error for
+# the next terminal. Exercise the public lifecycle, then read a real PTY: the
+# old hook put an unrelated live pane in view-mode with "no current client".
+[ -z "$(tmux -L "$SOCKET" list-clients -F '#{client_pid}')" ]
+background_release="$TMP_ROOT/background-completion-release"
+(
+  cd "$interrupt_project"
+  FAKE_CODEX_RELEASE_FILE="$background_release" \
+    FAKE_CODEX_FOREIGN_FIRST=0 FAKE_CODEX_INIT_DELAY=0 \
+    run_codex --name background-completion --detach >/dev/null
+)
+background_session=detach-codex-background-completion
+background_pane="$(tmux -L "$SOCKET" show-options -qv \
+  -t "=$background_session:" @detach_pane_id)"
+touch "$background_release"
+attempts=0
+while [ "$(tmux -L "$SOCKET" display-message -p -t "$background_pane" '#{pane_dead}')" != 1 ] && \
+    [ "$attempts" -lt 160 ]; do
+  attempts=$((attempts + 1))
+  sleep 0.1
+done
+[ "$(tmux -L "$SOCKET" display-message -p -t "$background_pane" '#{pane_dead}')" = 1 ]
+python3 - "$TMUX_TEST_BIN" "$SOCKET_PATH" <<'PY_BACKGROUND_COMPLETION'
+import fcntl
+import os
+import pty
+import select
+import struct
+import subprocess
+import sys
+import termios
+import time
+
+tmux, socket = sys.argv[1:]
+command = [tmux, "-S", socket]
+name = "completion-next-terminal"
+banner = b"next terminal is live"
+env = dict(os.environ, TERM="xterm-256color", LC_ALL="en_US.UTF-8")
+for key in ["TMUX", "TMUX_PANE"]:
+    env.pop(key, None)
+master = slave = child = None
+try:
+    subprocess.run(command + ["new-session", "-d", "-s", name,
+                   "printf 'next terminal is live\\n'; exec /bin/cat"], check=True)
+    master, slave = pty.openpty()
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 120, 0, 0))
+    child = subprocess.Popen(command + ["attach-session", "-t", name],
+                             stdin=slave, stdout=slave, stderr=slave,
+                             env=env, start_new_session=True)
+    os.close(slave)
+    slave = None
+    output = b""
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if select.select([master], [], [], 0.1)[0]:
+            output += os.read(master, 65536)
+        if banner in output or b"no current client" in output:
+            break
+    assert b"no current client" not in output, repr(output)
+    assert banner in output, repr(output)
+    mode = subprocess.check_output(command + ["display-message", "-p",
+                                   "-t", name, "#{pane_in_mode}"])
+    assert mode.strip() == b"0", mode
+finally:
+    subprocess.run(command + ["kill-session", "-t", "=" + name],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if child is not None:
+        child.wait(timeout=3)
+    for fd in [master, slave]:
+        if fd is not None:
+            os.close(fd)
+print("Background completion leaves the next terminal live")
+PY_BACKGROUND_COMPLETION
+run_codex delete --force background-completion >/dev/null
+
 if [ "$CODEX_TEST_PART" = lifecycle ]; then
   run_codex delete --force integration
 fi
