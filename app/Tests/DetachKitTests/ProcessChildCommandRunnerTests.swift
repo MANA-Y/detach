@@ -69,6 +69,107 @@ final class ProcessChildCommandRunnerTests: XCTestCase {
         XCTAssertEqual(launcher.requests.first?.pidFile, "/fixture/provider.pid")
     }
 
+    private func withBlockedSignals<Result>(
+        _ operation: () throws -> Result
+    ) throws -> Result {
+        var blocked = sigset_t()
+        sigemptyset(&blocked)
+        for number in [SIGTERM, SIGINT, SIGHUP, SIGWINCH] {
+            sigaddset(&blocked, number)
+        }
+        var previous = sigset_t()
+        let result = pthread_sigmask(SIG_BLOCK, &blocked, &previous)
+        guard result == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(result))
+        }
+        defer { pthread_sigmask(SIG_SETMASK, &previous, nil) }
+        let value = try operation()
+        var observed = sigset_t()
+        XCTAssertEqual(pthread_sigmask(SIG_BLOCK, nil, &observed), 0)
+        for number in [SIGTERM, SIGINT, SIGHUP, SIGWINCH] {
+            XCTAssertEqual(sigismember(&observed, number), 1,
+                           "Launching must not change the caller's signal mask")
+        }
+        return value
+    }
+
+    private var signalMaskProbe: String {
+        """
+        use POSIX;
+        my $mask = POSIX::SigSet->new();
+        POSIX::sigprocmask(POSIX::SIG_BLOCK(), undef, $mask) or die $!;
+        for my $signal (\(SIGTERM), \(SIGINT), \(SIGHUP), \(SIGWINCH)) {
+            exit 77 if $mask->ismember($signal);
+        }
+        $SIG{TERM} = sub { exit 42 };
+        kill 'TERM', $$;
+        exit 99;
+        """
+    }
+
+    func testPOSIXLauncherClearsInheritedSignalMask() throws {
+        let exitCode = try withBlockedSignals {
+            try POSIXChildProcessLauncher().run(ChildProcessRequest(
+                executableURL: URL(fileURLWithPath: "/usr/bin/perl"),
+                arguments: ["-e", signalMaskProbe],
+                environment: ProcessInfo.processInfo.environment,
+                currentDirectoryURL: URL(fileURLWithPath: "/"),
+                inheritsStandardIO: false))
+        }
+        XCTAssertEqual(exitCode, 42)
+    }
+
+    func testFailedSpawnPreservesCallerMaskAndAllowsNextLaunch() throws {
+        try withBlockedSignals {
+            let launcher = POSIXChildProcessLauncher()
+            let missing = FileManager.default.temporaryDirectory
+                .appendingPathComponent("detach-missing-provider-\(UUID().uuidString)")
+            XCTAssertThrowsError(try launcher.run(ChildProcessRequest(
+                executableURL: missing,
+                arguments: [],
+                environment: [:],
+                currentDirectoryURL: URL(fileURLWithPath: "/"),
+                inheritsStandardIO: false))) { error in
+                    let error = error as NSError
+                    XCTAssertEqual(error.domain, NSPOSIXErrorDomain)
+                    XCTAssertEqual(error.code, Int(ENOENT))
+                    XCTAssertTrue(error.localizedDescription.contains("posix_spawn"))
+                }
+            let exitCode = try launcher.run(ChildProcessRequest(
+                executableURL: URL(fileURLWithPath: "/usr/bin/perl"),
+                arguments: ["-e", signalMaskProbe],
+                environment: ProcessInfo.processInfo.environment,
+                currentDirectoryURL: URL(fileURLWithPath: "/"),
+                inheritsStandardIO: false))
+            XCTAssertEqual(exitCode, 42)
+        }
+    }
+
+    func testBoundedRunnerClearsInheritedSignalMask() throws {
+        let result = try withBlockedSignals {
+            try BoundedProcessRunner().run(BoundedProcessRequest(
+                executableURL: URL(fileURLWithPath: "/usr/bin/perl"),
+                arguments: ["-e", signalMaskProbe],
+                environment: ProcessInfo.processInfo.environment,
+                timeout: 5))
+        }
+        XCTAssertEqual(result.exitCode, 42)
+        XCTAssertFalse(result.timedOut)
+    }
+
+    func testBoundedRunnerDeliversTERMWhenCallerBlocksIt() throws {
+        let result = try withBlockedSignals {
+            try BoundedProcessRunner().run(BoundedProcessRequest(
+                executableURL: URL(fileURLWithPath: "/usr/bin/perl"),
+                arguments: ["-e", "$SIG{TERM} = sub { exit 42 }; while (1) { select undef, undef, undef, 0.01; }"],
+                environment: ProcessInfo.processInfo.environment,
+                timeout: 0.5,
+                terminationGrace: 1))
+        }
+        XCTAssertTrue(result.timedOut)
+        XCTAssertEqual(result.exitCode, 42, "The child must handle TERM before KILL escalation")
+    }
+
     func testPOSIXLauncherPreservesParentProcessGroup() throws {
         let launcher = POSIXChildProcessLauncher()
         var environment = ProcessInfo.processInfo.environment
