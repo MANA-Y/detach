@@ -353,6 +353,65 @@ fi
 [ "$(readlink "$DETACH_INSTALL_BIN_DIR/detach")" = "$old_target" ]
 [ "$("$DETACH_INSTALL_BIN_DIR/detach" __version)" = 0.1.0 ]
 
+# A failed public-CLI switch after a successful manifest write must restore
+# the previous install record. The installer uses that record for later
+# version and payload decisions.
+cat >"$TMP_ROOT/bin/fail-symlink-mv" <<'SH'
+#!/bin/bash
+dest="${@: -1}"
+case "$dest" in
+  */bin/detach) exit 1 ;;
+esac
+exec /bin/mv "$@"
+SH
+chmod 0755 "$TMP_ROOT/bin/fail-symlink-mv"
+previous_manifest_version="$(plutil -extract version raw -o - \
+  "$DETACH_INSTALL_STATE_ROOT/install.json")"
+previous_manifest_payload="$(plutil -extract payload_id raw -o - \
+  "$DETACH_INSTALL_STATE_ROOT/install.json")"
+previous_manifest_executable="$(plutil -extract executable_path raw -o - \
+  "$DETACH_INSTALL_STATE_ROOT/install.json")"
+[ "$previous_manifest_version" = 0.1.0 ]
+[ "$previous_manifest_executable" = "$old_target" ]
+symlink_fail_payload="$(make_payload symlink-fail 0.1.7)"
+if DETACH_MV_BIN="$TMP_ROOT/bin/fail-symlink-mv" \
+  "$symlink_fail_payload/detach-install" install --source app \
+    --payload-dir "$symlink_fail_payload" --version-file "$symlink_fail_payload/VERSION"; then
+  printf 'install unexpectedly switched after a public CLI move failure\n' >&2
+  exit 1
+fi
+[ "$("$DETACH_INSTALL_BIN_DIR/detach" __version)" = 0.1.0 ]
+[ "$(readlink "$DETACH_INSTALL_BIN_DIR/detach")" = "$old_target" ]
+plutil -extract version raw -o - "$DETACH_INSTALL_STATE_ROOT/install.json" | \
+  grep -qx "$previous_manifest_version"
+plutil -extract payload_id raw -o - "$DETACH_INSTALL_STATE_ROOT/install.json" | \
+  grep -qx "$previous_manifest_payload"
+plutil -extract executable_path raw -o - "$DETACH_INSTALL_STATE_ROOT/install.json" | \
+  grep -qx "$previous_manifest_executable"
+[ ! -e "$DETACH_INSTALL_STATE_ROOT/.install.json.outgoing-"* ]
+
+# First-install cleanup removes the new manifest when no previous record exists.
+first_root="$TMP_ROOT/first-install"
+mkdir -p "$first_root"
+first_payload="$(make_payload first-fail 0.1.9)"
+if HOME="$first_root" \
+  ZDOTDIR="$first_root" \
+  XDG_CONFIG_HOME="$first_root/config" \
+  DETACH_INSTALL_BIN_DIR="$first_root/bin" \
+  DETACH_INSTALL_LIBEXEC_ROOT="$first_root/libexec" \
+  DETACH_STATE_ROOT="$first_root/state" \
+  DETACH_INSTALL_STATE_ROOT="$first_root/state" \
+  DETACH_CONFIG_ROOT="$first_root/config/detach" \
+  DETACH_MV_BIN="$TMP_ROOT/bin/fail-symlink-mv" \
+  "$first_payload/detach-install" install --source app \
+    --payload-dir "$first_payload" --version-file "$first_payload/VERSION"; then
+  printf 'first install unexpectedly kept a manifest after a public CLI move failure\n' >&2
+  exit 1
+fi
+[ ! -e "$first_root/state/install.json" ]
+[ ! -e "$first_root/bin/detach" ]
+[ ! -e "$first_root/state/.install.json.outgoing-"* ]
+
 # Updating must stop before the public CLI changes while any old managed
 # session remains on either historical tmux socket. Retained panes are
 # intentionally included because their logs still belong to the old CLI.
@@ -620,6 +679,31 @@ grep -F '# corruption' "$active_dir/detach-core" >/dev/null
 [ "$(cd -P "$(dirname "$(readlink "$DETACH_INSTALL_BIN_DIR/detach")")" && pwd)" = \
   "$active_dir" ]
 [ ! -e "$DETACH_INSTALL_LIBEXEC_ROOT/versions/.outgoing-"* ]
+
+# Repair must also restore the previous manifest if the public CLI switch fails.
+repair_manifest_version="$(plutil -extract version raw -o - \
+  "$DETACH_INSTALL_STATE_ROOT/install.json")"
+repair_manifest_payload="$(plutil -extract payload_id raw -o - \
+  "$DETACH_INSTALL_STATE_ROOT/install.json")"
+repair_manifest_executable="$(plutil -extract executable_path raw -o - \
+  "$DETACH_INSTALL_STATE_ROOT/install.json")"
+if DETACH_MV_BIN="$TMP_ROOT/bin/fail-symlink-mv" \
+  "$DETACH_INSTALL_BIN_DIR/detach" repair; then
+  printf 'repair unexpectedly activated a payload after a public CLI move failure\n' >&2
+  exit 1
+fi
+[ -d "$active_dir" ]
+grep -F '# corruption' "$active_dir/detach-core" >/dev/null
+[ "$(cd -P "$(dirname "$(readlink "$DETACH_INSTALL_BIN_DIR/detach")")" && pwd)" = \
+  "$active_dir" ]
+plutil -extract version raw -o - "$DETACH_INSTALL_STATE_ROOT/install.json" | \
+  grep -qx "$repair_manifest_version"
+plutil -extract payload_id raw -o - "$DETACH_INSTALL_STATE_ROOT/install.json" | \
+  grep -qx "$repair_manifest_payload"
+plutil -extract executable_path raw -o - "$DETACH_INSTALL_STATE_ROOT/install.json" | \
+  grep -qx "$repair_manifest_executable"
+[ ! -e "$DETACH_INSTALL_LIBEXEC_ROOT/versions/.outgoing-"* ]
+[ ! -e "$DETACH_INSTALL_STATE_ROOT/.install.json.outgoing-"* ]
 "$DETACH_INSTALL_BIN_DIR/detach" repair
 [ "$(shasum -a 256 "$active_dir/detach-core" | awk '{print $1}')" = \
   "$(shasum -a 256 "$payload_v2/detach-core" | awk '{print $1}')" ]

@@ -11,9 +11,11 @@ are regular files.
 Install and Repair stage and hash a replacement under `.incoming-*` before
 they replace a live version directory. They switch `~/.local/bin/detach` only
 after the version directory, install manifest, and direct `__version` proof
-succeed. Failure keeps the active payload. A live or retained session defers
-replacement. One PATH entry supports all shells. `--keep-state` keeps
-checkpoints. `--purge-state` removes Detach state, not provider data.
+succeed. Failure keeps the active payload and its install manifest. A first
+install that fails after it writes the manifest removes the new manifest. A
+live or retained session defers replacement. One PATH entry supports all
+shells. `--keep-state` keeps checkpoints. `--purge-state` removes Detach
+state, not provider data.
 Uninstall restores an unchanged profile or removes only its entry. Source
 edits require app sync or Repair.
 

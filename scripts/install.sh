@@ -800,8 +800,49 @@ INSTALL_INCOMING=""
 INSTALL_OUTGOING=""
 INSTALL_TARGET=""
 INSTALL_PREVIOUS_LINK=""
+INSTALL_PREVIOUS_MANIFEST=""
 INSTALL_SYMLINK_SWITCHED=0
+INSTALL_MANIFEST_WRITTEN=0
 INSTALL_ACTIVATION_DONE=0
+
+preserve_install_manifest() {
+  local dest
+  INSTALL_PREVIOUS_MANIFEST=""
+  [ -f "$INSTALL_STATE_ROOT/install.json" ] || return 0
+  dest="$INSTALL_STATE_ROOT/.install.json.outgoing-$$"
+  case "$dest" in
+    "$INSTALL_STATE_ROOT/.install.json.outgoing-"*) ;;
+    *) die "unsafe preserved manifest path" ;;
+  esac
+  "$RM_BIN" -f "$dest"
+  "$CP_BIN" -p "$INSTALL_STATE_ROOT/install.json" "$dest" || {
+    "$RM_BIN" -f "$dest"
+    die "cannot preserve install manifest"
+  }
+  INSTALL_PREVIOUS_MANIFEST="$dest"
+}
+
+restore_install_manifest() {
+  if [ "$INSTALL_MANIFEST_WRITTEN" -eq 1 ]; then
+    if [ -n "$INSTALL_PREVIOUS_MANIFEST" ] && [ -f "$INSTALL_PREVIOUS_MANIFEST" ]; then
+      case "$INSTALL_PREVIOUS_MANIFEST" in
+        "$INSTALL_STATE_ROOT/.install.json.outgoing-"*)
+          "$MV_BIN" -f "$INSTALL_PREVIOUS_MANIFEST" "$INSTALL_STATE_ROOT/install.json" || true
+          ;;
+      esac
+    else
+      "$RM_BIN" -f "$INSTALL_STATE_ROOT/install.json" || true
+    fi
+  elif [ -n "$INSTALL_PREVIOUS_MANIFEST" ]; then
+    case "$INSTALL_PREVIOUS_MANIFEST" in
+      "$INSTALL_STATE_ROOT/.install.json.outgoing-"*)
+        "$RM_BIN" -f "$INSTALL_PREVIOUS_MANIFEST" || true
+        ;;
+    esac
+  fi
+  INSTALL_PREVIOUS_MANIFEST=""
+  INSTALL_MANIFEST_WRITTEN=0
+}
 
 rollback_install_activation() {
   local link_tmp
@@ -841,6 +882,7 @@ rollback_install_activation() {
     esac
     INSTALL_INCOMING=""
   fi
+  restore_install_manifest
 }
 
 commit_install_activation() {
@@ -854,8 +896,19 @@ commit_install_activation() {
       *) die "unsafe outgoing path" ;;
     esac
   fi
+  if [ -n "$INSTALL_PREVIOUS_MANIFEST" ]; then
+    case "$INSTALL_PREVIOUS_MANIFEST" in
+      "$INSTALL_STATE_ROOT/.install.json.outgoing-"*)
+        "$RM_BIN" -f "$INSTALL_PREVIOUS_MANIFEST" || \
+          die "cannot remove preserved install manifest"
+        ;;
+      *) die "unsafe preserved manifest path" ;;
+    esac
+  fi
   INSTALL_OUTGOING=""
   INSTALL_INCOMING=""
+  INSTALL_PREVIOUS_MANIFEST=""
+  INSTALL_MANIFEST_WRITTEN=0
 }
 
 current_version() {
@@ -1358,8 +1411,16 @@ install_locked() {
   configure_shell_path
   cleanup_legacy_cli_watchdog
 
+  if [ -z "${INSTALL_TARGET:-}" ]; then
+    INSTALL_TARGET="$target"
+    INSTALL_ACTIVATION_DONE=0
+    INSTALL_SYMLINK_SWITCHED=0
+    trap rollback_install_activation EXIT
+  fi
+  preserve_install_manifest
   write_manifest "$version" "$build" "$payload_id" "$source" "$target" \
     "$payload_dir" "$version_file" "$SELF" || die "cannot write install manifest"
+  INSTALL_MANIFEST_WRITTEN=1
   migrate_config || die "cannot migrate Detach configuration"
   [ "$("$target/detach" __version 2>/dev/null)" = "$version" ] || \
     die "activated payload failed validation"
@@ -1368,11 +1429,6 @@ install_locked() {
     INSTALL_PREVIOUS_LINK="$(readlink "$BIN_DIR/detach")"
   else
     INSTALL_PREVIOUS_LINK=""
-  fi
-  if [ -z "${INSTALL_TARGET:-}" ]; then
-    INSTALL_TARGET="$target"
-    INSTALL_ACTIVATION_DONE=0
-    trap rollback_install_activation EXIT
   fi
   link_tmp="$BIN_DIR/.detach-link.$$"
   "$RM_BIN" -f "$link_tmp"
