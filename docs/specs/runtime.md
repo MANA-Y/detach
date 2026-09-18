@@ -43,6 +43,9 @@ TERM then KILL. Parallel calls cannot starve drains. Truncation makes typed
 consumers keep the last valid state. Pipe descendants cannot extend deadlines.
 The event process uses `exec` and ends on cancellation. GUI PATH sorts
 NVM/mise Node directories by semantic version.
+CLI children start with an empty signal mask. A dispatch thread's blocked
+signals must not reach the private tmux server or its workers. The caller's
+signal mask does not change.
 If the bounded transcript tail has no Codex model, JSON List reads the model
 from the provider database. The session ID and rollout path must both match.
 An old database without the model column leaves the transcript result intact.
@@ -94,6 +97,8 @@ The completion hook requires the exact pane ID and run token. It targets the
 original tmux session ID. A dead user split cannot disconnect those clients.
 The retained provider pane, metadata, and checkpoints remain available.
 Ctrl-C that leaves the provider running does not detach its clients.
+Completion without attached clients does not run a client command. The next
+attachment shows the provider screen without a stored tmux client error.
 
 Default starts form a provider/project history series. A fresh start refuses a
 live member or second writer; otherwise it allocates a successor without

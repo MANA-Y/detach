@@ -187,11 +187,7 @@ public struct POSIXChildProcessLauncher: ChildProcessLaunching {
     private func spawn(_ request: ChildProcessRequest) throws -> pid_t {
         var fileActions: posix_spawn_file_actions_t?
         let initializeResult = posix_spawn_file_actions_init(&fileActions)
-        guard initializeResult == 0 else {
-            throw posixError(
-                initializeResult,
-                operation: "posix_spawn_file_actions_init")
-        }
+        try checkPOSIX(initializeResult, operation: "posix_spawn_file_actions_init")
         defer {
             posix_spawn_file_actions_destroy(&fileActions)
         }
@@ -200,11 +196,21 @@ public struct POSIXChildProcessLauncher: ChildProcessLaunching {
             path in
             posix_spawn_file_actions_addchdir(&fileActions, path)
         }
-        guard changeDirectoryResult == 0 else {
-            throw posixError(
-                changeDirectoryResult,
-                operation: "posix_spawn_file_actions_addchdir")
-        }
+        try checkPOSIX(changeDirectoryResult, operation: "posix_spawn_file_actions_addchdir")
+
+        var attributes: posix_spawnattr_t?
+        let attributesResult = posix_spawnattr_init(&attributes)
+        try checkPOSIX(attributesResult, operation: "posix_spawnattr_init")
+        defer { posix_spawnattr_destroy(&attributes) }
+        // Providers must receive terminal and termination signals even when
+        // the wrapper's calling thread blocks them. Keep the foreground group.
+        var signalMask = sigset_t()
+        sigemptyset(&signalMask)
+        let maskResult = posix_spawnattr_setsigmask(&attributes, &signalMask)
+        try checkPOSIX(maskResult, operation: "posix_spawnattr_setsigmask")
+        let flagsResult = posix_spawnattr_setflags(
+            &attributes, Int16(POSIX_SPAWN_SETSIGMASK))
+        try checkPOSIX(flagsResult, operation: "posix_spawnattr_setflags")
 
         let argumentStrings =
             [request.executableURL.path] + request.arguments
@@ -221,15 +227,13 @@ public struct POSIXChildProcessLauncher: ChildProcessLaunching {
                         &childPID,
                         executablePath,
                         &fileActions,
-                        nil,
+                        &attributes,
                         argumentPointers,
                         environmentPointers)
                 }
             }
         }
-        guard spawnResult == 0 else {
-            throw posixError(spawnResult, operation: "posix_spawn")
-        }
+        try checkPOSIX(spawnResult, operation: "posix_spawn")
         return childPID
     }
 
@@ -272,6 +276,12 @@ public struct POSIXChildProcessLauncher: ChildProcessLaunching {
                 throw posixError(EINVAL, operation: "CString array")
             }
             return try body(baseAddress)
+        }
+    }
+
+    private func checkPOSIX(_ result: Int32, operation: String) throws {
+        guard result == 0 else {
+            throw posixError(result, operation: operation)
         }
     }
 
