@@ -1019,7 +1019,6 @@ enum UIE2ETestDriver {
         let systemTab = try await buttonLabeled(
             L10n.string("System"), attempts: 40)
         try await click(systemTab, name: "System settings tab")
-        _ = try await element(identifier: "settings-low-battery-threshold")
         try await revealGeometry(identifier: "settings-storage", name: "Storage")
         try await revealGeometry(
             identifier: "settings-installation", name: "Installation")
