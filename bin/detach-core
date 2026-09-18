@@ -2049,6 +2049,10 @@ install_session_completion_hook() {
   # Use tmux's event queue and immutable pane/session IDs. A dead user split
   # or an old run must never disconnect clients of the current provider run.
   condition="#{&&:#{==:#{hook_pane},$pane_id},#{&&:#{pane_dead},#{&&:#{==:#{@detach_pane_id},$pane_id},#{==:#{@detach_run_token},$run_token}}}}"
+  # Even detach-client -s requires a current client in tmux. A hook with no
+  # clients otherwise queues a config error that covers the next attached
+  # pane with view-mode. Keep the check and detach on the same event queue.
+  condition="#{&&:#{session_attached},$condition}"
   command="if-shell -F -t $pane_id '$condition' { detach-client -s '$session_id' }"
   "${TMUX_CMD[@]}" set-hook -t "=$session:" 'pane-died[1]' "$command"
 }
