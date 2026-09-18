@@ -1168,6 +1168,77 @@ grep -Fx -- '--resume' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
 [ "$(<"$CLAUDE_CONFIG_DIR/tasks/$session_id/task.json")" = "$expected_task" ]
 "$SCRIPT" claude stop "$human_label"
 ! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
+
+# A SIGKILL after transcript publish leaves mixed live files and the previous
+# generation. A fresh Recover process must not adopt that mix as a checkpoint.
+: >"$CLAUDE_CONFIG_DIR/projects/fake/$session_id.jsonl"
+printf '{"task":"live-crash-transcript-sentinel"}\n' \
+  >"$CLAUDE_CONFIG_DIR/tasks/$session_id/task.json"
+printf 'live-crash-history-sentinel\n' \
+  >"$CLAUDE_CONFIG_DIR/file-history/$session_id/extra-sentinel"
+export DETACH_TEST_CLAUDE_RESTORE_CRASH_AFTER_TRANSCRIPT=1
+if "$SCRIPT" claude recover --detach "$human_label"; then
+  unset DETACH_TEST_CLAUDE_RESTORE_CRASH_AFTER_TRANSCRIPT
+  printf 'Claude restore survived a crash after transcript publish\n' >&2
+  exit 1
+fi
+unset DETACH_TEST_CLAUDE_RESTORE_CRASH_AFTER_TRANSCRIPT
+"$STATE_HELPER" jsonl validate claude \
+  "$CLAUDE_CONFIG_DIR/projects/fake/$session_id.jsonl" "$session_id"
+[ "$(<"$CLAUDE_CONFIG_DIR/tasks/$session_id/task.json")" = \
+  '{"task":"live-crash-transcript-sentinel"}' ]
+[ -f "$session_dir/claude-restore.txn" ]
+[ -f "$CLAUDE_CONFIG_DIR/projects/fake/$session_id.jsonl.detach.old" ]
+export FAKE_CLAUDE_EXPECT_RESTORED=1
+reset_fake_claude_ready
+"$SCRIPT" claude recover --detach "$human_label"
+wait_for_fake_claude_ready
+grep -Fx -- '--resume' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
+"$STATE_HELPER" jsonl validate claude \
+  "$CLAUDE_CONFIG_DIR/projects/fake/$session_id.jsonl" "$session_id"
+[ "$(<"$CLAUDE_CONFIG_DIR/tasks/$session_id/task.json")" = "$expected_task" ]
+[ ! -e "$CLAUDE_CONFIG_DIR/file-history/$session_id/extra-sentinel" ]
+[ ! -e "$session_dir/claude-restore.txn" ]
+[ ! -e "$CLAUDE_CONFIG_DIR/projects/fake/$session_id.jsonl.detach.old" ]
+[ ! -e "$CLAUDE_CONFIG_DIR/file-history/$session_id.detach.tmp" ]
+[ ! -e "$CLAUDE_CONFIG_DIR/tasks/$session_id.detach.tmp" ]
+"$SCRIPT" claude stop "$human_label"
+! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
+
+# A SIGKILL between companion publications also leaves a mixed live tree.
+# The next process restores one complete generation.
+: >"$CLAUDE_CONFIG_DIR/projects/fake/$session_id.jsonl"
+printf '{"task":"live-crash-companion-sentinel"}\n' \
+  >"$CLAUDE_CONFIG_DIR/tasks/$session_id/task.json"
+printf 'live-crash-companion-history\n' \
+  >"$CLAUDE_CONFIG_DIR/file-history/$session_id/extra-sentinel"
+export DETACH_TEST_CLAUDE_RESTORE_CRASH_AFTER_COMPANION=1
+if "$SCRIPT" claude recover --detach "$human_label"; then
+  unset DETACH_TEST_CLAUDE_RESTORE_CRASH_AFTER_COMPANION
+  printf 'Claude restore survived a crash after companion publish\n' >&2
+  exit 1
+fi
+unset DETACH_TEST_CLAUDE_RESTORE_CRASH_AFTER_COMPANION
+"$STATE_HELPER" jsonl validate claude \
+  "$CLAUDE_CONFIG_DIR/projects/fake/$session_id.jsonl" "$session_id"
+[ "$(<"$CLAUDE_CONFIG_DIR/tasks/$session_id/task.json")" = \
+  '{"task":"live-crash-companion-sentinel"}' ]
+[ -f "$CLAUDE_CONFIG_DIR/file-history/$session_id/extra-sentinel" ]
+[ -f "$session_dir/claude-restore.txn" ]
+export FAKE_CLAUDE_EXPECT_RESTORED=1
+reset_fake_claude_ready
+"$SCRIPT" claude recover --detach "$human_label"
+wait_for_fake_claude_ready
+grep -Fx -- '--resume' "$FAKE_CLAUDE_ARGS_FILE" >/dev/null
+"$STATE_HELPER" jsonl validate claude \
+  "$CLAUDE_CONFIG_DIR/projects/fake/$session_id.jsonl" "$session_id"
+[ "$(<"$CLAUDE_CONFIG_DIR/tasks/$session_id/task.json")" = "$expected_task" ]
+[ ! -e "$CLAUDE_CONFIG_DIR/file-history/$session_id/extra-sentinel" ]
+[ ! -e "$session_dir/claude-restore.txn" ]
+[ ! -e "$CLAUDE_CONFIG_DIR/file-history/$session_id.detach.old" ]
+[ ! -e "$CLAUDE_CONFIG_DIR/tasks/$session_id.detach.old" ]
+"$SCRIPT" claude stop "$human_label"
+! tmux -L "$SOCKET" has-session -t "=$session" 2>/dev/null
 export FAKE_CLAUDE_EXPECT_RESTORED=0
 
 # Reusing the harness name for session B must not publish over session A's

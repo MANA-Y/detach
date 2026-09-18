@@ -3091,7 +3091,8 @@ claude_recovery_preflight() {
   local live_valid=0
 
   safe_claude_transcript_path "$transcript" "$id" || return 1
-  if valid_claude_transcript "$transcript" "$id"; then
+  if valid_claude_transcript "$transcript" "$id" && \
+     ! claude_restore_intent_is_open "$session"; then
     live_valid=1
   fi
   checkpoint_dir="$(session_dir "$session")/checkpoint"
@@ -3121,7 +3122,8 @@ claude_recovery_payload_source_is_valid() {
   local live_valid=0
 
   safe_claude_transcript_path "$transcript" "$id" || return 1
-  if valid_claude_transcript "$transcript" "$id"; then
+  if valid_claude_transcript "$transcript" "$id" && \
+     ! claude_restore_intent_is_open "$session"; then
     live_valid=1
   fi
   checkpoint_dir="$(session_dir "$session")/checkpoint"
@@ -3186,7 +3188,8 @@ claude_recovery_payload_is_valid() {
   local -a restore_destinations=()
 
   safe_claude_transcript_path "$transcript" "$id" || return 1
-  if valid_claude_transcript "$transcript" "$id"; then
+  if valid_claude_transcript "$transcript" "$id" && \
+     ! claude_restore_intent_is_open "$session"; then
     live_valid=1
   fi
   checkpoint_dir="$(session_dir "$session")/checkpoint"
@@ -4082,6 +4085,253 @@ discard_claude_restore_bundle_tmps() {
   done
 }
 
+claude_restore_txn_path() {
+  printf '%s/claude-restore.txn\n' "$(session_dir "$1")"
+}
+
+claude_restore_intent_is_open() {
+  local session="$1"
+  local path
+  local schema
+  local phase
+
+  path="$(claude_restore_txn_path "$session")"
+  [ -f "$path" ] && [ ! -L "$path" ] || return 1
+  safe_owned_plain_file "$path" || return 1
+  {
+    IFS= read -r schema || return 1
+    IFS= read -r phase || return 1
+  } <"$path" || return 1
+  [ "$schema" = 1 ] && [ "$phase" = publishing ]
+}
+
+claude_restore_sync() {
+  [ "$SYNC_ENABLED" = "0" ] || /bin/sync
+}
+
+claude_restore_txn_line_is_safe() {
+  local line="$1"
+  local home="$2"
+  local path
+  local had
+
+  case "$line" in
+    *$'\t'0|*$'\t'1) ;;
+    *) return 1 ;;
+  esac
+  path="${line%$'\t'*}"
+  had="${line##*$'\t'}"
+  case "$had" in 0|1) ;; *) return 1 ;; esac
+  case "$path" in
+    /*) ;;
+    *) return 1 ;;
+  esac
+  claude_restore_path_is_reachable "$path" "$home"
+}
+
+write_claude_restore_txn() {
+  local session="$1"
+  local phase="$2"
+  local id="$3"
+  local transcript="$4"
+  local home="$5"
+  shift 5
+  local path
+  local parent
+  local tmp
+  local destination
+  local had
+
+  case "$phase" in publishing|committed) ;; *) return 1 ;; esac
+  path="$(claude_restore_txn_path "$session")"
+  session_file_is_safe_or_absent "$path" || return 1
+  parent="$(dirname "$path")"
+  tmp="$(/usr/bin/mktemp "$parent/.detach-session-file.XXXXXX")" || return 1
+  {
+    printf '%s\n' 1 "$phase" "$id"
+    if [ -e "$transcript" ] || [ -L "$transcript" ]; then
+      had=1
+    else
+      had=0
+    fi
+    printf '%s\t%s\n' "$transcript" "$had" || {
+      rm -f -- "$tmp"
+      return 1
+    }
+    for destination in "$@"; do
+      if [ -e "$destination" ] || [ -L "$destination" ]; then
+        had=1
+      else
+        had=0
+      fi
+      printf '%s\t%s\n' "$destination" "$had" || {
+        rm -f -- "$tmp"
+        return 1
+      }
+    done
+  } >"$tmp" || {
+    rm -f -- "$tmp"
+    return 1
+  }
+  safe_owned_plain_file "$tmp" || {
+    rm -f -- "$tmp"
+    return 1
+  }
+  mv -f -- "$tmp" "$path" || return 1
+  claude_restore_sync
+}
+
+read_claude_restore_txn() {
+  local path="$1"
+  local home="$2"
+  local expected_id="$3"
+  local schema
+  local line
+  local dest
+  local had
+  local saw_transcript=0
+
+  CLAUDE_RESTORE_TXN_PHASE=""
+  CLAUDE_RESTORE_TXN_ID=""
+  CLAUDE_RESTORE_TXN_TRANSCRIPT=""
+  CLAUDE_RESTORE_TXN_TRANSCRIPT_HAD=0
+  CLAUDE_RESTORE_TXN_DESTS=()
+  CLAUDE_RESTORE_TXN_DEST_HAD=()
+
+  session_file_is_safe_or_absent "$path" || return 1
+  [ -f "$path" ] && [ ! -L "$path" ] || return 1
+  safe_owned_plain_file "$path" || return 1
+  {
+    IFS= read -r schema || return 1
+    [ "$schema" = 1 ] || return 1
+    IFS= read -r CLAUDE_RESTORE_TXN_PHASE || return 1
+    case "$CLAUDE_RESTORE_TXN_PHASE" in publishing|committed) ;; *) return 1 ;; esac
+    IFS= read -r CLAUDE_RESTORE_TXN_ID || return 1
+    [ "$CLAUDE_RESTORE_TXN_ID" = "$expected_id" ] || return 1
+    while IFS= read -r line; do
+      [ -n "$line" ] || return 1
+      claude_restore_txn_line_is_safe "$line" "$home" || return 1
+      dest="${line%$'\t'*}"
+      had="${line##*$'\t'}"
+      if [ "$saw_transcript" -eq 0 ]; then
+        CLAUDE_RESTORE_TXN_TRANSCRIPT="$dest"
+        CLAUDE_RESTORE_TXN_TRANSCRIPT_HAD="$had"
+        saw_transcript=1
+      else
+        CLAUDE_RESTORE_TXN_DESTS+=("$dest")
+        CLAUDE_RESTORE_TXN_DEST_HAD+=("$had")
+      fi
+    done
+  } <"$path" || return 1
+  [ "$saw_transcript" -eq 1 ]
+}
+
+remove_claude_restore_txn() {
+  local path="$1"
+
+  session_file_is_safe_or_absent "$path" || return 1
+  if [ -e "$path" ] || [ -L "$path" ]; then
+    safe_owned_plain_file "$path" || return 1
+    rm -f -- "$path" || return 1
+  fi
+  claude_restore_sync
+}
+
+discard_claude_restore_member_old() {
+  local destination="$1"
+  local home="$2"
+  local old="$destination.detach.old"
+
+  if [ -e "$old" ] || [ -L "$old" ]; then
+    if [ -f "$old" ] && [ ! -L "$old" ]; then
+      safe_plain_file "$old" || return 1
+      rm -f "$old" || return 1
+    else
+      safe_claude_restore_destination "$old" "$home" || return 1
+      rm -rf "$old" || return 1
+    fi
+  fi
+}
+
+rollback_claude_restore_txn_member() {
+  local destination="$1"
+  local home="$2"
+  local had_previous="$3"
+  local old="$destination.detach.old"
+  local tmp="$destination.detach.tmp"
+
+  if [ -e "$old" ] || [ -L "$old" ]; then
+    if [ -e "$destination" ] || [ -L "$destination" ]; then
+      discard_claude_restore_tmp "$destination" "$home" || true
+    fi
+    mv "$old" "$destination" || true
+  elif [ "$had_previous" -eq 0 ]; then
+    if [ ! -e "$tmp" ] && [ ! -L "$tmp" ]; then
+      if [ -e "$destination" ] || [ -L "$destination" ]; then
+        discard_claude_restore_tmp "$destination" "$home" || true
+      fi
+    fi
+  fi
+  discard_claude_restore_tmp "$tmp" "$home" || true
+}
+
+commit_claude_restore_generation() {
+  local session="$1"
+  local home="$2"
+  local id="$3"
+  local transcript="$4"
+  shift 4
+  local destination
+
+  write_claude_restore_txn "$session" committed "$id" "$transcript" "$home" \
+    "$@" || return 1
+  discard_claude_restore_member_old "$transcript" "$home" || return 1
+  for destination in "$@"; do
+    discard_claude_restore_member_old "$destination" "$home" || return 1
+  done
+  remove_claude_restore_txn "$(claude_restore_txn_path "$session")"
+}
+
+# Heal an interrupted bundle publish before the provider can consume files.
+# An open publishing intent rolls live members back to the retained generation.
+# Mixed live files are never treated as a complete checkpoint.
+heal_claude_restore_txn() {
+  local session="$1"
+  local home="$2"
+  local id="$3"
+  local path
+  local destination
+  local index
+
+  CLAUDE_RESTORE_TXN_REPUBLISH=0
+  path="$(claude_restore_txn_path "$session")"
+  if [ ! -e "$path" ] && [ ! -L "$path" ]; then
+    return 0
+  fi
+  read_claude_restore_txn "$path" "$home" "$id" || return 1
+  if [ "$CLAUDE_RESTORE_TXN_PHASE" = committed ]; then
+    discard_claude_restore_member_old "$CLAUDE_RESTORE_TXN_TRANSCRIPT" "$home" || \
+      return 1
+    discard_claude_restore_tmp "$CLAUDE_RESTORE_TXN_TRANSCRIPT.detach.tmp" \
+      "$home" || true
+    for destination in ${CLAUDE_RESTORE_TXN_DESTS[@]+"${CLAUDE_RESTORE_TXN_DESTS[@]}"}; do
+      discard_claude_restore_member_old "$destination" "$home" || return 1
+      discard_claude_restore_tmp "$destination.detach.tmp" "$home" || true
+    done
+    remove_claude_restore_txn "$path" || return 1
+    return 0
+  fi
+  rollback_claude_restore_txn_member "$CLAUDE_RESTORE_TXN_TRANSCRIPT" "$home" \
+    "$CLAUDE_RESTORE_TXN_TRANSCRIPT_HAD"
+  for ((index = 0; index < ${#CLAUDE_RESTORE_TXN_DESTS[@]}; index++)); do
+    rollback_claude_restore_txn_member \
+      "${CLAUDE_RESTORE_TXN_DESTS[$index]}" "$home" \
+      "${CLAUDE_RESTORE_TXN_DEST_HAD[$index]}"
+  done
+  remove_claude_restore_txn "$path" || return 1
+  CLAUDE_RESTORE_TXN_REPUBLISH=1
+}
+
 rollback_claude_restore_bundle() {
   local transcript="$1"
   local home="$2"
@@ -4114,14 +4364,17 @@ rollback_claude_restore_bundle() {
   fi
 }
 
-# Stage the transcript and companions, then publish them as one replacement.
-# A failure after the transcript swap rolls the published members back.
+# Stage the transcript and companions, then record a durable publish intent
+# before any live rename. The previous generation stays until that intent is
+# committed. A detected failure rolls published members back and drops the
+# intent. A crash leaves the intent for the next Resume or Recover.
 publish_claude_restore_bundle() {
-  local backup="$1"
-  local transcript="$2"
-  local home="$3"
-  local id="$4"
-  shift 4
+  local session="$1"
+  local backup="$2"
+  local transcript="$3"
+  local home="$4"
+  local id="$5"
+  shift 5
   local -a sources=()
   local -a dests=()
   local -a published=()
@@ -4140,6 +4393,8 @@ publish_claude_restore_bundle() {
     shift 2
   done
   [ "$#" -eq 0 ] || return 1
+
+  heal_claude_restore_txn "$session" "$home" "$id" || return 1
 
   discard_claude_restore_tmp "$transcript_tmp" "$home" || return 1
   if [ -e "$transcript_old" ] || [ -L "$transcript_old" ]; then
@@ -4204,6 +4459,13 @@ publish_claude_restore_bundle() {
     }
   done
 
+  write_claude_restore_txn "$session" publishing "$id" "$transcript" "$home" \
+    ${dests[@]+"${dests[@]}"} || {
+    discard_claude_restore_bundle_tmps "$transcript" "$home" \
+      ${dests[@]+"${dests[@]}"}
+    return 1
+  }
+
   if [ -e "$transcript" ] || [ -L "$transcript" ]; then
     [ ! -L "$transcript" ] && safe_plain_file "$transcript" || {
       discard_claude_restore_bundle_tmps "$transcript" "$home" \
@@ -4213,6 +4475,7 @@ publish_claude_restore_bundle() {
     mv "$transcript" "$transcript_old" || {
       discard_claude_restore_bundle_tmps "$transcript" "$home" \
         ${dests[@]+"${dests[@]}"}
+      remove_claude_restore_txn "$(claude_restore_txn_path "$session")" || true
       return 1
     }
   fi
@@ -4222,6 +4485,7 @@ publish_claude_restore_bundle() {
     fi
     discard_claude_restore_bundle_tmps "$transcript" "$home" \
       ${dests[@]+"${dests[@]}"}
+    remove_claude_restore_txn "$(claude_restore_txn_path "$session")" || true
     return 1
   fi
   transcript_published=1
@@ -4230,7 +4494,11 @@ publish_claude_restore_bundle() {
       "$transcript" "$home" "$transcript_published"
     discard_claude_restore_bundle_tmps "$transcript" "$home" \
       ${dests[@]+"${dests[@]}"}
+    remove_claude_restore_txn "$(claude_restore_txn_path "$session")" || true
     return 1
+  fi
+  if [ "${DETACH_TEST_CLAUDE_RESTORE_CRASH_AFTER_TRANSCRIPT:-0}" = "1" ]; then
+    kill -KILL $$
   fi
 
   for ((index = 0; index < ${#dests[@]}; index++)); do
@@ -4244,6 +4512,7 @@ publish_claude_restore_bundle() {
           ${published[@]+"${published[@]}"}
         discard_claude_restore_bundle_tmps "$transcript" "$home" \
         ${dests[@]+"${dests[@]}"}
+        remove_claude_restore_txn "$(claude_restore_txn_path "$session")" || true
         return 1
       }
       mv "$destination" "$old" || {
@@ -4252,6 +4521,7 @@ publish_claude_restore_bundle() {
           ${published[@]+"${published[@]}"}
         discard_claude_restore_bundle_tmps "$transcript" "$home" \
         ${dests[@]+"${dests[@]}"}
+        remove_claude_restore_txn "$(claude_restore_txn_path "$session")" || true
         return 1
       }
       if ! mv "$tmp" "$destination"; then
@@ -4261,6 +4531,7 @@ publish_claude_restore_bundle() {
           ${published[@]+"${published[@]}"}
         discard_claude_restore_bundle_tmps "$transcript" "$home" \
         ${dests[@]+"${dests[@]}"}
+        remove_claude_restore_txn "$(claude_restore_txn_path "$session")" || true
         return 1
       fi
     else
@@ -4270,24 +4541,30 @@ publish_claude_restore_bundle() {
           ${published[@]+"${published[@]}"}
         discard_claude_restore_bundle_tmps "$transcript" "$home" \
         ${dests[@]+"${dests[@]}"}
+        remove_claude_restore_txn "$(claude_restore_txn_path "$session")" || true
         return 1
       }
     fi
     published+=("$destination")
+    if [ "${DETACH_TEST_CLAUDE_RESTORE_CRASH_AFTER_COMPANION:-0}" = "1" ] && \
+       [ "${#published[@]}" -eq 1 ]; then
+      kill -KILL $$
+    fi
   done
 
-  if [ -e "$transcript_old" ] || [ -L "$transcript_old" ]; then
-    safe_plain_file "$transcript_old" || return 1
-    rm -f "$transcript_old" || return 1
-  fi
   for destination in ${published[@]+"${published[@]}"}; do
-    old="$destination.detach.old"
-    if [ -e "$old" ] || [ -L "$old" ]; then
-      safe_claude_restore_destination "$old" "$home" || return 1
-      rm -rf "$old" || return 1
-    fi
-    safe_claude_restore_destination "$destination" "$home" || return 1
+    safe_claude_restore_destination "$destination" "$home" || {
+      rollback_claude_restore_bundle \
+        "$transcript" "$home" "$transcript_published" \
+        ${published[@]+"${published[@]}"}
+      discard_claude_restore_bundle_tmps "$transcript" "$home" \
+        ${dests[@]+"${dests[@]}"}
+      remove_claude_restore_txn "$(claude_restore_txn_path "$session")" || true
+      return 1
+    }
   done
+  commit_claude_restore_generation "$session" "$home" "$id" "$transcript" \
+    ${published[@]+"${published[@]}"}
 }
 
 restore_matching_claude_checkpoint() {
@@ -4308,12 +4585,14 @@ restore_matching_claude_checkpoint() {
   local item
   local index
   local live_valid=0
+  local CLAUDE_RESTORE_TXN_REPUBLISH=0
   local -a restore_sources=()
   local -a restore_destinations=()
 
   checkpoint_dir="$(session_dir "$session")/checkpoint"
   safe_claude_transcript_path "$transcript" "$id" || return 1
-  if [ -n "$transcript" ] && valid_claude_transcript "$transcript" "$id"; then
+  if [ -n "$transcript" ] && valid_claude_transcript "$transcript" "$id" && \
+     ! claude_restore_intent_is_open "$session"; then
     live_valid=1
   fi
   checkpoint_meta="$checkpoint_dir/meta.json"
@@ -4459,12 +4738,18 @@ restore_matching_claude_checkpoint() {
     esac
   done
 
+  heal_claude_restore_txn "$session" "$home" "$id" || {
+    [ -z "$stage" ] || rm -rf "$stage"
+    return 1
+  }
+
   if ! valid_claude_transcript "$transcript" "$id"; then
     restore=1
   elif [ "$(stat -f '%z' "$transcript")" -lt "$(stat -f '%z' "$backup")" ]; then
     restore=1
   fi
   [ "$force_checkpoint" -eq 0 ] || restore=1
+  [ "$CLAUDE_RESTORE_TXN_REPUBLISH" -eq 0 ] || restore=1
   if [ "$restore" -eq 1 ]; then
     local -a bundle_args=()
     for ((index = 0; index < ${#restore_sources[@]}; index++)); do
@@ -4475,13 +4760,13 @@ restore_matching_claude_checkpoint() {
     done
     if [ "${#bundle_args[@]}" -gt 0 ]; then
       publish_claude_restore_bundle \
-        "$backup" "$transcript" "$home" "$id" "${bundle_args[@]}" || {
+        "$session" "$backup" "$transcript" "$home" "$id" "${bundle_args[@]}" || {
         [ -z "$stage" ] || rm -rf "$stage"
         return 1
       }
     else
       publish_claude_restore_bundle \
-        "$backup" "$transcript" "$home" "$id" || {
+        "$session" "$backup" "$transcript" "$home" "$id" || {
         [ -z "$stage" ] || rm -rf "$stage"
         return 1
       }

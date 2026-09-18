@@ -194,9 +194,12 @@ Provider-created hard links become independent regular files in staging;
 archives and restore destinations still reject hard links and non-plain
 entries. Before any write, List and Recover validate the selected Claude source,
 companion trees, destinations, and `.detach.old` or `.detach.tmp` siblings.
-Claude restore stages the transcript and companions, then publishes them as one
-replacement. A crash cannot mix live files with checkpoint files. Recover
-discards a leftover `.detach.tmp` tree when that path is a Detach-owned entry.
+Claude restore stages the transcript and companions, then records a durable
+publish intent. It keeps the previous generation until that intent is
+committed. The next Resume or Recover heals an interrupted publish to one
+complete generation before the provider starts. Mixed live files are not a
+valid checkpoint. Recover discards a leftover `.detach.tmp` tree when that
+path is a Detach-owned entry and no publish intent remains.
 Unsafe optional data blocks recovery without changing its source. Task names
 match the UUID. Archived and existing team configs name that UUID as lead, so a
 checkpoint cannot replace another session's team. A valid selected live
