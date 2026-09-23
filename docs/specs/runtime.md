@@ -5,13 +5,19 @@
 Detach.app installs an immutable payload below
 `~/.local/libexec/detach/versions/<semver>-<hash>/` and switches
 `~/.local/bin/detach` atomically. Payload order is `detach`, `detach-core`,
-`detach-install`, `detach-state`, `detach-power`, and `tmux`.
+`detach-install`, `detach-state`, `detach-power`, and `tmux`. Payload members
+are regular files.
 
-Install and Repair validate the payload before activation; failure keeps the
-active payload. A live or retained session defers replacement. One PATH entry
-supports all shells. `--keep-state` keeps checkpoints. `--purge-state`
-removes Detach state, not provider data. Uninstall restores an unchanged
-profile or removes only its entry. Source edits require app sync or Repair.
+Install and Repair stage and hash a replacement under `.incoming-*` before
+they replace a live version directory. They switch `~/.local/bin/detach` only
+after the version directory, install manifest, and direct `__version` proof
+succeed. Failure keeps the active payload and its install manifest. A first
+install that fails after it writes the manifest removes the new manifest. A
+live or retained session defers replacement. One PATH entry supports all
+shells. `--keep-state` keeps checkpoints. `--purge-state` removes Detach
+state, not provider data.
+Uninstall restores an unchanged profile or removes only its entry. Source
+edits require app sync or Repair.
 
 The app registers its power LaunchDaemon and per-user watchdog with
 `SMAppService`. The root helper needs one administrator approval. The portable
@@ -37,6 +43,9 @@ TERM then KILL. Parallel calls cannot starve drains. Truncation makes typed
 consumers keep the last valid state. Pipe descendants cannot extend deadlines.
 The event process uses `exec` and ends on cancellation. GUI PATH sorts
 NVM/mise Node directories by semantic version.
+CLI children start with an empty signal mask. A dispatch thread's blocked
+signals must not reach the private tmux server or its workers. The caller's
+signal mask does not change.
 If the bounded transcript tail has no Codex model, JSON List reads the model
 from the provider database. The session ID and rollout path must both match.
 An old database without the model column leaves the transcript result intact.
@@ -88,6 +97,8 @@ The completion hook requires the exact pane ID and run token. It targets the
 original tmux session ID. A dead user split cannot disconnect those clients.
 The retained provider pane, metadata, and checkpoints remain available.
 Ctrl-C that leaves the provider running does not detach its clients.
+Completion without attached clients does not run a client command. The next
+attachment shows the provider screen without a stored tmux client error.
 
 Default starts form a provider/project history series. A fresh start refuses a
 live member or second writer; otherwise it allocates a successor without

@@ -1879,6 +1879,81 @@ run_codex delete --force interrupt-terminal >/dev/null
 tmux -L "$OUTER_SOCKET" kill-server >/dev/null 2>&1 || true
 tmux -L "$SOCKET" kill-session -t =completion-unrelated
 
+# Completion with no attached clients must not leave a server-wide error for
+# the next terminal. Exercise the public lifecycle, then read a real PTY: the
+# old hook put an unrelated live pane in view-mode with "no current client".
+[ -z "$(tmux -L "$SOCKET" list-clients -F '#{client_pid}')" ]
+background_release="$TMP_ROOT/background-completion-release"
+(
+  cd "$interrupt_project"
+  FAKE_CODEX_RELEASE_FILE="$background_release" \
+    FAKE_CODEX_FOREIGN_FIRST=0 FAKE_CODEX_INIT_DELAY=0 \
+    run_codex --name background-completion --detach >/dev/null
+)
+background_session=detach-codex-background-completion
+background_pane="$(tmux -L "$SOCKET" show-options -qv \
+  -t "=$background_session:" @detach_pane_id)"
+touch "$background_release"
+attempts=0
+while [ "$(tmux -L "$SOCKET" display-message -p -t "$background_pane" '#{pane_dead}')" != 1 ] && \
+    [ "$attempts" -lt 160 ]; do
+  attempts=$((attempts + 1))
+  sleep 0.1
+done
+[ "$(tmux -L "$SOCKET" display-message -p -t "$background_pane" '#{pane_dead}')" = 1 ]
+python3 - "$TMUX_TEST_BIN" "$SOCKET_PATH" <<'PY_BACKGROUND_COMPLETION'
+import fcntl
+import os
+import pty
+import select
+import struct
+import subprocess
+import sys
+import termios
+import time
+
+tmux, socket = sys.argv[1:]
+command = [tmux, "-S", socket]
+name = "completion-next-terminal"
+banner = b"next terminal is live"
+env = dict(os.environ, TERM="xterm-256color", LC_ALL="en_US.UTF-8")
+for key in ["TMUX", "TMUX_PANE"]:
+    env.pop(key, None)
+master = slave = child = None
+try:
+    subprocess.run(command + ["new-session", "-d", "-s", name,
+                   "printf 'next terminal is live\\n'; exec /bin/cat"], check=True)
+    master, slave = pty.openpty()
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 120, 0, 0))
+    child = subprocess.Popen(command + ["attach-session", "-t", name],
+                             stdin=slave, stdout=slave, stderr=slave,
+                             env=env, start_new_session=True)
+    os.close(slave)
+    slave = None
+    output = b""
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if select.select([master], [], [], 0.1)[0]:
+            output += os.read(master, 65536)
+        if banner in output or b"no current client" in output:
+            break
+    assert b"no current client" not in output, repr(output)
+    assert banner in output, repr(output)
+    mode = subprocess.check_output(command + ["display-message", "-p",
+                                   "-t", name, "#{pane_in_mode}"])
+    assert mode.strip() == b"0", mode
+finally:
+    subprocess.run(command + ["kill-session", "-t", "=" + name],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if child is not None:
+        child.wait(timeout=3)
+    for fd in [master, slave]:
+        if fd is not None:
+            os.close(fd)
+print("Background completion leaves the next terminal live")
+PY_BACKGROUND_COMPLETION
+run_codex delete --force background-completion >/dev/null
+
 if [ "$CODEX_TEST_PART" = lifecycle ]; then
   run_codex delete --force integration
 fi
@@ -4166,6 +4241,73 @@ if DETACH_CODEX_STATE_ROOT="$unsafe_provider_link" run_codex list --json >/dev/n
 fi
 grep -Fx 'do not touch' "$unsafe_provider_target/sentinel" >/dev/null
 [ ! -e "$unsafe_provider_target/sessions" ]
+
+# A trailing . or .. component must fail before mkdir can walk to a parent
+# or chmod that parent.
+dot_parent="$TMP_ROOT/owned-dot-parent"
+mkdir -p "$dot_parent/dir"
+printf 'parent sentinel\n' >"$dot_parent/sentinel"
+if DETACH_CODEX_STATE_ROOT="$dot_parent/dir/.." run_codex list --json >/dev/null 2>&1; then
+  printf 'list accepted a provider state root that ends in /..\n' >&2
+  exit 1
+fi
+grep -Fx 'parent sentinel' "$dot_parent/sentinel" >/dev/null
+[ ! -e "$dot_parent/sessions" ]
+if DETACH_CODEX_STATE_ROOT="$dot_parent/dir/." run_codex list --json >/dev/null 2>&1; then
+  printf 'list accepted a provider state root that ends in /.\n' >&2
+  exit 1
+fi
+[ ! -e "$dot_parent/dir/sessions" ]
+
+# First publication of meta.json waits for the same .meta-patch.lock that
+# meta patch uses. A concurrent patch cannot replace disjoint fields.
+initial_lock_state="$TMP_ROOT/initial-meta-lock-state"
+initial_lock_session=detach-codex-initial-meta-lock
+initial_lock_dir="$initial_lock_state/sessions/$initial_lock_session"
+mkdir -p "$initial_lock_dir"
+"$STATE_HELPER" meta create "$initial_lock_dir/meta.json" \
+  --integer schema 1 \
+  --string session_name "$initial_lock_session" \
+  --string project_dir "$ROOT" \
+  --string status stopped \
+  --string sentinel_field keep-me
+initial_lock="$initial_lock_dir/.meta-patch.lock"
+: >"$initial_lock"
+/usr/bin/lockf -k -w "$initial_lock" /bin/sleep 60 &
+initial_lock_holder=$!
+initial_lock_wait=0
+while /usr/bin/lockf -k -w -t 0 "$initial_lock" true >/dev/null 2>&1; do
+  initial_lock_wait=$((initial_lock_wait + 1))
+  [ "$initial_lock_wait" -lt 100 ] || {
+    printf 'could not hold metadata patch lock for the publication test\n' >&2
+    kill "$initial_lock_holder" 2>/dev/null || true
+    exit 1
+  }
+  sleep 0.05
+done
+DETACH_CODEX_STATE_ROOT="$initial_lock_state" \
+  run_codex __write_initial_meta \
+    "$initial_lock_session" "$ROOT" "" 1 "$DETACH_CODEX_BIN" "" "" \
+    initial-meta-lock-run 0 >/dev/null 2>&1 &
+initial_lock_writer=$!
+initial_tmp_wait=0
+while ! ls -1 "$initial_lock_dir"/.meta-*.tmp >/dev/null 2>&1; do
+  if ! kill -0 "$initial_lock_writer" 2>/dev/null; then
+    break
+  fi
+  initial_tmp_wait=$((initial_tmp_wait + 1))
+  [ "$initial_tmp_wait" -lt 400 ] || break
+  sleep 0.05
+done
+[ "$("$STATE_HELPER" meta get "$initial_lock_dir/meta.json" sentinel_field)" = keep-me ]
+kill "$initial_lock_holder" 2>/dev/null || true
+wait "$initial_lock_holder" 2>/dev/null || true
+wait "$initial_lock_writer" || {
+  printf 'write_initial_meta failed after metadata patch lock release\n' >&2
+  exit 1
+}
+[ -z "$("$STATE_HELPER" meta get "$initial_lock_dir/meta.json" sentinel_field)" ]
+[ "$("$STATE_HELPER" meta get "$initial_lock_dir/meta.json" run_token)" = initial-meta-lock-run ]
 
 unsafe_list_state="$TMP_ROOT/unsafe-list-state"
 unsafe_list_target="$TMP_ROOT/unsafe-list-target"
